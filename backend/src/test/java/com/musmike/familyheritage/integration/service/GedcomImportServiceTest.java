@@ -329,12 +329,14 @@ public class GedcomImportServiceTest extends AbstractIntegrationTest {
         FamilyChild markRel = fam1.getChildren().stream()
                 .filter(fc -> fc.getChild().getCachedGivenName().equals("Mark"))
                 .findFirst().orElseThrow();
-        assertThat(markRel.getRelationshipType()).isEqualTo(FamilyChildRelationshipType.BIOLOGICAL);
+        assertThat(markRel.getFatherRelationshipType()).isEqualTo(FamilyChildRelationshipType.BIOLOGICAL);
+        assertThat(markRel.getMotherRelationshipType()).isEqualTo(FamilyChildRelationshipType.BIOLOGICAL);
 
         FamilyChild karolRel = fam1.getChildren().stream()
                 .filter(fc -> fc.getChild().getCachedGivenName().equals("Karol"))
                 .findFirst().orElseThrow();
-        assertThat(karolRel.getRelationshipType()).isEqualTo(FamilyChildRelationshipType.ADOPTED);
+        assertThat(karolRel.getFatherRelationshipType()).isEqualTo(FamilyChildRelationshipType.ADOPTED);
+        assertThat(karolRel.getMotherRelationshipType()).isEqualTo(FamilyChildRelationshipType.ADOPTED);
 
         // Raw Gedcom Data
         FamilyGedcomData gd1 = fam1.getGedcomData();
@@ -358,12 +360,14 @@ public class GedcomImportServiceTest extends AbstractIntegrationTest {
         FamilyChildGedcomData rawMark = rawChildren1.stream()
                 .filter(c -> c.getRawChildRefId().equals("@I3@"))
                 .findFirst().orElseThrow();
-        assertThat(rawMark.getRawRelationshipType()).isNull();
+        assertThat(rawMark.getRawPedigree()).isNull();
+        assertThat(rawMark.getRawAdoptedBy()).isNull();
 
         FamilyChildGedcomData rawKarol = rawChildren1.stream()
                 .filter(c -> c.getRawChildRefId().equals("@I4@"))
                 .findFirst().orElseThrow();
-        assertThat(rawKarol.getRawRelationshipType()).isEqualToIgnoringCase("Adopted");
+        assertThat(rawKarol.getRawPedigree()).isEqualToIgnoringCase("Adopted");
+        assertThat(rawKarol.getRawAdoptedBy()).isNull();
 
 
         // =========================================================
@@ -1190,7 +1194,8 @@ public class GedcomImportServiceTest extends AbstractIntegrationTest {
 
         Family famBefore = familyRepository.findByGedcomDataGedUid("rel-fam-001").orElseThrow();
         FamilyChild markBefore = famBefore.getChildren().iterator().next();
-        assertThat(markBefore.getRelationshipType()).isEqualTo(FamilyChildRelationshipType.BIOLOGICAL);
+        assertThat(markBefore.getFatherRelationshipType()).isEqualTo(FamilyChildRelationshipType.BIOLOGICAL);
+        assertThat(markBefore.getMotherRelationshipType()).isEqualTo(FamilyChildRelationshipType.BIOLOGICAL);
         Long markChildRelId = markBefore.getId();
 
         // WHEN - Mark gets adopted
@@ -1228,13 +1233,14 @@ public class GedcomImportServiceTest extends AbstractIntegrationTest {
 
         FamilyChild markAfter = famAfter.getChildren().iterator().next();
 
-        // Report updated to ADOPTED
-        assertThat(markAfter.getRelationshipType()).isEqualTo(FamilyChildRelationshipType.ADOPTED);
+        // Relationship updated to ADOPTED for both parents
+        assertThat(markAfter.getFatherRelationshipType()).isEqualTo(FamilyChildRelationshipType.ADOPTED);
+        assertThat(markAfter.getMotherRelationshipType()).isEqualTo(FamilyChildRelationshipType.ADOPTED);
 
         // Raw data also updated
         FamilyChildGedcomData rawChild = famAfter.getGedcomData().getChildren().iterator().next();
         assertThat(rawChild.getRawChildRefId()).isEqualTo("@I2@");
-        assertThat(rawChild.getRawRelationshipType()).isEqualToIgnoringCase("Adopted");
+        assertThat(rawChild.getRawPedigree()).isEqualToIgnoringCase("Adopted");
 
         // No new FamilyChild record was created – same ID
         assertThat(markAfter.getId()).isEqualTo(markChildRelId);

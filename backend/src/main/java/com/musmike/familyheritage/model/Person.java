@@ -7,6 +7,9 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.util.HashSet;
+import java.util.Set;
+
 @Entity
 @Table(name = "people")
 @Getter
@@ -28,8 +31,14 @@ public class Person {
     @Column(length = 20)
     private LifeState lifeState = LifeState.UNKNOWN;
 
+    @Column(name = "is_archived", nullable = false)
+    private Boolean isArchived = false;
+
     @OneToOne(mappedBy = "person", cascade = CascadeType.ALL, orphanRemoval = true)
     private PersonGedcomData gedcomData;
+
+    @OneToMany(mappedBy = "person", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Set<PersonExternalId> externalIds = new HashSet<>();
 
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "birth_event_id")
@@ -38,4 +47,15 @@ public class Person {
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "death_event_id")
     private Event deathEvent;
+
+    public void addExternalId(String uidValue, String sourceSystem) {
+        if (uidValue == null || uidValue.isBlank()) {
+            return;
+        }
+        boolean alreadyExists = externalIds.stream()
+                .anyMatch(ext -> uidValue.equals(ext.getUidValue()));
+        if (!alreadyExists) {
+            externalIds.add(new PersonExternalId(this, uidValue, sourceSystem));
+        }
+    }
 }

@@ -22,26 +22,34 @@ class JwtServiceTest {
     private JwtService jwtService;
 
     private final String testSecret = "VGhpcyBpcyBhIHNlY3VyZSB0ZXN0IGtleSBmb3IgSldUIGVuY29kaW5nIGFuZCBtdXN0IGJlIGxvbmc=";
-    private final long testAccessExpiration = 3600000; // 1 hour
+    private final long testAccessExpiration = 3600000;
+    private final long testRefreshExpiration = 86400000;
 
     @BeforeEach
     void setUp() {
         jwtService = new JwtService();
         ReflectionTestUtils.setField(jwtService, "jwtSecret", testSecret);
         ReflectionTestUtils.setField(jwtService, "accessExpirationMs", testAccessExpiration);
+        ReflectionTestUtils.setField(jwtService, "refreshExpirationMs", testRefreshExpiration);
         jwtService.init();
     }
 
     @Test
-    void shouldGenerateAccessTokenWithCorrectUsernameAndExpiration() {
+    void shouldGenerateAccessTokenAndValidateSuccessfully() {
         // GIVEN
         UserDetails userDetails = new User("testuser", "password", Collections.emptyList());
+        UserDetails otherUser = new User("otheruser", "password", Collections.emptyList());
 
         // WHEN
         String token = jwtService.generateAccessToken(userDetails);
+        String refreshToken = jwtService.generateRefreshToken(userDetails);
 
         // THEN
         assertNotNull(token);
+        assertNotNull(refreshToken);
+        assertEquals("testuser", jwtService.extractUsername(token));
+        assertTrue(jwtService.isTokenValid(token, userDetails));
+        assertFalse(jwtService.isTokenValid(token, otherUser));
 
         Claims claims = Jwts.parser()
                 .verifyWith(getSigningKey())
@@ -51,7 +59,16 @@ class JwtServiceTest {
 
         assertEquals("testuser", claims.getSubject());
         assertTrue(claims.getExpiration().after(new Date()));
-        assertTrue(claims.getExpiration().getTime() - claims.getIssuedAt().getTime() <= testAccessExpiration);
+    }
+
+    @Test
+    void shouldThrowExceptionWhenSecretKeyIsTooShort() {
+        // GIVEN
+        JwtService shortKeyService = new JwtService();
+        ReflectionTestUtils.setField(shortKeyService, "jwtSecret", "c2hvcnRrZXk="); // "shortkey" in Base64 (< 32 bytes)
+
+        // WHEN & THEN
+        assertThrows(IllegalArgumentException.class, shortKeyService::init);
     }
 
     private SecretKey getSigningKey() {

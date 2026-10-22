@@ -39,8 +39,22 @@ public class Family {
     @OneToOne(mappedBy = "family", cascade = CascadeType.ALL, orphanRemoval = true)
     private FamilyGedcomData gedcomData;
 
+    @OneToMany(mappedBy = "family", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Set<FamilyExternalId> externalIds = new HashSet<>();
+
     public void addChild(FamilyChild child) {
         children.add(child);
         child.setFamily(this);
+    }
+
+    public void addExternalId(String uidValue, String sourceSystem) {
+        if (uidValue == null || uidValue.isBlank()) {
+            return;
+        }
+        boolean alreadyExists = externalIds.stream()
+                .anyMatch(ext -> uidValue.equals(ext.getUidValue()));
+        if (!alreadyExists) {
+            externalIds.add(new FamilyExternalId(this, uidValue, sourceSystem));
+        }
     }
 }

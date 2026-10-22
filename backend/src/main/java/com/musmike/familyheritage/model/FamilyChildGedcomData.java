@@ -16,8 +16,11 @@ public class FamilyChildGedcomData {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "raw_relationship_type", length = 100)
-    private String rawRelationshipType;
+    @Column(name = "raw_pedigree", length = 100)
+    private String rawPedigree;
+
+    @Column(name = "raw_adopted_by", length = 50)
+    private String rawAdoptedBy;
 
     @Column(name = "raw_child_ref_id", nullable = false, length = 100)
     private String rawChildRefId;

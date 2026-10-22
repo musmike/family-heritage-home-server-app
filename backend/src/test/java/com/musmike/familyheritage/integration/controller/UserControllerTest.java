@@ -32,4 +32,12 @@ public class UserControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/users/me"))
                 .andExpect(status().isForbidden());
     }
+
+    @Test
+    @WithMockUser(username = "testuser", roles = {"ADMIN"})
+    void shouldReturnHealthCheckMessage() throws Exception {
+        mockMvc.perform(get("/api/v1/health"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Hello from Backend!"));
+    }
 }

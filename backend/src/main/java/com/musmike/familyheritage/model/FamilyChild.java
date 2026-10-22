@@ -27,12 +27,22 @@ public class FamilyChild {
     private Person child;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 50)
-    private FamilyChildRelationshipType relationshipType;
+    @Column(name = "father_relationship_type", nullable = false, length = 50)
+    private FamilyChildRelationshipType fatherRelationshipType;
 
-    public FamilyChild(Family family, Person child, FamilyChildRelationshipType relationshipType) {
+    @Enumerated(EnumType.STRING)
+    @Column(name = "mother_relationship_type", nullable = false, length = 50)
+    private FamilyChildRelationshipType motherRelationshipType;
+
+    public FamilyChild(
+            Family family,
+            Person child,
+            FamilyChildRelationshipType fatherRelationshipType,
+            FamilyChildRelationshipType motherRelationshipType
+    ) {
         this.family = family;
         this.child = child;
-        this.relationshipType = relationshipType;
+        this.fatherRelationshipType = fatherRelationshipType;
+        this.motherRelationshipType = motherRelationshipType;
     }
 }

@@ -7,4 +7,5 @@ import java.util.Optional;
 public interface FamilyRepository extends JpaRepository<Family, Long> {
     Optional<Family> findByGedcomDataGedRefId(String gedRefId);
     Optional<Family> findByGedcomDataGedUid(String gedUid);
+    Optional<Family> findByExternalIdsUidValue(String uidValue);
 }

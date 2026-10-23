@@ -58,11 +58,11 @@ jobs:
             type=sha,format=short,prefix=rc-,enable=${{ startsWith(github.ref, 'refs/heads/release/') }}
             type=semver,pattern={{version}}
 
-      - name: Security Scan (Trivy FS - Backend)
-        uses: aquasecurity/trivy-action@master
+      - name: Security Scan (Trivy FS - All Repo)
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           scan-type: 'fs'
-          scan-ref: './backend'
+          scan-ref: '.'
           severity: 'CRITICAL,HIGH'
           ignore-unfixed: true
 
@@ -70,22 +70,42 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./backend
+          pull: true
           push: true
           tags: ${{ steps.meta_backend.outputs.tags }}
           labels: ${{ steps.meta_backend.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      
+
+      - name: Security Scan (Trivy Image - Backend)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: 'image'
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND }}:${{ steps.meta_backend.outputs.version }}
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+          exit-code: '1'
+
       - name: Build & Push Frontend
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
+          pull: true
           push: true
           tags: ${{ steps.meta_frontend.outputs.tags }}
           labels: ${{ steps.meta_frontend.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      
+
+      - name: Security Scan (Trivy Image - Frontend)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: 'image'
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_FRONTEND }}:${{ steps.meta_frontend.outputs.version }}
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+          exit-code: '1'
+
   deploy-dev:
     name: Update Gitops (Dev)
     needs: build-and-publish

@@ -481,4 +481,46 @@ class GedcomImportSessionServiceTest extends AbstractIntegrationTest {
         assertThat(marekAfterRestore.getIsArchived()).isTrue();
         assertThat(marekAfterRestore.getGedcomData()).isNull();
     }
+
+    @Test
+    @Transactional
+    void shouldManageSingleActiveSessionAndAllowCancellingIt() throws Exception {
+        String gedcom = """
+            0 HEAD
+            1 SOUR TEST
+            0 @I1@ INDI
+            1 NAME Jan /Kowalski/
+            0 TRLR
+            """;
+
+        assertThat(sessionService.getActiveSession()).isEmpty();
+
+        ImportSessionResponseDto active = sessionService.createSession(
+                new ByteArrayInputStream(gedcom.getBytes(StandardCharsets.UTF_8)),
+                "first.ged"
+        );
+
+        // Active session is returned by getActiveSession() and NOT in completed history yet
+        assertThat(sessionService.getActiveSession()).isPresent();
+        assertThat(sessionService.getActiveSession().get().getSessionId()).isEqualTo(active.getSessionId());
+        assertThat(sessionService.getImportHistory()).isEmpty();
+
+        // Starting a second session while one is active must fail
+        assertThrows(IllegalStateException.class, () ->
+                sessionService.createSession(
+                        new ByteArrayInputStream(gedcom.getBytes(StandardCharsets.UTF_8)),
+                        "second.ged"
+                )
+        );
+
+        // Cancelling the active session removes it and allows starting a new one
+        sessionService.cancelSession(active.getSessionId());
+        assertThat(sessionService.getActiveSession()).isEmpty();
+
+        ImportSessionResponseDto newSession = sessionService.createSession(
+                new ByteArrayInputStream(gedcom.getBytes(StandardCharsets.UTF_8)),
+                "second.ged"
+        );
+        assertThat(newSession.getFileName()).isEqualTo("second.ged");
+    }
 }

@@ -6,6 +6,9 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @Data
 @Builder
 @NoArgsConstructor
@@ -17,4 +20,10 @@ public class AbsentPersonReviewDto {
     private Integer birthYear;
     private Integer deathYear;
     private AbsentPersonAction selectedAction;
+
+    @Builder.Default
+    private boolean canBeDeleted = true;
+
+    @Builder.Default
+    private List<String> deletionBlockReasons = new ArrayList<>();
 }

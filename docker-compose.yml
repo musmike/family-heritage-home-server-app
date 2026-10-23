@@ -7,7 +7,7 @@ services:
       POSTGRES_USER: user_dev
       POSTGRES_PASSWORD: dev123
     ports:
-    - "5433:5432"
+    - "127.0.0.1:5433:5432"
     volumes:
       - family_heritage_db_data:/var/lib/postgresql/data
     restart: unless-stopped

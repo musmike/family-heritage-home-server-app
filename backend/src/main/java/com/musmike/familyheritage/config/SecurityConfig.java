@@ -47,6 +47,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/**", "/auth/**", "/error").permitAll()
+                        .requestMatchers("/gedcom/**").hasAnyAuthority("ADMIN", "ROLE_ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterAfter(csrfTokenFilter, JwtAuthenticationFilter.class)
@@ -63,7 +64,6 @@ public class SecurityConfig {
         configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        // ZMIEŃ TĘ LINIĘ
         source.registerCorsConfiguration("/**", configuration);
         return source;
     }

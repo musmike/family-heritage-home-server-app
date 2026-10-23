@@ -41,6 +41,14 @@ public class GedcomImportSessionService {
 
     @Transactional
     public ImportSessionResponseDto createSession(InputStream inputStream, String fileName) throws Exception {
+        sessionRepository.findFirstByStatusNotOrderByCreatedAtDesc(ImportSessionStatus.COMPLETED)
+                .ifPresent(active -> {
+                    throw new IllegalStateException(
+                            "An active import session is already in progress (ID: " + active.getId()
+                                    + "). Please complete or cancel it first."
+                    );
+                });
+
         ParsedGedcomFileDto parsedFile = fileExtractor.extract(inputStream);
         List<DbPersonCandidateContext> dbCandidates = buildDbPersonCandidateContexts();
 
@@ -67,8 +75,23 @@ public class GedcomImportSessionService {
     }
 
     @Transactional
+    public Optional<ImportSessionResponseDto> getActiveSession() {
+        return sessionRepository.findFirstByStatusNotOrderByCreatedAtDesc(ImportSessionStatus.COMPLETED)
+                .map(session -> toResponseDto(session, deserializeState(session.getSessionData())));
+    }
+
+    @Transactional
+    public void cancelSession(Long sessionId) {
+        GedcomImportSession session = findSessionOrThrow(sessionId);
+        if (session.getStatus() == ImportSessionStatus.COMPLETED) {
+            throw new IllegalStateException("Cannot cancel a COMPLETED import session.");
+        }
+        sessionRepository.delete(session);
+    }
+
+    @Transactional
     public List<ImportSessionHistoryItemDto> getImportHistory() {
-        return sessionRepository.findAllByOrderByCreatedAtDescIdDesc().stream()
+        return sessionRepository.findByStatusOrderByCreatedAtDescIdDesc(ImportSessionStatus.COMPLETED).stream()
                 .map(session -> {
                     ImportSessionStateDto state = deserializeState(session.getSessionData());
                     return ImportSessionHistoryItemDto.builder()
@@ -151,14 +174,23 @@ public class GedcomImportSessionService {
 
         List<AbsentPersonReviewDto> absentPeople = personRepository.findByIsArchivedFalse().stream()
                 .filter(p -> !matchedPersonIds.contains(p.getId()))
-                .map(p -> AbsentPersonReviewDto.builder()
-                        .personId(p.getId())
-                        .givenName(p.getCachedGivenName())
-                        .surname(p.getCachedSurname())
-                        .birthYear(extractEventYear(p.getBirthEvent()))
-                        .deathYear(extractEventYear(p.getDeathEvent()))
-                        .selectedAction(previousAbsentChoices.getOrDefault(p.getId(), AbsentPersonAction.ARCHIVE))
-                        .build())
+                .map(p -> {
+                    List<String> blockReasons = importApplier.getPersonDeletionBlockReasons(p);
+                    boolean canDelete = blockReasons.isEmpty();
+                    AbsentPersonAction chosen = canDelete
+                            ? previousAbsentChoices.getOrDefault(p.getId(), AbsentPersonAction.ARCHIVE)
+                            : AbsentPersonAction.ARCHIVE;
+                    return AbsentPersonReviewDto.builder()
+                            .personId(p.getId())
+                            .givenName(p.getCachedGivenName())
+                            .surname(p.getCachedSurname())
+                            .birthYear(extractEventYear(p.getBirthEvent()))
+                            .deathYear(extractEventYear(p.getDeathEvent()))
+                            .selectedAction(chosen)
+                            .canBeDeleted(canDelete)
+                            .deletionBlockReasons(blockReasons)
+                            .build();
+                })
                 .toList();
 
         state.setAbsentPeople(new ArrayList<>(absentPeople));

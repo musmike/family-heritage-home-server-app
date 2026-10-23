@@ -28,6 +28,8 @@ class GedcomImportApplierTest extends AbstractIntegrationTest {
     @Autowired private EventLocationRepository eventLocationRepository;
     @Autowired private UserCodeRepository userCodeRepository;
     @Autowired private EntityManager entityManager;
+    @Autowired private DateDescriptorRepository dateDescriptorRepository;
+    @Autowired private EventRepository eventRepository;
 
     @Test
     @Transactional
@@ -558,5 +560,103 @@ class GedcomImportApplierTest extends AbstractIntegrationTest {
         assertThat(unarchivedAnna.getIsArchived()).isFalse();
         assertThat(unarchivedAnna.getGedcomData()).isNotNull();
         assertThat(unarchivedAnna.getGedcomData().getGedRefId()).isEqualTo("@I2@");
+    }
+
+    @Test
+    @Transactional
+    void shouldCleanUpOrphanDateDescriptorsAvoidBlankDeathEventsAndBlockDeletingEditedPerson() throws Exception {
+        // GIVEN - Import 1: Jan (with birth date & death tag without details "1 DEAT Y") and Anna (with birth date)
+        String gedcomV1 = """
+            0 HEAD
+            1 SOUR TEST
+            0 @I1@ INDI
+            1 NAME Jan /Kowalski/
+            1 SEX M
+            1 BIRT
+            2 DATE 10 JAN 1920
+            1 DEAT Y
+            0 @I2@ INDI
+            1 NAME Anna /Nowak/
+            1 SEX F
+            1 BIRT
+            2 DATE 5 MAY 1930
+            0 @I3@ INDI
+            1 NAME Piotr /Zwykły/
+            1 SEX M
+            1 BIRT
+            2 DATE 1 MAR 1940
+            0 TRLR
+            """;
+
+        ParsedGedcomFileDto parsedV1 = fileExtractor.extract(
+                new ByteArrayInputStream(gedcomV1.getBytes(StandardCharsets.UTF_8))
+        );
+        importApplier.applyImport(
+                parsedV1,
+                Map.of(
+                        "@I1@", new IndividualDecisionDto("@I1@", DecisionAction.CREATE_NEW, null),
+                        "@I2@", new IndividualDecisionDto("@I2@", DecisionAction.CREATE_NEW, null),
+                        "@I3@", new IndividualDecisionDto("@I3@", DecisionAction.CREATE_NEW, null)
+                ),
+                Map.of(),
+                Map.of()
+        );
+        entityManager.flush();
+        entityManager.clear();
+
+        // Jan has DECEASED lifeState, but NO blank Death Event was created in events table!
+        Person jan = personRepository.findByGedcomDataGedRefId("@I1@").orElseThrow();
+        assertThat(jan.getLifeState()).isEqualTo(LifeState.DECEASED);
+        assertThat(jan.getDeathEvent()).isNull();
+        assertThat(dateDescriptorRepository.findAll()).hasSize(3); // 3 birth dates
+
+        // User manually edits Anna's givenName in the application
+        Person anna = personRepository.findByGedcomDataGedRefId("@I2@").orElseThrow();
+        anna.setCachedGivenName("Anna Maria");
+        personRepository.saveAndFlush(anna);
+        entityManager.clear();
+
+        Person piotr = personRepository.findByGedcomDataGedRefId("@I3@").orElseThrow();
+
+        // WHEN - Import 2: Only Jan remains (and his birth date is removed).
+        String gedcomV2 = """
+            0 HEAD
+            1 SOUR TEST
+            0 @I1@ INDI
+            1 NAME Jan /Kowalski/
+            1 SEX M
+            0 TRLR
+            """;
+        ParsedGedcomFileDto parsedV2 = fileExtractor.extract(
+                new ByteArrayInputStream(gedcomV2.getBytes(StandardCharsets.UTF_8))
+        );
+
+        // Attempting to DELETE manually edited Anna must throw IllegalArgumentException
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () ->
+                importApplier.applyImport(
+                        parsedV2,
+                        Map.of("@I1@", new IndividualDecisionDto("@I1@", DecisionAction.MATCH, jan.getId())),
+                        Map.of(),
+                        Map.of(anna.getId(), AbsentPersonAction.DELETE)
+                )
+        );
+
+        // Applying with ARCHIVE for Anna and DELETE for unedited Piotr succeeds
+        importApplier.applyImport(
+                parsedV2,
+                Map.of("@I1@", new IndividualDecisionDto("@I1@", DecisionAction.MATCH, jan.getId())),
+                Map.of(),
+                Map.of(
+                        anna.getId(), AbsentPersonAction.ARCHIVE,
+                        piotr.getId(), AbsentPersonAction.DELETE
+                )
+        );
+        entityManager.flush();
+        entityManager.clear();
+
+        // THEN - Jan's removed birth date and Piotr's deleted birth date were cleaned up from date_descriptors!
+        // Only archived Anna's birth date descriptor remains (size == 1).
+        assertThat(dateDescriptorRepository.findAll()).hasSize(1);
+        assertThat(eventRepository.findAll()).hasSize(1);
     }
 }

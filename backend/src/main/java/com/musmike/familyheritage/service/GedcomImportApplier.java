@@ -22,6 +22,7 @@ public class GedcomImportApplier {
     private final FamilyRepository familyRepository;
     private final FamilyChildRepository familyChildRepository;
     private final EventRepository eventRepository;
+    private final DateDescriptorRepository dateDescriptorRepository;
     private final LocationRepository locationRepository;
     private final UserCodeRepository userCodeRepository;
     private final EventTypeParticipantRoleRepository etprRepository;
@@ -124,6 +125,73 @@ public class GedcomImportApplier {
         cleanUpOrphans();
 
         return new AppliedImportResult(resolvedGedRefToPersonId, resolvedGedRefToFamilyId);
+    }
+
+    /**
+     * Checks whether a person has manually edited data or extra application attachments
+     * that prevent physical deletion.
+     */
+    public List<String> getPersonDeletionBlockReasons(Person person) {
+        List<String> reasons = new ArrayList<>();
+        PersonGedcomData raw = person.getGedcomData();
+
+        if (raw == null) {
+            reasons.add("Person has no raw GEDCOM link (manually created or already archived)");
+            return reasons;
+        }
+
+        boolean givenNameEdited = !Objects.equals(nullToEmpty(person.getCachedGivenName()), nullToEmpty(raw.getRawGivenName()));
+        boolean surnameEdited = !Objects.equals(nullToEmpty(person.getCachedSurname()), nullToEmpty(raw.getRawSurname()));
+        boolean sexEdited = person.getSex() != null && person.getSex() != mapGedcomSexToEnum(raw.getRawSex());
+        LifeState expectedLifeState = Boolean.TRUE.equals(raw.getRawDeathIndicated()) ? LifeState.DECEASED : LifeState.UNKNOWN;
+        boolean lifeStateEdited = person.getLifeState() != null && person.getLifeState() != expectedLifeState;
+
+        if (givenNameEdited || surnameEdited || sexEdited || lifeStateEdited) {
+            reasons.add("Person has manually edited personal details");
+        }
+
+        if (isEventDateEdited(person.getBirthEvent(), raw.getRawBirthDate())
+                || isEventPlaceEdited(person.getBirthEvent(), raw.getRawBirthPlace())) {
+            reasons.add("Person has manually edited birth event details");
+        }
+
+        if (isEventDateEdited(person.getDeathEvent(), raw.getRawDeathDate())
+                || isEventPlaceEdited(person.getDeathEvent(), raw.getRawDeathPlace())
+                || isEventCauseEdited(person.getDeathEvent(), raw.getRawCauseOfDeath())) {
+            reasons.add("Person has manually edited death event details");
+        }
+
+        Event burialEvent = burialRepository.findByPerson(person).stream()
+                .filter(b -> b.getBurialEvent() != null)
+                .map(Burial::getBurialEvent)
+                .findFirst()
+                .orElse(null);
+        if (isEventPlaceEdited(burialEvent, raw.getRawBurialPlace())) {
+            reasons.add("Person has manually edited burial details");
+        }
+
+        List<PersonName> names = personNameRepository.findByPerson(person);
+        boolean hasExtraNames = names.stream()
+                .anyMatch(n -> !PersonNameType.BIRTH.name().equals(n.getType())) || names.size() > 1;
+        if (hasExtraNames) {
+            reasons.add("Person has additional custom names");
+        }
+
+        List<EventParticipant> participations = eventParticipantRepository.findByPerson(person);
+        boolean hasCustomEvents = participations.stream().anyMatch(ep -> {
+            String typeCode = ep.getEvent().getEventType().getCode();
+            return !Set.of(
+                    EventType.BIRTH.name(),
+                    EventType.DEATH.name(),
+                    EventType.BURIAL.name(),
+                    EventType.WEDDING.name()
+            ).contains(typeCode);
+        });
+        if (hasCustomEvents) {
+            reasons.add("Person participates in custom events");
+        }
+
+        return reasons;
     }
 
     private Person applyIndividual(
@@ -245,17 +313,16 @@ public class GedcomImportApplier {
             eventRepository.delete(oldBirth);
         }
 
-        // DEATH EVENT (3-way merge)
-        boolean hasNewDeath = gedIndi.isDeathIndicated()
-                || gedIndi.getDeathDate() != null
+        // DEATH EVENT (3-way merge - only create Event row when date, place, or cause is present)
+        boolean hasNewDeathDetails = gedIndi.getDeathDate() != null
                 || gedIndi.getDeathPlace() != null
                 || gedIndi.getCauseOfDeath() != null;
         boolean deathDateEdited = isEventDateEdited(person.getDeathEvent(), oldSnapshot != null ? oldSnapshot.getRawDeathDate() : null);
         boolean deathPlaceEdited = isEventPlaceEdited(person.getDeathEvent(), oldSnapshot != null ? oldSnapshot.getRawDeathPlace() : null);
         boolean causeEdited = isEventCauseEdited(person.getDeathEvent(), oldSnapshot != null ? oldSnapshot.getRawCauseOfDeath() : null);
 
-        if (hasNewDeath || deathDateEdited || deathPlaceEdited || causeEdited) {
-            if (person.getDeathEvent() != null || hasNewDeath) {
+        if (hasNewDeathDetails || deathDateEdited || deathPlaceEdited || causeEdited) {
+            if (person.getDeathEvent() != null || hasNewDeathDetails) {
                 Event savedDeath = processPersonEventWithMerge(
                         gedIndi.getDeathDate(),
                         gedIndi.getDeathPlace(),
@@ -303,10 +370,13 @@ public class GedcomImportApplier {
             }
         } else if (previousBurialPlace != null) {
             burialRepository.findByPerson(person).forEach(b -> {
-                if (b.getBurialEvent() != null) {
-                    eventRepository.delete(b.getBurialEvent());
-                }
+                Event burEvt = b.getBurialEvent();
+                b.setBurialEvent(null);
                 burialRepository.delete(b);
+                burialRepository.flush();
+                if (burEvt != null) {
+                    eventRepository.delete(burEvt);
+                }
             });
         }
 
@@ -430,20 +500,36 @@ public class GedcomImportApplier {
             Set<Long> activePersonIdsInImport,
             Map<Long, AbsentPersonAction> absentPersonDecisions
     ) {
-        List<Person> absentPeople = personRepository.findAll().stream()
+        List<Person> initialAbsentPeople = personRepository.findAll().stream()
                 .filter(p -> !activePersonIdsInImport.contains(p.getId()))
                 .toList();
 
-        if (absentPeople.isEmpty()) {
+        if (initialAbsentPeople.isEmpty()) {
             return;
         }
 
-        Set<Long> absentIds = new HashSet<>();
-        for (Person p : absentPeople) {
-            absentIds.add(p.getId());
+        // 1. Validate first before mutating anything that no protected person is marked for physical deletion
+        Map<Long, AbsentPersonAction> resolvedActions = new HashMap<>();
+        for (Person absentPerson : initialAbsentPeople) {
+            AbsentPersonAction action = resolveAbsentPersonAction(absentPerson, absentPersonDecisions);
+            if (action == AbsentPersonAction.DELETE) {
+                List<String> blockReasons = getPersonDeletionBlockReasons(absentPerson);
+                if (!blockReasons.isEmpty()) {
+                    throw new IllegalArgumentException(
+                            "Cannot delete person " + absentPerson.getId() + " because: " + String.join("; ", blockReasons)
+                    );
+                }
+            }
+            resolvedActions.put(absentPerson.getId(), action);
         }
 
-        // Detach absent people from any remaining families
+        // Clear persistence context so lazy Event/EventParticipant entities loaded during validation
+        // do not cause TransientObjectException when deleting Person entities
+        entityManager.clear();
+
+        Set<Long> absentIds = resolvedActions.keySet();
+
+        // 2. Detach absent people from any remaining families
         List<Family> remainingFamilies = familyRepository.findAll();
         for (Family f : remainingFamilies) {
             boolean changed = false;
@@ -479,15 +565,12 @@ public class GedcomImportApplier {
             }
         }
         familyRepository.flush();
+        entityManager.clear();
 
-        // Execute ARCHIVE or DELETE per absent person
+        // 3. Execute ARCHIVE or DELETE per absent person
+        List<Person> absentPeople = personRepository.findAllById(absentIds);
         for (Person absentPerson : absentPeople) {
-            AbsentPersonAction action = absentPersonDecisions != null
-                    ? absentPersonDecisions.getOrDefault(absentPerson.getId(),
-                    Boolean.TRUE.equals(absentPerson.getIsArchived())
-                            ? AbsentPersonAction.ARCHIVE
-                            : AbsentPersonAction.DELETE)
-                    : AbsentPersonAction.DELETE;
+            AbsentPersonAction action = resolvedActions.get(absentPerson.getId());
 
             if (action == AbsentPersonAction.ARCHIVE) {
                 absentPerson.setIsArchived(true);
@@ -495,15 +578,29 @@ public class GedcomImportApplier {
                 personRepository.save(absentPerson);
             } else {
                 burialRepository.findByPerson(absentPerson).forEach(b -> {
-                    if (b.getBurialEvent() != null) {
-                        eventRepository.delete(b.getBurialEvent());
-                    }
+                    b.setBurialEvent(null);
                     burialRepository.delete(b);
                 });
+                burialRepository.flush();
                 personRepository.delete(absentPerson);
             }
         }
         personRepository.flush();
+    }
+
+    private AbsentPersonAction resolveAbsentPersonAction(
+            Person absentPerson,
+            Map<Long, AbsentPersonAction> absentPersonDecisions
+    ) {
+        if (absentPersonDecisions != null && absentPersonDecisions.containsKey(absentPerson.getId())) {
+            return absentPersonDecisions.get(absentPerson.getId());
+        }
+        if (Boolean.TRUE.equals(absentPerson.getIsArchived())) {
+            return AbsentPersonAction.ARCHIVE;
+        }
+        return getPersonDeletionBlockReasons(absentPerson).isEmpty()
+                ? AbsentPersonAction.DELETE
+                : AbsentPersonAction.ARCHIVE;
     }
 
     private Event processPersonEventWithMerge(
@@ -574,6 +671,7 @@ public class GedcomImportApplier {
         if (existingEvent == null) {
             EventParticipant participant = new EventParticipant(event, person, role);
             eventParticipantRepository.save(participant);
+            event.addParticipant(participant);
         }
 
         if (attrDef != null && !causeEdited) {
@@ -795,6 +893,7 @@ public class GedcomImportApplier {
 
     private void cleanUpOrphans() {
         eventRepository.deleteOrphanEvents();
+        dateDescriptorRepository.deleteOrphanDateDescriptors();
         graveRepository.deleteOrphanGraves();
         locationRepository.deleteOrphanLocations();
         attrDictValueRepository.deleteOrphanValues();

@@ -14,5 +14,6 @@ app:
       - "http://localhost:3000"
   seed-users-json: '[{"username":"admin","password":"admin123","role":"ADMIN"}]'
 server:
+  address: 127.0.0.1
   servlet:
     context-path: /api

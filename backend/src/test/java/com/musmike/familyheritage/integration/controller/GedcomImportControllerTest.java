@@ -154,4 +154,11 @@ class GedcomImportControllerTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isArray());
     }
+
+    @Test
+    @WithMockUser(username = "guest", roles = {"GUEST"})
+    void shouldReturnForbiddenWhenNonAdminAccessesGedcomImport() throws Exception {
+        mockMvc.perform(get("/gedcom/import/sessions"))
+                .andExpect(status().isForbidden());
+    }
 }

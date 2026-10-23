@@ -3,6 +3,7 @@ package com.musmike.familyheritage.controller;
 import com.musmike.familyheritage.dto.*;
 import com.musmike.familyheritage.service.GedcomImportSessionService;
 import lombok.RequiredArgsConstructor;
+import org.gedcom4j.exception.GedcomParserException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -29,9 +30,22 @@ public class GedcomImportController {
         return ResponseEntity.ok(sessionService.getImportHistory());
     }
 
+    @GetMapping("/active")
+    public ResponseEntity<ImportSessionResponseDto> getActiveSession() {
+        return sessionService.getActiveSession()
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
     @GetMapping("/{sessionId}")
     public ResponseEntity<ImportSessionResponseDto> getSession(@PathVariable Long sessionId) {
         return ResponseEntity.ok(sessionService.getSession(sessionId));
+    }
+
+    @DeleteMapping("/{sessionId}")
+    public ResponseEntity<Void> cancelSession(@PathVariable Long sessionId) {
+        sessionService.cancelSession(sessionId);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/lookup/people")
@@ -80,7 +94,7 @@ public class GedcomImportController {
     @ExceptionHandler({
             IllegalArgumentException.class,
             IllegalStateException.class,
-            org.gedcom4j.exception.GedcomParserException.class
+            GedcomParserException.class
     })
     public ResponseEntity<ErrorResponse> handleBadRequest(Exception ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)

@@ -121,7 +121,7 @@ class PersonRepositoryTest extends AbstractIntegrationTest {
 
         Person person2 = new Person();
         person2.setCachedGivenName("Adam");
-        person2.addExternalId("duplicate-uid-001", "ANCESTRY");
+        person2.addExternalId("duplicate-uid-001", "MYHERITAGE");
 
         // WHEN & THEN
         assertThrows(DataIntegrityViolationException.class, () -> {

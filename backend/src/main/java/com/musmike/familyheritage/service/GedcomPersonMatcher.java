@@ -216,12 +216,38 @@ public class GedcomPersonMatcher {
                 .personId(dbCandidate.getPersonId())
                 .givenName(dbCandidate.getGivenName())
                 .surname(dbCandidate.getSurname())
+                .sex(dbCandidate.getSex() != null ? dbCandidate.getSex().name() : null)
                 .birthYear(dbCandidate.getBirthYear())
+                .birthDate(formatCandidateDate(
+                        dbCandidate.getBirthYear(),
+                        dbCandidate.getBirthMonth(),
+                        dbCandidate.getBirthDay()
+                ))
+                .birthPlace(dbCandidate.getBirthPlace())
                 .deathYear(dbCandidate.getDeathYear())
+                .deathDate(formatCandidateDate(
+                        dbCandidate.getDeathYear(),
+                        dbCandidate.getDeathMonth(),
+                        dbCandidate.getDeathDay()
+                ))
+                .deathPlace(dbCandidate.getDeathPlace())
+                .parentGivenNames(dbCandidate.getParentGivenNames() != null ? dbCandidate.getParentGivenNames() : Set.of())
+                .spouseGivenNames(dbCandidate.getSpouseGivenNames() != null ? dbCandidate.getSpouseGivenNames() : Set.of())
                 .archived(dbCandidate.isArchived())
                 .confidenceScore(score)
                 .matchReasons(reasons)
                 .build();
+    }
+
+    private String formatCandidateDate(Integer year, Integer month, Integer day) {
+        if (year == null) return null;
+        if (month != null && day != null) {
+            return String.format("%02d.%02d.%d", day, month, year);
+        }
+        if (month != null) {
+            return String.format("%02d.%d", month, year);
+        }
+        return String.valueOf(year);
     }
 
     private DateDescriptor parseDateOrNull(String rawDate) {

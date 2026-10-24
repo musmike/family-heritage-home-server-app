@@ -50,7 +50,7 @@ public class GedcomImportSessionService {
                 });
 
         ParsedGedcomFileDto parsedFile = fileExtractor.extract(inputStream);
-        List<DbPersonCandidateContext> dbCandidates = buildDbPersonCandidateContexts();
+        List<DbPersonCandidateContext> dbCandidates = buildDbPersonCandidateContexts(parsedFile.getSourceSystem());
 
         List<IndividualMatchResultDto> individualMatches = new ArrayList<>();
         for (ParsedGedcomIndividualDto gedIndi : parsedFile.getIndividuals()) {
@@ -130,7 +130,9 @@ public class GedcomImportSessionService {
             match.setSelectedTargetPersonId(d.getAction() == DecisionAction.MATCH ? d.getTargetPersonId() : null);
         }
 
-        List<DbFamilyCandidateContext> dbFamilies = buildDbFamilyCandidateContexts();
+        List<DbFamilyCandidateContext> dbFamilies = buildDbFamilyCandidateContexts(
+                state.getParsedFile().getSourceSystem()
+        );
         List<FamilyMatchResultDto> newFamilyMatches = new ArrayList<>();
         for (ParsedGedcomFamilyDto gedFam : state.getParsedFile().getFamilies()) {
             newFamilyMatches.add(familyMatcher.matchFamily(gedFam, decisionMap, dbFamilies));
@@ -348,7 +350,7 @@ public class GedcomImportSessionService {
     @Transactional
     public List<PersonMatchCandidateDto> searchPeopleCandidates(String query) {
         String normalizedQuery = query != null ? query.trim().toLowerCase() : "";
-        return buildDbPersonCandidateContexts().stream()
+        return buildDbPersonCandidateContexts(null).stream()
                 .filter(c -> {
                     if (normalizedQuery.isEmpty()) return true;
                     String fullName = ((c.getGivenName() != null ? c.getGivenName() : "") + " "
@@ -359,8 +361,15 @@ public class GedcomImportSessionService {
                         .personId(c.getPersonId())
                         .givenName(c.getGivenName())
                         .surname(c.getSurname())
+                        .sex(c.getSex() != null ? c.getSex().name() : null)
                         .birthYear(c.getBirthYear())
+                        .birthDate(formatCandidateDate(c.getBirthYear(), c.getBirthMonth(), c.getBirthDay()))
+                        .birthPlace(c.getBirthPlace())
                         .deathYear(c.getDeathYear())
+                        .deathDate(formatCandidateDate(c.getDeathYear(), c.getDeathMonth(), c.getDeathDay()))
+                        .deathPlace(c.getDeathPlace())
+                        .parentGivenNames(c.getParentGivenNames())
+                        .spouseGivenNames(c.getSpouseGivenNames())
                         .archived(c.isArchived())
                         .confidenceScore(0)
                         .matchReasons(List.of("Manual selection"))
@@ -371,7 +380,7 @@ public class GedcomImportSessionService {
     @Transactional
     public List<FamilyMatchCandidateDto> searchFamilyCandidates(String query) {
         String normalizedQuery = query != null ? query.trim().toLowerCase() : "";
-        return buildDbFamilyCandidateContexts().stream()
+        return buildDbFamilyCandidateContexts(null).stream()
                 .filter(f -> {
                     if (normalizedQuery.isEmpty()) return true;
                     String husb = f.getHusbandName() != null ? f.getHusbandName().toLowerCase() : "";
@@ -389,7 +398,18 @@ public class GedcomImportSessionService {
                 .toList();
     }
 
-    private List<DbPersonCandidateContext> buildDbPersonCandidateContexts() {
+    private String formatCandidateDate(Integer year, Integer month, Integer day) {
+        if (year == null) return null;
+        if (month != null && day != null) {
+            return String.format("%02d.%02d.%d", day, month, year);
+        }
+        if (month != null) {
+            return String.format("%02d.%d", month, year);
+        }
+        return String.valueOf(year);
+    }
+
+    private List<DbPersonCandidateContext> buildDbPersonCandidateContexts(String sourceSystem) {
         List<Person> allPeople = personRepository.findAll();
         List<Family> allFamilies = familyRepository.findAll();
 
@@ -422,10 +442,9 @@ public class GedcomImportSessionService {
         for (Person p : allPeople) {
             Set<String> uids = new HashSet<>();
             for (PersonExternalId ext : p.getExternalIds()) {
-                uids.add(ext.getUidValue());
-            }
-            if (p.getGedcomData() != null && p.getGedcomData().getGedUid() != null) {
-                uids.add(p.getGedcomData().getGedUid());
+                if (sourceSystem != null && sourceSystem.equalsIgnoreCase(ext.getSourceSystem())) {
+                    uids.add(ext.getUidValue());
+                }
             }
 
             DateDescriptor birthDd = p.getBirthEvent() != null ? p.getBirthEvent().getStartDate() : null;
@@ -459,17 +478,16 @@ public class GedcomImportSessionService {
         return result;
     }
 
-    private List<DbFamilyCandidateContext> buildDbFamilyCandidateContexts() {
+    private List<DbFamilyCandidateContext> buildDbFamilyCandidateContexts(String sourceSystem) {
         List<Family> allFamilies = familyRepository.findAll();
         List<DbFamilyCandidateContext> result = new ArrayList<>();
 
         for (Family fam : allFamilies) {
             Set<String> uids = new HashSet<>();
             for (FamilyExternalId ext : fam.getExternalIds()) {
-                uids.add(ext.getUidValue());
-            }
-            if (fam.getGedcomData() != null && fam.getGedcomData().getGedUid() != null) {
-                uids.add(fam.getGedcomData().getGedUid());
+                if (sourceSystem != null && sourceSystem.equalsIgnoreCase(ext.getSourceSystem())) {
+                    uids.add(ext.getUidValue());
+                }
             }
 
             Set<Long> childIds = fam.getChildren().stream()

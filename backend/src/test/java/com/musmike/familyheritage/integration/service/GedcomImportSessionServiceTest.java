@@ -82,7 +82,7 @@ class GedcomImportSessionServiceTest extends AbstractIntegrationTest {
 
         String secondGedcom = """
             0 HEAD
-            1 SOUR GRAMPS
+            1 SOUR MYHERITAGE
             1 CHAR UTF-8
             0 @I10@ INDI
             1 NAME Jan /Kowalski/

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { gedcomImportApi } from '../../api/gedcomImportApi';
 import Loader from '../../components/Loader/Loader';
@@ -33,7 +33,8 @@ const MATCH_REASON_LABELS: Record<string, string | undefined> = {
   'Matching spouse given name': 'Zgodne imię małżonka',
   'Matching GEDCOM reference ID': 'Zgodny identyfikator referencyjny GEDCOM',
   'Both spouses match existing family': 'Oboje małżonkowie pasują do istniejącej rodziny',
-  'Single parent matches existing single-parent family': 'Rodzic pasuje do istniejącej rodziny niepełnej',
+  'Single parent matches existing single-parent family':
+    'Rodzic pasuje do istniejącej rodziny niepełnej',
   'One spouse matches existing family': 'Jeden z małżonków pasuje do istniejącej rodziny',
   'Matching children in family': 'Zgodne dzieci w rodzinie',
   'Matching wedding year': 'Zgodny rok ślubu',
@@ -79,9 +80,9 @@ const translateBlockReason = (reason: string): string =>
 const translateFamilyStatus = (code: string): string =>
   FAMILY_STATUS_LABELS[code] ?? code;
 
-const translateSex = (sex: string | null): string => {
-  if (sex === 'M') return 'Mężczyzna';
-  if (sex === 'F') return 'Kobieta';
+const translateSex = (sex: string | null | undefined): string => {
+  if (sex === 'M' || sex === 'MALE') return 'Mężczyzna';
+  if (sex === 'F' || sex === 'FEMALE') return 'Kobieta';
   return 'Nieznana';
 };
 
@@ -105,6 +106,39 @@ const formatPolishDateTime = (isoDate: string): string => {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(parsed);
+};
+
+const renderCandidateDetails = (cand: PersonMatchCandidateDto) => {
+  const birthInfo = cand.birthDate ?? (cand.birthYear !== null ? String(cand.birthYear) : '—');
+  const deathInfo = cand.deathDate ?? (cand.deathYear !== null ? String(cand.deathYear) : '—');
+  const parents = cand.parentGivenNames ?? [];
+  const spouses = cand.spouseGivenNames ?? [];
+
+  return (
+    <div className={styles.candidateDetailsGrid}>
+      <div>
+        <strong>Płeć:</strong> {translateSex(cand.sex)}
+      </div>
+      <div>
+        <strong>Urodzenie:</strong> {birthInfo}{' '}
+        {cand.birthPlace ? `(${cand.birthPlace})` : ''}
+      </div>
+      <div>
+        <strong>Śmierć:</strong> {deathInfo}{' '}
+        {cand.deathPlace ? `(${cand.deathPlace})` : ''}
+      </div>
+      {parents.length > 0 && (
+        <div>
+          <strong>Rodzice w bazie:</strong> {parents.join(', ')}
+        </div>
+      )}
+      {spouses.length > 0 && (
+        <div>
+          <strong>Małżonkowie w bazie:</strong> {spouses.join(', ')}
+        </div>
+      )}
+    </div>
+  );
 };
 
 export default function GedcomImportPage() {
@@ -141,6 +175,23 @@ export default function GedcomImportPage() {
   const [familyLookupResults, setFamilyLookupResults] = useState<
     Record<string, FamilyMatchCandidateDto[] | undefined>
   >({});
+
+  // Map GEDCOM individual XREF (@I1@) -> "Imię Nazwisko (@I1@)" for display in Families step
+  const gedcomPersonLabelsByRef = useMemo(() => {
+    const map: Record<string, string | undefined> = {};
+    if (!activeSession) return map;
+    for (const m of activeSession.individualMatches) {
+      const indi = m.gedcomIndividual;
+      const fullName = `${indi.givenName} ${indi.surname}`.trim();
+      map[indi.gedRefId] = fullName ? `${fullName} (${indi.gedRefId})` : indi.gedRefId;
+    }
+    return map;
+  }, [activeSession]);
+
+  const formatGedcomPersonRef = (xref: string | null): string => {
+    if (!xref) return '—';
+    return gedcomPersonLabelsByRef[xref] ?? xref;
+  };
 
   const syncLocalDecisionsFromSession = (session: ImportSessionResponseDto) => {
     const nextIndi: Record<string, IndividualDecisionDto | undefined> = {};
@@ -584,6 +635,10 @@ export default function GedcomImportPage() {
                   const indi = match.gedcomIndividual;
                   const currentDecision = indiDecisions[indi.gedRefId];
                   const lookupList = personLookupResults[indi.gedRefId] ?? [];
+                  const isMatchedToNonDefaultCandidate =
+                    currentDecision?.action === 'MATCH' &&
+                    currentDecision.targetPersonId !== null &&
+                    !match.candidates.some(c => c.personId === currentDecision.targetPersonId);
 
                   return (
                     <div key={indi.gedRefId} className={styles.matchCard}>
@@ -645,6 +700,12 @@ export default function GedcomImportPage() {
                           <div className={styles.boxSubtitle}>
                             Proponowani kandydaci w bazie ({match.candidates.length})
                           </div>
+                          {isMatchedToNonDefaultCandidate && (
+                            <div className={styles.manualSelectedBanner}>
+                              ✓ Wybrano ręcznie z wyszukiwarki: osoba o ID #
+                              {currentDecision.targetPersonId}
+                            </div>
+                          )}
                           {match.candidates.length === 0 ? (
                             <p className={styles.pageSubtitle}>
                               Brak automatycznych kandydatów powyżej progu podobieństwa. Możesz utworzyć nową osobę lub wyszukać ręcznie poniżej.
@@ -667,9 +728,7 @@ export default function GedcomImportPage() {
                                       <strong>
                                         {cand.givenName} {cand.surname}
                                       </strong>
-                                      <span>
-                                        (ID: #{cand.personId}, ur. {cand.birthYear ?? '—'})
-                                      </span>
+                                      <span>(ID: #{cand.personId})</span>
                                       <span className={styles.confidencePill}>
                                         Pewność: {cand.confidenceScore}%
                                       </span>
@@ -696,6 +755,7 @@ export default function GedcomImportPage() {
                                       {isSelected ? '✓ Wybrano (połącz)' : 'Połącz z tą osobą'}
                                     </button>
                                   </div>
+                                  {renderCandidateDetails(cand)}
                                   <div className={styles.reasonsList}>
                                     {cand.matchReasons.map(reason => (
                                       <span key={reason} className={styles.reasonChip}>
@@ -756,29 +816,50 @@ export default function GedcomImportPage() {
 
                       {lookupList.length > 0 && (
                         <div className={styles.lookupResultsBox}>
-                          {lookupList.map(item => (
-                            <div key={item.personId} className={styles.lookupResultRow}>
-                              <span>
-                                <strong>
-                                  {item.givenName} {item.surname}
-                                </strong>{' '}
-                                (ID: #{item.personId}, ur. {item.birthYear ?? '—'})
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  handleSelectIndividualDecision(
-                                    indi.gedRefId,
-                                    'MATCH',
-                                    item.personId
-                                  );
-                                }}
-                                className={styles.btnChoice}
+                          {lookupList.map(item => {
+                            const isManualSelected =
+                              currentDecision?.action === 'MATCH' &&
+                              currentDecision.targetPersonId === item.personId;
+
+                            return (
+                              <div
+                                key={item.personId}
+                                className={`${styles.candidateItem} ${
+                                  isManualSelected ? styles.candidateItemSelected : ''
+                                }`}
                               >
-                                Wybierz tę osobę
-                              </button>
-                            </div>
-                          ))}
+                                <div className={styles.candidateTopRow}>
+                                  <div className={styles.candidateInfo}>
+                                    <strong>
+                                      {item.givenName} {item.surname}
+                                    </strong>{' '}
+                                    <span>(ID: #{item.personId})</span>
+                                    {item.archived && (
+                                      <span className={styles.archivedTag}>Zarchiwizowana</span>
+                                    )}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      handleSelectIndividualDecision(
+                                        indi.gedRefId,
+                                        'MATCH',
+                                        item.personId
+                                      );
+                                    }}
+                                    className={`${styles.btnChoice} ${
+                                      isManualSelected ? styles.btnChoiceSelectedMatch : ''
+                                    }`}
+                                  >
+                                    {isManualSelected
+                                      ? '✓ Wybrano (połącz)'
+                                      : 'Wybierz tę osobę'}
+                                  </button>
+                                </div>
+                                {renderCandidateDetails(item)}
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -813,6 +894,10 @@ export default function GedcomImportPage() {
                   const fam = match.gedcomFamily;
                   const currentDecision = famDecisions[fam.gedRefId];
                   const lookupList = familyLookupResults[fam.gedRefId] ?? [];
+                  const isMatchedToNonDefaultFamily =
+                    currentDecision?.action === 'MATCH' &&
+                    currentDecision.targetFamilyId !== null &&
+                    !match.candidates.some(c => c.familyId === currentDecision.targetFamilyId);
 
                   return (
                     <div key={fam.gedRefId} className={styles.matchCard}>
@@ -820,7 +905,8 @@ export default function GedcomImportPage() {
                         <div>
                           <span className={styles.xrefBadge}>{fam.gedRefId}</span>
                           <span className={styles.recordTitle}>
-                            Mąż: {fam.husbandGedRefId ?? '—'} | Żona: {fam.wifeGedRefId ?? '—'}
+                            Mąż: {formatGedcomPersonRef(fam.husbandGedRefId)} | Żona:{' '}
+                            {formatGedcomPersonRef(fam.wifeGedRefId)}
                           </span>
                         </div>
                         <span
@@ -836,6 +922,18 @@ export default function GedcomImportPage() {
                         <div className={styles.gedcomDetailsBox}>
                           <div className={styles.boxSubtitle}>Dane rodziny z pliku GEDCOM</div>
                           <div className={styles.detailRow}>
+                            <span className={styles.detailLabel}>Mąż:</span>
+                            <span className={styles.detailValue}>
+                              {formatGedcomPersonRef(fam.husbandGedRefId)}
+                            </span>
+                          </div>
+                          <div className={styles.detailRow}>
+                            <span className={styles.detailLabel}>Żona:</span>
+                            <span className={styles.detailValue}>
+                              {formatGedcomPersonRef(fam.wifeGedRefId)}
+                            </span>
+                          </div>
+                          <div className={styles.detailRow}>
                             <span className={styles.detailLabel}>Status relacji:</span>
                             <span className={styles.detailValue}>
                               {translateFamilyStatus(fam.statusCode)}
@@ -849,8 +947,16 @@ export default function GedcomImportPage() {
                             </span>
                           </div>
                           <div className={styles.detailRow}>
-                            <span className={styles.detailLabel}>Liczba dzieci:</span>
-                            <span className={styles.detailValue}>{fam.children.length}</span>
+                            <span className={styles.detailLabel}>
+                              Dzieci ({fam.children.length}):
+                            </span>
+                            <span className={styles.detailValue}>
+                              {fam.children.length === 0
+                                ? '—'
+                                : fam.children
+                                    .map(c => formatGedcomPersonRef(c.childGedRefId))
+                                    .join(', ')}
+                            </span>
                           </div>
                         </div>
 
@@ -858,6 +964,12 @@ export default function GedcomImportPage() {
                           <div className={styles.boxSubtitle}>
                             Proponowane rodziny w bazie ({match.candidates.length})
                           </div>
+                          {isMatchedToNonDefaultFamily && (
+                            <div className={styles.manualSelectedBanner}>
+                              ✓ Wybrano ręcznie z wyszukiwarki: rodzina o ID #
+                              {currentDecision.targetFamilyId}
+                            </div>
+                          )}
                           {match.candidates.map(cand => {
                             const isSelected =
                               currentDecision?.action === 'MATCH' &&
@@ -960,29 +1072,46 @@ export default function GedcomImportPage() {
 
                       {lookupList.length > 0 && (
                         <div className={styles.lookupResultsBox}>
-                          {lookupList.map(item => (
-                            <div key={item.familyId} className={styles.lookupResultRow}>
-                              <span>
-                                <strong>
-                                  {item.husbandName ?? '—'} + {item.wifeName ?? '—'}
-                                </strong>{' '}
-                                (ID: #{item.familyId})
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  handleSelectFamilyDecision(
-                                    fam.gedRefId,
-                                    'MATCH',
-                                    item.familyId
-                                  );
-                                }}
-                                className={styles.btnChoice}
+                          {lookupList.map(item => {
+                            const isManualFamSelected =
+                              currentDecision?.action === 'MATCH' &&
+                              currentDecision.targetFamilyId === item.familyId;
+
+                            return (
+                              <div
+                                key={item.familyId}
+                                className={`${styles.candidateItem} ${
+                                  isManualFamSelected ? styles.candidateItemSelected : ''
+                                }`}
                               >
-                                Wybierz tę rodzinę
-                              </button>
-                            </div>
-                          ))}
+                                <div className={styles.candidateTopRow}>
+                                  <span>
+                                    <strong>
+                                      {item.husbandName ?? '—'} + {item.wifeName ?? '—'}
+                                    </strong>{' '}
+                                    (ID: #{item.familyId}, ślub: {item.weddingYear ?? '—'})
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      handleSelectFamilyDecision(
+                                        fam.gedRefId,
+                                        'MATCH',
+                                        item.familyId
+                                      );
+                                    }}
+                                    className={`${styles.btnChoice} ${
+                                      isManualFamSelected ? styles.btnChoiceSelectedMatch : ''
+                                    }`}
+                                  >
+                                    {isManualFamSelected
+                                      ? '✓ Wybrano (połącz)'
+                                      : 'Wybierz tę rodzinę'}
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -1168,7 +1297,7 @@ export default function GedcomImportPage() {
         </section>
       )}
 
-      {/* IMPORT HISTORY SECTION (Responsive Cards - No Horizontal Scroll) */}
+      {/* IMPORT HISTORY SECTION */}
       <section className={styles.card}>
         <h2 className={styles.sectionTitle}>Historia zakończonych importów</h2>
         {history.length === 0 ? (
@@ -1189,7 +1318,7 @@ export default function GedcomImportPage() {
                 </div>
                 <div className={styles.historyCell}>
                   <span className={styles.historyCellLabel}>Źródło</span>
-                  <span className={styles.historyCellValue}>{item.sourceSystem ?? '—'}</span>
+                  <span className={styles.sourceBadge}>{item.sourceSystem ?? '—'}</span>
                 </div>
                 <div className={styles.historyCell}>
                   <span className={styles.historyCellLabel}>Data importu</span>
@@ -1213,6 +1342,8 @@ export default function GedcomImportPage() {
                   <button
                     type="button"
                     data-testid={`restore-session-button-${String(item.sessionId)}`}
+                    
+
                     disabled={isSubmitting || activeSession !== null}
                     onClick={() => {
                       void handleRestoreSession(item.sessionId);

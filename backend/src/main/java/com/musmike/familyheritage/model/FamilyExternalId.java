@@ -6,7 +6,9 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Entity
-@Table(name = "family_external_ids")
+@Table(name = "family_external_ids", uniqueConstraints = {
+        @UniqueConstraint(columnNames = {"source_system", "uid_value"})
+})
 @Getter
 @Setter
 @NoArgsConstructor
@@ -19,10 +21,10 @@ public class FamilyExternalId {
     @JoinColumn(name = "family_id", nullable = false)
     private Family family;
 
-    @Column(name = "uid_value", nullable = false, unique = true, length = 100)
+    @Column(name = "uid_value", nullable = false, length = 100)
     private String uidValue;
 
-    @Column(name = "source_system", length = 100)
+    @Column(name = "source_system", nullable = false, length = 100)
     private String sourceSystem;
 
     public FamilyExternalId(Family family, String uidValue, String sourceSystem) {

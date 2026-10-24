@@ -32,12 +32,20 @@ export interface PersonMatchCandidateDto {
   personId: number;
   givenName: string | null;
   surname: string | null;
+  sex?: string | null;
   birthYear: number | null;
+  birthDate?: string | null;
+  birthPlace?: string | null;
   deathYear: number | null;
+  deathDate?: string | null;
+  deathPlace?: string | null;
+  parentGivenNames?: string[];
+  spouseGivenNames?: string[];
   archived: boolean;
   confidenceScore: number;
   matchReasons: string[];
 }
+
 
 export interface IndividualMatchResultDto {
   gedcomIndividual: ParsedGedcomIndividualDto;

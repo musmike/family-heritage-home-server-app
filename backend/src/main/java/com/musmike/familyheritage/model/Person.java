@@ -52,10 +52,15 @@ public class Person {
         if (uidValue == null || uidValue.isBlank()) {
             return;
         }
+        String normalizedSource = (sourceSystem == null || sourceSystem.isBlank())
+                ? "UNKNOWN"
+                : sourceSystem.trim();
         boolean alreadyExists = externalIds.stream()
-                .anyMatch(ext -> uidValue.equals(ext.getUidValue()));
+                .anyMatch(ext -> uidValue.equals(ext.getUidValue())
+                        && normalizedSource.equalsIgnoreCase(ext.getSourceSystem()));
         if (!alreadyExists) {
-            externalIds.add(new PersonExternalId(this, uidValue, sourceSystem));
+            externalIds.add(new PersonExternalId(this, uidValue, normalizedSource));
         }
     }
+
 }

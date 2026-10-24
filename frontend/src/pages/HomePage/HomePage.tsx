@@ -23,18 +23,20 @@ export default function HomePage() {
     return <div>Błąd: Nie znaleziono użytkownika.</div>;
   }
 
-  const isAdmin =
-    user.roles.includes('ADMIN') || user.roles.includes('ROLE_ADMIN');
+  const normalizedRoles = user.roles.map(r => r.replace(/^ROLE_/, '').toUpperCase());
+  const isAdmin = normalizedRoles.includes('ADMIN');
+  const isGuest = normalizedRoles.includes('GUEST');
 
   return (
     <div className={styles.homeContainer}>
       <div className={styles.topBar}>
         <div>
           <h1 className={styles.welcomeHeading}>
-            Witaj, {user.username}! Jesteś zalogowany jako {formatPolishRole(user.roles)}.
+            {isGuest ? 'Witaj!' : `Witaj, ${user.username}!`} Jesteś zalogowany jako{' '}
+            {formatPolishRole(user.roles)}.
           </h1>
           <p className={styles.welcomeSubtext}>
-            Oto co dzieje się w badaniach historii rodziny:
+            Oto co dzieje się w badaniach historii rodzinnej:
           </p>
         </div>
 

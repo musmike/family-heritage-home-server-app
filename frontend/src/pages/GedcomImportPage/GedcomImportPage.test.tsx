@@ -3,10 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import GedcomImportPage from './GedcomImportPage';
 import { gedcomImportApi } from '../../api/gedcomImportApi';
-import type {
-  ImportSessionHistoryItemDto,
-  ImportSessionResponseDto,
-} from '../../types/gedcomImport';
+import type { ImportSessionResponseDto } from '../../types/gedcomImport';
 
 vi.mock('../../api/gedcomImportApi', () => ({
   gedcomImportApi: {
@@ -57,8 +54,15 @@ describe('GedcomImportPage Component', () => {
             personId: 55,
             givenName: 'Jan',
             surname: 'Kowalski',
+            sex: 'MALE',
             birthYear: 1950,
+            birthDate: '1950',
+            birthPlace: 'Warszawa',
             deathYear: null,
+            deathDate: null,
+            deathPlace: null,
+            parentGivenNames: ['Piotr'],
+            spouseGivenNames: ['Anna'],
             archived: false,
             confidenceScore: 75,
             matchReasons: ['Exact given name and surname match', 'Matching birth year'],
@@ -137,27 +141,6 @@ describe('GedcomImportPage Component', () => {
     },
   };
 
-  const mockHistory: ImportSessionHistoryItemDto[] = [
-    {
-      sessionId: 5,
-      fileName: 'stary_import.ged',
-      status: 'COMPLETED',
-      sourceSystem: 'GRAMPS',
-      createdAt: '2026-10-20T12:00:00',
-      updatedAt: '2026-10-20T12:05:00',
-      summaryPreview: {
-        individualsToCreate: 3,
-        individualsToUpdate: 2,
-        individualsUnchanged: 10,
-        familiesToCreate: 1,
-        familiesToUpdate: 1,
-        familiesUnchanged: 4,
-        familiesToDelete: 0,
-        absentPersonsCount: 0,
-      },
-    },
-  ];
-
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -165,7 +148,6 @@ describe('GedcomImportPage Component', () => {
   it('should allow uploading a GEDCOM file when no active session exists and complete full wizard flow', async () => {
     const mockedApi = vi.mocked(gedcomImportApi);
     mockedApi.getActiveSession.mockResolvedValue(null);
-    mockedApi.getImportHistory.mockResolvedValue(mockHistory);
     mockedApi.createSession.mockResolvedValue(mockStep1Session);
     mockedApi.confirmIndividuals.mockResolvedValue(mockStep2Session);
     mockedApi.confirmFamilies.mockResolvedValue(mockStep3Session);
@@ -180,11 +162,11 @@ describe('GedcomImportPage Component', () => {
       </MemoryRouter>
     );
 
-    // 1. Upload screen is visible alongside import history
+    // 1. Upload screen is visible alongside link to import history
     await waitFor(() => {
       expect(screen.getByTestId('gedcom-file-input')).toBeInTheDocument();
     });
-    expect(screen.getByText('stary_import.ged')).toBeInTheDocument();
+    expect(screen.getByTestId('import-history-nav-button')).toBeInTheDocument();
 
     const file = new File(['0 HEAD\n0 TRLR'], 'drzewo.ged', { type: 'text/plain' });
     fireEvent.change(screen.getByTestId('gedcom-file-input'), {
@@ -239,16 +221,10 @@ describe('GedcomImportPage Component', () => {
     expect(screen.getByTestId('import-success-banner')).toBeInTheDocument();
   });
 
-  it('should allow cancelling an active session and restoring a historical session', async () => {
+  it('should allow cancelling an active session', async () => {
     const mockedApi = vi.mocked(gedcomImportApi);
     mockedApi.getActiveSession.mockResolvedValue(mockStep1Session);
-    mockedApi.getImportHistory.mockResolvedValue(mockHistory);
     mockedApi.cancelSession.mockResolvedValue();
-    mockedApi.restoreSession.mockResolvedValue({
-      ...mockStep3Session,
-      sessionId: 5,
-      status: 'COMPLETED',
-    });
 
     render(
       <MemoryRouter>
@@ -256,22 +232,14 @@ describe('GedcomImportPage Component', () => {
       </MemoryRouter>
     );
 
-    // Active session is resumed
     await waitFor(() => {
       expect(screen.getByTestId('cancel-session-button')).toBeInTheDocument();
     });
 
-    // Cancel active session
     fireEvent.click(screen.getByTestId('cancel-session-button'));
     await waitFor(() => {
       expect(mockedApi.cancelSession).toHaveBeenCalledWith(10);
     });
     expect(screen.getByTestId('gedcom-file-input')).toBeInTheDocument();
-
-    // Restore historical session #5
-    fireEvent.click(screen.getByTestId('restore-session-button-5'));
-    await waitFor(() => {
-      expect(mockedApi.restoreSession).toHaveBeenCalledWith(5);
-    });
   });
 });

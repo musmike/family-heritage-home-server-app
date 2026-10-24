@@ -12,10 +12,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.text.Normalizer;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -122,6 +119,7 @@ public class GedcomPersonMatcher {
         boolean exactSurname = !gedSurname.isEmpty() && gedSurname.equals(dbSurname);
         boolean similarGiven = !gedGiven.isEmpty() && !dbGiven.isEmpty() && levenshteinDistance(gedGiven, dbGiven) <= 2;
         boolean similarSurname = !gedSurname.isEmpty() && !dbSurname.isEmpty() && levenshteinDistance(gedSurname, dbSurname) <= 2;
+        boolean sharedGivenToken = hasSharedNameToken(gedGiven, dbGiven);
 
         if (exactGiven && exactSurname) {
             score += 40;
@@ -132,9 +130,18 @@ public class GedcomPersonMatcher {
         } else if (similarGiven && exactSurname) {
             score += 30;
             reasons.add("Similar given name and exact surname");
+        } else if (sharedGivenToken && exactSurname) {
+            score += 28;
+            reasons.add("Matching surname and partial given name");
         } else if (exactGiven) {
             score += 20;
             reasons.add("Matching given name");
+        } else if (exactSurname) {
+            score += 15;
+            reasons.add("Matching surname");
+        } else if (similarSurname) {
+            score += 10;
+            reasons.add("Similar surname");
         }
 
         // Birth date & place
@@ -164,8 +171,15 @@ public class GedcomPersonMatcher {
         if (parsedDeath != null && parsedDeath.getStartYear() != null && dbCandidate.getDeathYear() != null) {
             int yearDiff = Math.abs(parsedDeath.getStartYear() - dbCandidate.getDeathYear());
             if (yearDiff == 0) {
-                score += 10;
-                reasons.add("Matching death date/year");
+                if (parsedDeath.getStartMonth() != null && parsedDeath.getStartDay() != null
+                        && parsedDeath.getStartMonth().equals(dbCandidate.getDeathMonth())
+                        && parsedDeath.getStartDay().equals(dbCandidate.getDeathDay())) {
+                    score += 15;
+                    reasons.add("Exact death date match");
+                } else {
+                    score += 10;
+                    reasons.add("Matching death date/year");
+                }
             } else if (yearDiff > 5) {
                 score -= 20;
             }
@@ -177,13 +191,19 @@ public class GedcomPersonMatcher {
         }
 
         // Family context (parents & spouses)
-        if (hasCommonNormalizedName(gedIndi.getParentGivenNames(), dbCandidate.getParentGivenNames())) {
+        int matchingParents = countCommonNormalizedNames(
+                gedIndi.getParentGivenNames(), dbCandidate.getParentGivenNames()
+        );
+        if (matchingParents >= 2) {
+            score += 15;
+            reasons.add("Matching both parents' given names");
+        } else if (matchingParents == 1) {
             score += 10;
             reasons.add("Matching parent given name");
         }
 
-        if (hasCommonNormalizedName(gedIndi.getSpouseGivenNames(), dbCandidate.getSpouseGivenNames())) {
-            score += 5;
+        if (countCommonNormalizedNames(gedIndi.getSpouseGivenNames(), dbCandidate.getSpouseGivenNames()) > 0) {
+            score += 10;
             reasons.add("Matching spouse given name");
         }
 
@@ -277,18 +297,32 @@ public class GedcomPersonMatcher {
         return norm1.equals(norm2) || norm1.contains(norm2) || norm2.contains(norm1);
     }
 
-    private boolean hasCommonNormalizedName(Set<String> names1, Set<String> names2) {
-        if (names1 == null || names2 == null || names1.isEmpty() || names2.isEmpty()) {
+    private boolean hasSharedNameToken(String normalizedName1, String normalizedName2) {
+        if (normalizedName1.isEmpty() || normalizedName2.isEmpty()) {
             return false;
+        }
+        Set<String> tokens1 = Arrays.stream(normalizedName1.split("\\s+"))
+                .filter(t -> t.length() >= 3)
+                .collect(Collectors.toSet());
+        return Arrays.stream(normalizedName2.split("\\s+"))
+                .filter(t -> t.length() >= 3)
+                .anyMatch(tokens1::contains);
+    }
+
+    private int countCommonNormalizedNames(Set<String> names1, Set<String> names2) {
+        if (names1 == null || names2 == null || names1.isEmpty() || names2.isEmpty()) {
+            return 0;
         }
         Set<String> norm1 = names1.stream()
                 .map(this::normalizeText)
                 .filter(s -> !s.isEmpty())
                 .collect(Collectors.toSet());
-        return names2.stream()
+        return (int) names2.stream()
                 .map(this::normalizeText)
                 .filter(s -> !s.isEmpty())
-                .anyMatch(norm1::contains);
+                .distinct()
+                .filter(norm1::contains)
+                .count();
     }
 
     private String normalizeText(String input) {

@@ -89,3 +89,17 @@
     display: none;
   }
 }
+
+.userBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  height: 38px;
+  padding: 0 0.85rem;
+  background-color: #f1f5f9;
+  color: #1e293b;
+  font-size: 0.88rem;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}

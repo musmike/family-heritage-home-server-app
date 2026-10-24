@@ -8,7 +8,6 @@ import type {
   DecisionAction,
   FamilyDecisionDto,
   FamilyMatchCandidateDto,
-  ImportSessionHistoryItemDto,
   ImportSessionResponseDto,
   IndividualDecisionDto,
   MatchClassification,
@@ -23,12 +22,17 @@ const MATCH_REASON_LABELS: Record<string, string | undefined> = {
   'Exact given name and surname match': 'Dokładna zgodność imienia i nazwiska',
   'Exact given name and similar surname': 'Zgodne imię i podobne nazwisko',
   'Similar given name and exact surname': 'Podobne imię i zgodne nazwisko',
+  'Matching surname and partial given name': 'Zgodne nazwisko oraz jeden z członów imienia',
   'Matching given name': 'Zgodne imię',
+  'Matching surname': 'Zgodne nazwisko',
+  'Similar surname': 'Podobne nazwisko',
   'Exact birth date match': 'Zgodna dokładna data urodzenia',
   'Matching birth year': 'Zgodny rok urodzenia',
   'Matching birth place': 'Zgodne miejsce urodzenia',
-  'Matching death date/year': 'Zgodna data lub rok śmierci',
+  'Exact death date match': 'Zgodna dokładna data śmierci',
+  'Matching death date/year': 'Zgodny rok śmierci',
   'Matching death place': 'Zgodne miejsce śmierci',
+  "Matching both parents' given names": 'Zgodne imiona obojga rodziców',
   'Matching parent given name': 'Zgodne imię rodzica',
   'Matching spouse given name': 'Zgodne imię małżonka',
   'Matching GEDCOM reference ID': 'Zgodny identyfikator referencyjny GEDCOM',
@@ -97,17 +101,6 @@ const translateClassification = (classification: MatchClassification): string =>
   }
 };
 
-const formatPolishDateTime = (isoDate: string): string => {
-  const parsed = new Date(isoDate);
-  if (Number.isNaN(parsed.getTime())) {
-    return isoDate;
-  }
-  return new Intl.DateTimeFormat('pl-PL', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(parsed);
-};
-
 const renderCandidateDetails = (cand: PersonMatchCandidateDto) => {
   const birthInfo = cand.birthDate ?? (cand.birthYear !== null ? String(cand.birthYear) : '—');
   const deathInfo = cand.deathDate ?? (cand.deathYear !== null ? String(cand.deathYear) : '—');
@@ -144,7 +137,6 @@ const renderCandidateDetails = (cand: PersonMatchCandidateDto) => {
 export default function GedcomImportPage() {
   const [activeSession, setActiveSession] = useState<ImportSessionResponseDto | null>(null);
   const [viewStep, setViewStep] = useState<WizardViewStep>('INDIVIDUALS');
-  const [history, setHistory] = useState<ImportSessionHistoryItemDto[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -176,7 +168,6 @@ export default function GedcomImportPage() {
     Record<string, FamilyMatchCandidateDto[] | undefined>
   >({});
 
-  // Map GEDCOM individual XREF (@I1@) -> "Imię Nazwisko (@I1@)" for display in Families step
   const gedcomPersonLabelsByRef = useMemo(() => {
     const map: Record<string, string | undefined> = {};
     if (!activeSession) return map;
@@ -237,11 +228,7 @@ export default function GedcomImportPage() {
     setIsLoading(true);
     setErrorMessage(null);
     try {
-      const [active, hist] = await Promise.all([
-        gedcomImportApi.getActiveSession(),
-        gedcomImportApi.getImportHistory(),
-      ]);
-      setHistory(hist);
+      const active = await gedcomImportApi.getActiveSession();
       if (active) {
         setActiveSession(active);
         syncLocalDecisionsFromSession(active);
@@ -395,28 +382,10 @@ export default function GedcomImportPage() {
           action,
         }));
       await gedcomImportApi.applySession(activeSession.sessionId, payload);
-      const updatedHistory = await gedcomImportApi.getImportHistory();
-      setHistory(updatedHistory);
       setActiveSession(null);
       setSuccessMessage('Import pliku GEDCOM został pomyślnie zatwierdzony i zapisany w bazie!');
     } catch {
       setErrorMessage('Wystąpił błąd podczas zapisywania importu.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleRestoreSession = async (sessionId: number) => {
-    setIsSubmitting(true);
-    setErrorMessage(null);
-    setSuccessMessage(null);
-    try {
-      await gedcomImportApi.restoreSession(sessionId);
-      const updatedHistory = await gedcomImportApi.getImportHistory();
-      setHistory(updatedHistory);
-      setSuccessMessage('Pomyślnie przywrócono stan drzewa z wybranego importu!');
-    } catch {
-      setErrorMessage('Nie udało się przywrócić wybranego importu.');
     } finally {
       setIsSubmitting(false);
     }
@@ -471,6 +440,13 @@ export default function GedcomImportPage() {
         <div className={styles.headerActions}>
           <Link to="/" className={styles.btnSecondary}>
             ← Panel główny
+          </Link>
+          <Link
+            to="/gedcom-import/history"
+            data-testid="import-history-nav-button"
+            className={styles.btnSecondary}
+          >
+            🕓 Historia importów
           </Link>
           {activeSession && (
             <button
@@ -1148,56 +1124,71 @@ export default function GedcomImportPage() {
           {viewStep === 'SUMMARY' && (
             <div className={styles.matchList}>
               {activeSession.summaryPreview && (
-                <div className={styles.summaryGrid}>
-                  <div className={styles.statCard}>
-                    <span className={styles.statLabel}>Nowe osoby</span>
-                    <span className={styles.statValue}>
-                      +{activeSession.summaryPreview.individualsToCreate}
-                    </span>
+                <>
+                  <div className={styles.summarySection}>
+                    <h3 className={styles.summarySectionTitle}>Podsumowanie osób</h3>
+                    <div className={styles.summaryGrid}>
+                      <div className={styles.statCard}>
+                        <span className={styles.statLabel}>Osoby bez zmian</span>
+                        <span className={styles.statValue}>
+                          {activeSession.summaryPreview.individualsUnchanged}
+                        </span>
+                      </div>
+                      <div className={styles.statCard}>
+                        <span className={styles.statLabel}>Nowe osoby</span>
+                        <span className={styles.statValue}>
+                          {activeSession.summaryPreview.individualsToCreate > 0
+                            ? `+${String(activeSession.summaryPreview.individualsToCreate)}`
+                            : '0'}
+                        </span>
+                      </div>
+                      <div className={styles.statCard}>
+                        <span className={styles.statLabel}>Aktualizowane osoby</span>
+                        <span className={styles.statValue}>
+                          {activeSession.summaryPreview.individualsToUpdate}
+                        </span>
+                      </div>
+                      <div className={styles.statCard}>
+                        <span className={styles.statLabel}>Usuwane/archiwizowane osoby</span>
+                        <span className={styles.statValue}>
+                          {activeSession.summaryPreview.absentPersonsCount}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <div className={styles.statCard}>
-                    <span className={styles.statLabel}>Aktualizowane osoby</span>
-                    <span className={styles.statValue}>
-                      {activeSession.summaryPreview.individualsToUpdate}
-                    </span>
+
+                  <div className={styles.summarySection}>
+                    <h3 className={styles.summarySectionTitle}>Podsumowanie rodzin</h3>
+                    <div className={styles.summaryGrid}>
+                      <div className={styles.statCard}>
+                        <span className={styles.statLabel}>Rodziny bez zmian</span>
+                        <span className={styles.statValue}>
+                          {activeSession.summaryPreview.familiesUnchanged}
+                        </span>
+                      </div>
+                      <div className={styles.statCard}>
+                        <span className={styles.statLabel}>Nowe rodziny</span>
+                        <span className={styles.statValue}>
+                          {activeSession.summaryPreview.familiesToCreate > 0
+                            ? `+${String(activeSession.summaryPreview.familiesToCreate)}`
+                            : '0'}
+                        </span>
+                      </div>
+                      <div className={styles.statCard}>
+                        <span className={styles.statLabel}>Aktualizowane rodziny</span>
+                        <span className={styles.statValue}>
+                          {activeSession.summaryPreview.familiesToUpdate}
+                        </span>
+                      </div>
+                      <div className={styles.statCard}>
+                        <span className={styles.statLabel}>Usuwane rodziny</span>
+                        <span className={styles.statValue}>
+                          {activeSession.summaryPreview.familiesToDelete}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <div className={styles.statCard}>
-                    <span className={styles.statLabel}>Osoby bez zmian</span>
-                    <span className={styles.statValue}>
-                      {activeSession.summaryPreview.individualsUnchanged}
-                    </span>
-                  </div>
-                  <div className={styles.statCard}>
-                    <span className={styles.statLabel}>Nieobecne osoby z bazy</span>
-                    <span className={styles.statValue}>
-                      {activeSession.summaryPreview.absentPersonsCount}
-                    </span>
-                  </div>
-                  <div className={styles.statCard}>
-                    <span className={styles.statLabel}>Nowe rodziny</span>
-                    <span className={styles.statValue}>
-                      +{activeSession.summaryPreview.familiesToCreate}
-                    </span>
-                  </div>
-                  <div className={styles.statCard}>
-                    <span className={styles.statLabel}>Aktualizowane rodziny</span>
-                    <span className={styles.statValue}>
-                      {activeSession.summaryPreview.familiesToUpdate}
-                    </span>
-                  </div>
-                  <div className={styles.statCard}>
-                    <span className={styles.statLabel}>Rodziny bez zmian</span>
-                    <span className={styles.statValue}>
-                      {activeSession.summaryPreview.familiesUnchanged}
-                    </span>
-                  </div>
-                  <div className={styles.statCard}>
-                    <span className={styles.statLabel}>Usuwane rodziny</span>
-                    <span className={styles.statValue}>
-                      {activeSession.summaryPreview.familiesToDelete}
-                    </span>
-                  </div>
-                </div>
+                </>
               )}
 
               {activeSession.absentPeople.length > 0 && (
@@ -1296,68 +1287,6 @@ export default function GedcomImportPage() {
           )}
         </section>
       )}
-
-      {/* IMPORT HISTORY SECTION */}
-      <section className={styles.card}>
-        <h2 className={styles.sectionTitle}>Historia zakończonych importów</h2>
-        {history.length === 0 ? (
-          <p className={styles.pageSubtitle}>Brak zakończonych importów w historii.</p>
-        ) : (
-          <div className={styles.historyList}>
-            {history.map(item => (
-              <div key={item.sessionId} className={styles.historyCard}>
-                <div className={styles.historyCell}>
-                  <span className={styles.historyCellLabel}>Sesja</span>
-                  <span className={styles.historyCellValue}>
-                    <span className={styles.xrefBadge}>#{item.sessionId}</span>
-                  </span>
-                </div>
-                <div className={styles.historyCell}>
-                  <span className={styles.historyCellLabel}>Nazwa pliku</span>
-                  <strong className={styles.historyCellValue}>{item.fileName ?? '—'}</strong>
-                </div>
-                <div className={styles.historyCell}>
-                  <span className={styles.historyCellLabel}>Źródło</span>
-                  <span className={styles.sourceBadge}>{item.sourceSystem ?? '—'}</span>
-                </div>
-                <div className={styles.historyCell}>
-                  <span className={styles.historyCellLabel}>Data importu</span>
-                  <span className={styles.historyCellValue}>
-                    {formatPolishDateTime(item.createdAt)}
-                  </span>
-                </div>
-                <div className={styles.historyCell}>
-                  <span className={styles.historyCellLabel}>Podsumowanie osób</span>
-                  <span className={styles.historyCellValue}>
-                    {item.summaryPreview
-                      ? `Nowe: ${String(
-                          item.summaryPreview.individualsToCreate
-                        )}, zaktualizowane: ${String(
-                          item.summaryPreview.individualsToUpdate
-                        )}, bez zmian: ${String(item.summaryPreview.individualsUnchanged)}`
-                      : '—'}
-                  </span>
-                </div>
-                <div className={styles.historyCell}>
-                  <button
-                    type="button"
-                    data-testid={`restore-session-button-${String(item.sessionId)}`}
-                    
-
-                    disabled={isSubmitting || activeSession !== null}
-                    onClick={() => {
-                      void handleRestoreSession(item.sessionId);
-                    }}
-                    className={styles.btnSecondary}
-                  >
-                    ↺ Przywróć ten stan
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
     </div>
   );
 }

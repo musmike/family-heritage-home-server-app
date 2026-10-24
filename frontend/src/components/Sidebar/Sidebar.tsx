@@ -8,6 +8,7 @@ interface NavItem {
   name: string;
   path: string;
   icon: ReactNode;
+  disabled?: boolean;
 }
 
 export default function Sidebar() {
@@ -50,8 +51,9 @@ export default function Sidebar() {
       ),
     },
     {
-      name: 'Wspomnienia i powiedzenia',
+      name: 'Wspomnienia i cytaty',
       path: '/memories',
+      disabled: true,
       icon: (
         <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={styles.navSvg}>
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -61,6 +63,7 @@ export default function Sidebar() {
     {
       name: 'Dziennik',
       path: '/journal',
+      disabled: true,
       icon: (
         <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={styles.navSvg}>
           <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
@@ -88,6 +91,7 @@ export default function Sidebar() {
     {
       name: 'Statystyki',
       path: '/statistics',
+      disabled: true,
       icon: (
         <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={styles.navSvg}>
           <line x1="18" y1="20" x2="18" y2="10" />
@@ -100,6 +104,7 @@ export default function Sidebar() {
     {
       name: 'Galeria',
       path: '/gallery',
+      disabled: true,
       icon: (
         <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={styles.navSvg}>
           <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
@@ -111,6 +116,7 @@ export default function Sidebar() {
     {
       name: 'Dokumenty',
       path: '/documents',
+      disabled: true,
       icon: (
         <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={styles.navSvg}>
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -121,7 +127,7 @@ export default function Sidebar() {
       ),
     },
     {
-      name: 'Nagrobki',
+      name: 'Pochówki',
       path: '/gravestones',
       icon: (
         <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={styles.navSvg}>
@@ -135,6 +141,7 @@ export default function Sidebar() {
     {
       name: 'Miejsca',
       path: '/places',
+      disabled: true,
       icon: (
         <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={styles.navSvg}>
           <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
@@ -145,6 +152,7 @@ export default function Sidebar() {
     {
       name: 'Pamiątki',
       path: '/heirlooms',
+      disabled: true,
       icon: (
         <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={styles.navSvg}>
           <polyline points="20 12 20 22 4 22 4 12" />
@@ -206,6 +214,23 @@ export default function Sidebar() {
                     className={styles.sidebarDivider}
                     role="separator"
                   />
+                );
+              }
+              if (item.disabled) {
+                return (
+                  <li key={item.name}>
+                    <span
+                      role="link"
+                      aria-disabled="true"
+                      title="Funkcja w przygotowaniu"
+                      className={`${styles.sidebarNavLink} ${styles.sidebarNavLinkDisabled}`}
+                    >
+                      <span className={styles.navIcon}>{item.icon}</span>
+                      <span className={styles.navText} style={{ whiteSpace: 'normal' }}>
+                        {item.name}
+                      </span>
+                    </span>
+                  </li>
                 );
               }
               return (

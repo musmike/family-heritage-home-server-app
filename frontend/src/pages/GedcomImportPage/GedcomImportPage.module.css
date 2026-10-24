@@ -511,11 +511,35 @@
   font-size: 0.84rem;
 }
 
-/* Summary Grid (8 separate clear tiles) */
+/* Summary Sections (4 tiles per row) */
+.summarySection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.summarySectionTitle {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #334155;
+}
+
 .summaryGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(4, 1fr);
   gap: 0.85rem;
+}
+
+@media (max-width: 900px) {
+  .summaryGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 500px) {
+  .summaryGrid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .statCard {

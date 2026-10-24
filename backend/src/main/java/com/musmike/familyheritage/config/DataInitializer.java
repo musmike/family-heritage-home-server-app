@@ -1,7 +1,7 @@
 package com.musmike.familyheritage.config;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 import com.musmike.familyheritage.dto.UserSeedDto;
 import com.musmike.familyheritage.model.enums.UserRole;
 import com.musmike.familyheritage.model.User;

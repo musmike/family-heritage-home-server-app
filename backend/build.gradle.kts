@@ -1,6 +1,6 @@
 plugins {
 	java
-	id("org.springframework.boot") version "3.5.5"
+	id("org.springframework.boot") version "4.0.9"
 	id("io.spring.dependency-management") version "1.1.7"
 	id("jacoco")
 }
@@ -25,6 +25,8 @@ repositories {
 	mavenCentral()
 }
 
+extra["postgresql.version"] = "42.7.12"
+
 val mockitoAgent by configurations.creating
 
 dependencies {
@@ -32,18 +34,22 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-actuator")
 	implementation("org.springframework.boot:spring-boot-starter-security")
 	implementation("org.springframework.boot:spring-boot-starter-validation")
-	implementation("org.springframework.boot:spring-boot-starter-web")
-	developmentOnly("org.springframework.boot:spring-boot-devtools")
+	implementation("org.springframework.boot:spring-boot-starter-webmvc")
+	implementation("org.springframework.boot:spring-boot-starter-flyway")
+	developmentOnly("org.springframework.boot:spring-boot-starter-devtools")
 	runtimeOnly("org.postgresql:postgresql")
 	annotationProcessor("org.springframework.boot:spring-boot-configuration-processor")
+
 	testImplementation("org.springframework.boot:spring-boot-starter-test")
-	testImplementation("org.springframework.security:spring-security-test")
+	testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
+	testImplementation("org.springframework.boot:spring-boot-starter-security-test")
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 	testImplementation("org.testcontainers:junit-jupiter:1.21.4")
 	testImplementation("org.testcontainers:postgresql:1.21.4")
-	implementation("io.jsonwebtoken:jjwt-api:0.12.5")
-	runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.5")
-	runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.5")
+
+	implementation("io.jsonwebtoken:jjwt-api:0.13.0")
+	runtimeOnly("io.jsonwebtoken:jjwt-impl:0.13.0")
+	runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.13.0")
 
 	// Lombok for main source
 	compileOnly("org.projectlombok:lombok")
@@ -53,12 +59,13 @@ dependencies {
 	testCompileOnly("org.projectlombok:lombok")
 	testAnnotationProcessor("org.projectlombok:lombok")
 
-	// Flyway
-	implementation("org.flywaydb:flyway-core")
+	// Flyway PostgreSQL support
 	implementation("org.flywaydb:flyway-database-postgresql")
 
-	// Gedcom4j
-	implementation("org.gedcom4j:gedcom4j:4.0.1")
+	// Gedcom4j (without legacy Maven plugin transitive dependencies)
+	implementation("org.gedcom4j:gedcom4j:4.0.1") {
+		isTransitive = false
+	}
 
 	mockitoAgent("org.mockito:mockito-core:5.18.0") {
 		isTransitive = false
@@ -66,9 +73,10 @@ dependencies {
 }
 
 dependencyManagement {
-    imports {
-        mavenBom("org.testcontainers:testcontainers-bom:1.19.7")
-    }
+	imports {
+		mavenBom("org.testcontainers:testcontainers-bom:1.21.4")
+		mavenBom("com.fasterxml.jackson:jackson-bom:2.22.3")
+	}
 }
 
 jacoco {

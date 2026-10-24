@@ -1,6 +1,6 @@
 package com.musmike.familyheritage.unit.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.musmike.familyheritage.config.DataInitializer;
 import com.musmike.familyheritage.model.User;
 import com.musmike.familyheritage.model.enums.UserRole;

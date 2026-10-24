@@ -1,7 +1,7 @@
 package com.musmike.familyheritage.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.musmike.familyheritage.dto.*;
 import com.musmike.familyheritage.model.*;
 import com.musmike.familyheritage.model.enums.AbsentPersonAction;
@@ -640,7 +640,7 @@ public class GedcomImportSessionService {
     private String serializeState(ImportSessionStateDto state) {
         try {
             return objectMapper.writeValueAsString(state);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new IllegalStateException("Failed to serialize import session state", e);
         }
     }
@@ -648,7 +648,7 @@ public class GedcomImportSessionService {
     private ImportSessionStateDto deserializeState(String json) {
         try {
             return objectMapper.readValue(json, ImportSessionStateDto.class);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new IllegalStateException("Failed to deserialize import session state", e);
         }
     }

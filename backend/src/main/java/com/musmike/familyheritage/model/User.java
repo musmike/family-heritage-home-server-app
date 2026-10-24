@@ -1,12 +1,16 @@
 package com.musmike.familyheritage.model;
 
+import com.musmike.familyheritage.model.enums.UserRole;
 import jakarta.persistence.*;
-import lombok.Data;
+
+import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 @Entity
 @Table(name = "users")
-@Data
+@Getter
+@Setter
 @NoArgsConstructor
 public class User {
     @Id
@@ -21,5 +25,5 @@ public class User {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private Role role;
+    private UserRole role;
 }

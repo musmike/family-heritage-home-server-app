@@ -31,4 +31,10 @@ export default [
       globals: globals.browser,
     },
   },
+  {
+    files: ['**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/unbound-method': 'off',
+    },
+  },
 ]

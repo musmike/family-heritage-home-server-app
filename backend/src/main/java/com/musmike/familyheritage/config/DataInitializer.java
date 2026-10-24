@@ -3,7 +3,7 @@ package com.musmike.familyheritage.config;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.musmike.familyheritage.dto.UserSeedDto;
-import com.musmike.familyheritage.model.Role;
+import com.musmike.familyheritage.model.enums.UserRole;
 import com.musmike.familyheritage.model.User;
 import com.musmike.familyheritage.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -75,10 +75,10 @@ public class DataInitializer implements CommandLineRunner {
 
         // 1. Check role
         try {
-            Role vaultRole = Role.valueOf(dto.getRole());
-            if (!existingUser.getRole().equals(vaultRole)) {
-                log.info("Role changed for {}: {} -> {}", dto.getUsername(), existingUser.getRole(), vaultRole);
-                existingUser.setRole(vaultRole);
+            UserRole vaultUserRole = UserRole.valueOf(dto.getRole());
+            if (!existingUser.getRole().equals(vaultUserRole)) {
+                log.info("Role changed for {}: {} -> {}", dto.getUsername(), existingUser.getRole(), vaultUserRole);
+                existingUser.setRole(vaultUserRole);
                 needsUpdate = true;
             }
         } catch (IllegalArgumentException e) {
@@ -108,7 +108,7 @@ public class DataInitializer implements CommandLineRunner {
             User newUser = new User();
             newUser.setUsername(dto.getUsername());
             newUser.setPassword(passwordEncoder.encode(dto.getPassword()));
-            newUser.setRole(Role.valueOf(dto.getRole()));
+            newUser.setRole(UserRole.valueOf(dto.getRole()));
             userRepository.save(newUser);
             log.info("Created new user: {}", dto.getUsername());
         } catch (Exception e) {

@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => {
     base: env.VITE_BASE || '/',
     plugins: [react(), tailwindcss()],
     server: {
-      host: true,
+      host: '127.0.0.1',
       port: 3000,
       watch: {
         usePolling: true,

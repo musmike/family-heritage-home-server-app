@@ -1,4 +1,3 @@
-// /home/musmike/Documents/projects/github_projects/family-heritage-home-server-app/backend/src/main/java/com/musmike/familyheritage/config/CsrfTokenFilter.java
 package com.musmike.familyheritage.config;
 
 import jakarta.servlet.FilterChain;
@@ -7,7 +6,7 @@ import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpMethod;
-import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -26,14 +25,12 @@ public class CsrfTokenFilter extends OncePerRequestFilter {
             Arrays.asList(HttpMethod.GET.name(), HttpMethod.HEAD.name(), HttpMethod.OPTIONS.name(), HttpMethod.TRACE.name())
     );
 
-    // Lista ścieżek, które mają być ignorowane przez filtr CSRF
-    private final RequestMatcher authEndpointsMatcher = new AntPathRequestMatcher("/auth/**");
+    private final RequestMatcher authEndpointsMatcher = PathPatternRequestMatcher.withDefaults().matcher("/auth/**");
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
 
-        // Jeśli żądanie pasuje do ścieżek /api/auth/**, pomiń filtr
         if (authEndpointsMatcher.matches(request)) {
             filterChain.doFilter(request, response);
             return;

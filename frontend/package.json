@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host",
+    "dev": "vite",
     "build": "tsc -b && vite build",
     "lint:dev": "eslint src --ext .ts,.tsx -c eslint.config.dev.js --cache",
     "lint:prod": "eslint src --ext .ts,.tsx -c eslint.config.js",
@@ -18,6 +18,7 @@
     "jwt-decode": "^4.0.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
+    "react-router-dom": "^7.8.2",
     "tailwindcss": "^4.1.13"
   },
   "devDependencies": {
@@ -30,7 +31,7 @@
     "@typescript-eslint/eslint-plugin": "^8.44.1",
     "@typescript-eslint/parser": "^8.44.1",
     "@vitejs/plugin-react-swc": "^4.0.0",
-    "@vitest/coverage-v8": "^3.2.4",
+    "@vitest/coverage-v8": "^5.0.5",
     "eslint": "^9.36.0",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-dom": "^1.53.1",
@@ -39,10 +40,9 @@
     "eslint-plugin-react-x": "^1.53.1",
     "globals": "^16.3.0",
     "jsdom": "^26.1.0",
-    "react-router-dom": "^7.8.2",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.39.1",
     "vite": "^7.1.2",
-    "vitest": "^3.2.4"
+    "vitest": "^5.0.5"
   }
 }

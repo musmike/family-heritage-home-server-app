@@ -156,7 +156,8 @@ class GedcomImportSessionServiceTest extends AbstractIntegrationTest {
         );
 
         assertThat(step3.getStatus()).isEqualTo(ImportSessionStatus.REVIEW_SUMMARY);
-        assertThat(step3.getSummaryPreview().getIndividualsToUpdate()).isEqualTo(2);
+        assertThat(step3.getSummaryPreview().getIndividualsToUpdate()).isEqualTo(1);
+        assertThat(step3.getSummaryPreview().getIndividualsUnchanged()).isEqualTo(1);
         assertThat(step3.getSummaryPreview().getIndividualsToCreate()).isZero();
         assertThat(step3.getSummaryPreview().getFamiliesToUpdate()).isEqualTo(1);
         assertThat(step3.getAbsentPeople())

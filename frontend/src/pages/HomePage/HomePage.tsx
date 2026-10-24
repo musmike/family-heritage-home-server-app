@@ -29,7 +29,7 @@ export default function HomePage() {
             className={styles.importBtn}
           >
             <span>📥</span>
-            <span>Import GEDCOM</span>
+            <span>Import pliku GEDCOM</span>
           </Link>
         )}
       </div>

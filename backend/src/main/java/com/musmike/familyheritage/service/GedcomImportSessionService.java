@@ -590,27 +590,142 @@ public class GedcomImportSessionService {
     }
 
     private ImportSummaryPreviewDto buildSummaryPreview(ImportSessionStateDto state, int absentPersonsCount) {
-        int indiCreate = (int) state.getIndividualMatches().stream()
-                .filter(m -> m.getSelectedAction() == DecisionAction.CREATE_NEW).count();
-        int indiUpdate = (int) state.getIndividualMatches().stream()
-                .filter(m -> m.getSelectedAction() == DecisionAction.MATCH).count();
+        int indiCreate = 0;
+        int indiUpdate = 0;
+        int indiUnchanged = 0;
 
-        int famCreate = (int) state.getFamilyMatches().stream()
-                .filter(m -> m.getSelectedAction() == DecisionAction.CREATE_NEW).count();
-        int famUpdate = (int) state.getFamilyMatches().stream()
-                .filter(m -> m.getSelectedAction() == DecisionAction.MATCH).count();
+        Map<String, Long> previewResolvedPersonIds = new HashMap<>();
+
+        for (IndividualMatchResultDto m : state.getIndividualMatches()) {
+            if (m.getSelectedAction() == DecisionAction.CREATE_NEW) {
+                indiCreate++;
+            } else if (m.getSelectedAction() == DecisionAction.MATCH && m.getSelectedTargetPersonId() != null) {
+                previewResolvedPersonIds.put(m.getGedcomIndividual().getGedRefId(), m.getSelectedTargetPersonId());
+                Person existing = personRepository.findById(m.getSelectedTargetPersonId()).orElse(null);
+                if (existing == null || hasIndividualChanged(m.getGedcomIndividual(), existing)) {
+                    indiUpdate++;
+                } else {
+                    indiUnchanged++;
+                }
+            }
+        }
+
+        int famCreate = 0;
+        int famUpdate = 0;
+        int famUnchanged = 0;
+
+        for (FamilyMatchResultDto m : state.getFamilyMatches()) {
+            if (m.getSelectedAction() == DecisionAction.CREATE_NEW) {
+                famCreate++;
+            } else if (m.getSelectedAction() == DecisionAction.MATCH && m.getSelectedTargetFamilyId() != null) {
+                Family existing = familyRepository.findById(m.getSelectedTargetFamilyId()).orElse(null);
+                if (existing == null || hasFamilyChanged(m.getGedcomFamily(), existing, previewResolvedPersonIds)) {
+                    famUpdate++;
+                } else {
+                    famUnchanged++;
+                }
+            }
+        }
 
         long totalDbFamilies = familyRepository.count();
-        int famDelete = Math.max(0, (int) totalDbFamilies - famUpdate);
+        int matchedFamiliesCount = famUpdate + famUnchanged;
+        int famDelete = Math.max(0, (int) totalDbFamilies - matchedFamiliesCount);
 
         return ImportSummaryPreviewDto.builder()
                 .individualsToCreate(indiCreate)
                 .individualsToUpdate(indiUpdate)
+                .individualsUnchanged(indiUnchanged)
                 .familiesToCreate(famCreate)
                 .familiesToUpdate(famUpdate)
+                .familiesUnchanged(famUnchanged)
                 .familiesToDelete(famDelete)
                 .absentPersonsCount(absentPersonsCount)
                 .build();
+    }
+
+    private boolean hasIndividualChanged(ParsedGedcomIndividualDto gedIndi, Person existing) {
+        if (Boolean.TRUE.equals(existing.getIsArchived())) {
+            return true;
+        }
+        PersonGedcomData raw = existing.getGedcomData();
+        if (raw == null) {
+            return true;
+        }
+        if (gedIndi.getGedUid() != null && !gedIndi.getGedUid().isBlank()) {
+            boolean uidKnown = existing.getExternalIds().stream()
+                    .anyMatch(ext -> gedIndi.getGedUid().equals(ext.getUidValue()));
+            if (!uidKnown) {
+                return true;
+            }
+        }
+        return !Objects.equals(nullToEmpty(gedIndi.getGivenName()), nullToEmpty(raw.getRawGivenName()))
+                || !Objects.equals(nullToEmpty(gedIndi.getSurname()), nullToEmpty(raw.getRawSurname()))
+                || !Objects.equals(gedIndi.getSex(), raw.getRawSex())
+                || gedIndi.isDeathIndicated() != Boolean.TRUE.equals(raw.getRawDeathIndicated())
+                || !Objects.equals(gedIndi.getBirthDate(), raw.getRawBirthDate())
+                || !Objects.equals(gedIndi.getBirthPlace(), raw.getRawBirthPlace())
+                || !Objects.equals(gedIndi.getDeathDate(), raw.getRawDeathDate())
+                || !Objects.equals(gedIndi.getDeathPlace(), raw.getRawDeathPlace())
+                || !Objects.equals(gedIndi.getCauseOfDeath(), raw.getRawCauseOfDeath())
+                || !Objects.equals(gedIndi.getBurialPlace(), raw.getRawBurialPlace());
+    }
+
+    private boolean hasFamilyChanged(
+            ParsedGedcomFamilyDto gedFam,
+            Family existing,
+            Map<String, Long> resolvedPersonIds
+    ) {
+        FamilyGedcomData raw = existing.getGedcomData();
+        if (raw == null) {
+            return true;
+        }
+        if (gedFam.getGedUid() != null && !gedFam.getGedUid().isBlank()) {
+            boolean uidKnown = existing.getExternalIds().stream()
+                    .anyMatch(ext -> gedFam.getGedUid().equals(ext.getUidValue()));
+            if (!uidKnown) {
+                return true;
+            }
+        }
+
+        Long expectedHusbId = gedFam.getHusbandGedRefId() != null
+                ? resolvedPersonIds.get(gedFam.getHusbandGedRefId()) : null;
+        Long expectedWifeId = gedFam.getWifeGedRefId() != null
+                ? resolvedPersonIds.get(gedFam.getWifeGedRefId()) : null;
+
+        Long currentHusbId = existing.getHusband() != null ? existing.getHusband().getId() : null;
+        Long currentWifeId = existing.getWife() != null ? existing.getWife().getId() : null;
+
+        if (!Objects.equals(expectedHusbId, currentHusbId) || !Objects.equals(expectedWifeId, currentWifeId)) {
+            return true;
+        }
+
+        if (!Objects.equals(gedFam.getStatusCode(), raw.getRawStatus())
+                || !Objects.equals(gedFam.getWeddingDate(), raw.getRawWeddingDate())
+                || !Objects.equals(gedFam.getWeddingPlace(), raw.getRawWeddingPlace())) {
+            return true;
+        }
+
+        List<ParsedGedcomChildLinkDto> gedChildren = gedFam.getChildren() != null ? gedFam.getChildren() : List.of();
+        if (gedChildren.size() != existing.getChildren().size()) {
+            return true;
+        }
+
+        Set<Long> existingChildPersonIds = existing.getChildren().stream()
+                .map(fc -> fc.getChild().getId())
+                .collect(Collectors.toSet());
+
+        for (ParsedGedcomChildLinkDto childLink : gedChildren) {
+            Long resolvedChildId = resolvedPersonIds.get(childLink.getChildGedRefId());
+            if (resolvedChildId == null || !existingChildPersonIds.contains(resolvedChildId)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private String nullToEmpty(String s) {
+        return s == null ? "" : s;
     }
 
     private GedcomImportSession findSessionOrThrow(Long sessionId) {

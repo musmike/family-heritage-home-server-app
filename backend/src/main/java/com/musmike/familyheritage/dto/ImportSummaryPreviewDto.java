@@ -12,8 +12,10 @@ import lombok.NoArgsConstructor;
 public class ImportSummaryPreviewDto {
     private int individualsToCreate;
     private int individualsToUpdate;
+    private int individualsUnchanged;
     private int familiesToCreate;
     private int familiesToUpdate;
+    private int familiesUnchanged;
     private int familiesToDelete;
     private int absentPersonsCount;
 }

@@ -29,7 +29,7 @@ api.interceptors.request.use(config => {
 });
 
 let isRefreshing = false;
-let failedQueue: { resolve: (value: unknown) => void; reject: (reason?: unknown) => void; }[] = [];
+let failedQueue: { resolve: (value: unknown) => void; reject: (reason?: unknown) => void }[] = [];
 
 const processQueue = (error: Error | null, token: string | null = null) => {
   failedQueue.forEach(prom => {
@@ -56,17 +56,20 @@ api.interceptors.response.use(
         return Promise.reject(error);
       }
 
-      if (originalRequest.url === '/auth/login') {
+      if (originalRequest.url === '/auth/login' || originalRequest.url === '/auth/refresh') {
         return Promise.reject(error);
       }
 
-      if (error.response?.status === 401 && !originalRequest._retry) {
+      const status = error.response?.status;
+      if ((status === 401 || status === 403) && !originalRequest._retry) {
         if (isRefreshing) {
           return new Promise(function (resolve, reject) {
             failedQueue.push({ resolve, reject });
           })
             .then(async () => await api(originalRequest))
-            .catch((err: unknown) => Promise.reject(err instanceof Error ? err : new Error(String(err))));
+            .catch((err: unknown) =>
+              Promise.reject(err instanceof Error ? err : new Error(String(err)))
+            );
         }
 
         originalRequest._retry = true;
@@ -87,7 +90,6 @@ api.interceptors.response.use(
         } finally {
           isRefreshing = false;
         }
-
       }
     }
 

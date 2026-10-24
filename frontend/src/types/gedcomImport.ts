@@ -112,8 +112,10 @@ export interface AbsentPersonDecisionDto {
 export interface ImportSummaryPreviewDto {
   individualsToCreate: number;
   individualsToUpdate: number;
+  individualsUnchanged: number;
   familiesToCreate: number;
   familiesToUpdate: number;
+  familiesUnchanged: number;
   familiesToDelete: number;
   absentPersonsCount: number;
 }

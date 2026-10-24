@@ -18,6 +18,95 @@ import type {
 type WizardViewStep = 'INDIVIDUALS' | 'FAMILIES' | 'SUMMARY';
 type FilterMode = 'ALL' | 'NEEDS_REVIEW' | 'AUTO_MATCH' | 'NEW';
 
+const MATCH_REASON_LABELS: Record<string, string | undefined> = {
+  'Exact external UID match': 'Zgodny zewnętrzny identyfikator UID',
+  'Exact given name and surname match': 'Dokładna zgodność imienia i nazwiska',
+  'Exact given name and similar surname': 'Zgodne imię i podobne nazwisko',
+  'Similar given name and exact surname': 'Podobne imię i zgodne nazwisko',
+  'Matching given name': 'Zgodne imię',
+  'Exact birth date match': 'Zgodna dokładna data urodzenia',
+  'Matching birth year': 'Zgodny rok urodzenia',
+  'Matching birth place': 'Zgodne miejsce urodzenia',
+  'Matching death date/year': 'Zgodna data lub rok śmierci',
+  'Matching death place': 'Zgodne miejsce śmierci',
+  'Matching parent given name': 'Zgodne imię rodzica',
+  'Matching spouse given name': 'Zgodne imię małżonka',
+  'Matching GEDCOM reference ID': 'Zgodny identyfikator referencyjny GEDCOM',
+  'Both spouses match existing family': 'Oboje małżonkowie pasują do istniejącej rodziny',
+  'Single parent matches existing single-parent family': 'Rodzic pasuje do istniejącej rodziny niepełnej',
+  'One spouse matches existing family': 'Jeden z małżonków pasuje do istniejącej rodziny',
+  'Matching children in family': 'Zgodne dzieci w rodzinie',
+  'Matching wedding year': 'Zgodny rok ślubu',
+  'Manual selection': 'Ręczny wybór użytkownika',
+};
+
+const BLOCK_REASON_LABELS: Record<string, string | undefined> = {
+  'Person has no raw GEDCOM link (manually created or already archived)':
+    'Osoba utworzona ręcznie w aplikacji lub już zarchiwizowana',
+  'Person has manually edited personal details':
+    'Osoba posiada ręcznie edytowane dane osobowe w aplikacji',
+  'Person has manually edited birth event details':
+    'Osoba posiada ręcznie edytowane dane urodzenia w aplikacji',
+  'Person has manually edited death event details':
+    'Osoba posiada ręcznie edytowane dane śmierci w aplikacji',
+  'Person has manually edited burial details':
+    'Osoba posiada ręcznie edytowane dane pochówku w aplikacji',
+  'Person has additional custom names':
+    'Osoba posiada dodatkowe imiona lub nazwiska dodane w aplikacji',
+  'Person participates in custom events':
+    'Osoba uczestniczy w dodatkowych wydarzeniach w aplikacji',
+};
+
+const FAMILY_STATUS_LABELS: Record<string, string | undefined> = {
+  MARRIED: 'Małżeństwo',
+  DIVORCED: 'Rozwód',
+  SEPARATED: 'Separacja',
+  WIDOWED: 'Wdowieństwo',
+  ENGAGED: 'Zaręczyny',
+  PARTNERS: 'Związek partnerski',
+  FRIENDS: 'Przyjaciele',
+  ANNULLED: 'Unieważnione małżeństwo',
+  UNKNOWN: 'Nieznany',
+  OTHER: 'Inny',
+};
+
+const translateMatchReason = (reason: string): string =>
+  MATCH_REASON_LABELS[reason] ?? reason;
+
+const translateBlockReason = (reason: string): string =>
+  BLOCK_REASON_LABELS[reason] ?? reason;
+
+const translateFamilyStatus = (code: string): string =>
+  FAMILY_STATUS_LABELS[code] ?? code;
+
+const translateSex = (sex: string | null): string => {
+  if (sex === 'M') return 'Mężczyzna';
+  if (sex === 'F') return 'Kobieta';
+  return 'Nieznana';
+};
+
+const translateClassification = (classification: MatchClassification): string => {
+  switch (classification) {
+    case 'AUTO_MATCH':
+      return 'Dopasowano automatycznie';
+    case 'NEEDS_REVIEW':
+      return 'Wymaga decyzji';
+    case 'NEW':
+      return 'Nowy rekord';
+  }
+};
+
+const formatPolishDateTime = (isoDate: string): string => {
+  const parsed = new Date(isoDate);
+  if (Number.isNaN(parsed.getTime())) {
+    return isoDate;
+  }
+  return new Intl.DateTimeFormat('pl-PL', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(parsed);
+};
+
 export default function GedcomImportPage() {
   const [activeSession, setActiveSession] = useState<ImportSessionResponseDto | null>(null);
   const [viewStep, setViewStep] = useState<WizardViewStep>('INDIVIDUALS');
@@ -30,7 +119,6 @@ export default function GedcomImportPage() {
 
   const [filterMode, setFilterMode] = useState<FilterMode>('ALL');
 
-  // Local decision state typed with "| undefined" to satisfy @typescript-eslint/no-unnecessary-condition
   const [indiDecisions, setIndiDecisions] = useState<
     Record<string, IndividualDecisionDto | undefined>
   >({});
@@ -41,7 +129,6 @@ export default function GedcomImportPage() {
     Record<number, AbsentPersonAction | undefined>
   >({});
 
-  // Manual lookup state
   const [personLookupQuery, setPersonLookupQuery] = useState<Record<string, string | undefined>>(
     {}
   );
@@ -325,9 +412,9 @@ export default function GedcomImportPage() {
       {/* Page Header */}
       <div className={styles.pageHeader}>
         <div className={styles.headerTitleGroup}>
-          <h1 className={styles.pageTitle}>Kreator Importu GEDCOM</h1>
+          <h1 className={styles.pageTitle}>Kreator importu GEDCOM</h1>
           <p className={styles.pageSubtitle}>
-            Wgraj plik GEDCOM z dowolnego programu genealogicznego, zweryfikuj powiązania osób i rodzin oraz zarządzaj historią.
+            Wgraj plik GEDCOM z dowolnego programu genealogicznego, zweryfikuj powiązania osób i rodzin oraz zarządzaj historią importów.
           </p>
         </div>
         <div className={styles.headerActions}>
@@ -375,7 +462,12 @@ export default function GedcomImportPage() {
               </p>
             </div>
             <div className={styles.fileInputRow}>
+              <label htmlFor="gedcom-upload-input" className={styles.filePickerLabel}>
+                <span>📄</span>
+                <span>Wybierz plik z dysku</span>
+              </label>
               <input
+                id="gedcom-upload-input"
                 type="file"
                 accept=".ged"
                 data-testid="gedcom-file-input"
@@ -383,8 +475,11 @@ export default function GedcomImportPage() {
                   const file = e.target.files?.[0] ?? null;
                   setSelectedFile(file);
                 }}
-                className={styles.fileInput}
+                className={styles.hiddenFileInput}
               />
+              <span className={styles.selectedFileName}>
+                {selectedFile ? selectedFile.name : 'Nie wybrano pliku'}
+              </span>
               <button
                 type="button"
                 data-testid="start-import-button"
@@ -413,7 +508,7 @@ export default function GedcomImportPage() {
                 }`}
               >
                 <span className={styles.stepBadge}>1</span>
-                <span>Dopasowanie Osób ({activeSession.individualMatches.length})</span>
+                <span>Dopasowanie osób ({activeSession.individualMatches.length})</span>
               </div>
               <span className={styles.stepArrow}>→</span>
               <div
@@ -422,7 +517,7 @@ export default function GedcomImportPage() {
                 }`}
               >
                 <span className={styles.stepBadge}>2</span>
-                <span>Dopasowanie Rodzin ({activeSession.familyMatches.length})</span>
+                <span>Dopasowanie rodzin ({activeSession.familyMatches.length})</span>
               </div>
               <span className={styles.stepArrow}>→</span>
               <div
@@ -431,7 +526,7 @@ export default function GedcomImportPage() {
                 }`}
               >
                 <span className={styles.stepBadge}>3</span>
-                <span>Podsumowanie i Nieobecni</span>
+                <span>Podsumowanie i nieobecne osoby</span>
               </div>
             </div>
 
@@ -441,7 +536,7 @@ export default function GedcomImportPage() {
               </span>
               <span>|</span>
               <span>
-                Źródło: <strong>{activeSession.sourceSystem ?? 'UNKNOWN'}</strong>
+                Źródło: <strong>{activeSession.sourceSystem ?? 'Nieznane'}</strong>
               </span>
             </div>
           </div>
@@ -454,7 +549,7 @@ export default function GedcomImportPage() {
                   [
                     ['ALL', 'Wszystkie rekordy'],
                     ['NEEDS_REVIEW', 'Wymagające decyzji'],
-                    ['AUTO_MATCH', 'Automatycznie dopasowane'],
+                    ['AUTO_MATCH', 'Dopasowane automatycznie'],
                     ['NEW', 'Nowe rekordy'],
                   ] as const
                 ).map(([mode, label]) => (
@@ -504,17 +599,16 @@ export default function GedcomImportPage() {
                             match.classification
                           )}`}
                         >
-                          {match.classification}
+                          {translateClassification(match.classification)}
                         </span>
                       </div>
 
                       <div className={styles.matchCardBody}>
-                        {/* Left Column: Raw GEDCOM Info */}
                         <div className={styles.gedcomDetailsBox}>
                           <div className={styles.boxSubtitle}>Dane z pliku GEDCOM</div>
                           <div className={styles.detailRow}>
                             <span className={styles.detailLabel}>Płeć:</span>
-                            <span className={styles.detailValue}>{indi.sex ?? '—'}</span>
+                            <span className={styles.detailValue}>{translateSex(indi.sex)}</span>
                           </div>
                           <div className={styles.detailRow}>
                             <span className={styles.detailLabel}>Urodzenie:</span>
@@ -547,10 +641,9 @@ export default function GedcomImportPage() {
                           )}
                         </div>
 
-                        {/* Right Column: Candidates in DB */}
                         <div className={styles.candidatesColumn}>
                           <div className={styles.boxSubtitle}>
-                            Proponowani kandydaci w Twojej bazie ({match.candidates.length})
+                            Proponowani kandydaci w bazie ({match.candidates.length})
                           </div>
                           {match.candidates.length === 0 ? (
                             <p className={styles.pageSubtitle}>
@@ -600,13 +693,13 @@ export default function GedcomImportPage() {
                                         isSelected ? styles.btnChoiceSelectedMatch : ''
                                       }`}
                                     >
-                                      {isSelected ? '✓ Wybrano (Połącz)' : 'Połącz z tą osobą'}
+                                      {isSelected ? '✓ Wybrano (połącz)' : 'Połącz z tą osobą'}
                                     </button>
                                   </div>
                                   <div className={styles.reasonsList}>
                                     {cand.matchReasons.map(reason => (
                                       <span key={reason} className={styles.reasonChip}>
-                                        {reason}
+                                        {translateMatchReason(reason)}
                                       </span>
                                     ))}
                                   </div>
@@ -735,7 +828,7 @@ export default function GedcomImportPage() {
                             match.classification
                           )}`}
                         >
-                          {match.classification}
+                          {translateClassification(match.classification)}
                         </span>
                       </div>
 
@@ -744,7 +837,9 @@ export default function GedcomImportPage() {
                           <div className={styles.boxSubtitle}>Dane rodziny z pliku GEDCOM</div>
                           <div className={styles.detailRow}>
                             <span className={styles.detailLabel}>Status relacji:</span>
-                            <span className={styles.detailValue}>{fam.statusCode}</span>
+                            <span className={styles.detailValue}>
+                              {translateFamilyStatus(fam.statusCode)}
+                            </span>
                           </div>
                           <div className={styles.detailRow}>
                             <span className={styles.detailLabel}>Data i miejsce ślubu:</span>
@@ -761,7 +856,7 @@ export default function GedcomImportPage() {
 
                         <div className={styles.candidatesColumn}>
                           <div className={styles.boxSubtitle}>
-                            Proponowane rodziny z bazy ({match.candidates.length})
+                            Proponowane rodziny w bazie ({match.candidates.length})
                           </div>
                           {match.candidates.map(cand => {
                             const isSelected =
@@ -803,13 +898,13 @@ export default function GedcomImportPage() {
                                       isSelected ? styles.btnChoiceSelectedMatch : ''
                                     }`}
                                   >
-                                    {isSelected ? '✓ Wybrano (Połącz)' : 'Połącz z tą rodziną'}
+                                    {isSelected ? '✓ Wybrano (połącz)' : 'Połącz z tą rodziną'}
                                   </button>
                                 </div>
                                 <div className={styles.reasonsList}>
                                   {cand.matchReasons.map(reason => (
                                     <span key={reason} className={styles.reasonChip}>
-                                      {reason}
+                                      {translateMatchReason(reason)}
                                     </span>
                                   ))}
                                 </div>
@@ -938,16 +1033,39 @@ export default function GedcomImportPage() {
                     </span>
                   </div>
                   <div className={styles.statCard}>
-                    <span className={styles.statLabel}>Nowe / Akt. rodziny</span>
+                    <span className={styles.statLabel}>Osoby bez zmian</span>
                     <span className={styles.statValue}>
-                      +{activeSession.summaryPreview.familiesToCreate} /{' '}
-                      {activeSession.summaryPreview.familiesToUpdate}
+                      {activeSession.summaryPreview.individualsUnchanged}
                     </span>
                   </div>
                   <div className={styles.statCard}>
                     <span className={styles.statLabel}>Nieobecne osoby z bazy</span>
                     <span className={styles.statValue}>
                       {activeSession.summaryPreview.absentPersonsCount}
+                    </span>
+                  </div>
+                  <div className={styles.statCard}>
+                    <span className={styles.statLabel}>Nowe rodziny</span>
+                    <span className={styles.statValue}>
+                      +{activeSession.summaryPreview.familiesToCreate}
+                    </span>
+                  </div>
+                  <div className={styles.statCard}>
+                    <span className={styles.statLabel}>Aktualizowane rodziny</span>
+                    <span className={styles.statValue}>
+                      {activeSession.summaryPreview.familiesToUpdate}
+                    </span>
+                  </div>
+                  <div className={styles.statCard}>
+                    <span className={styles.statLabel}>Rodziny bez zmian</span>
+                    <span className={styles.statValue}>
+                      {activeSession.summaryPreview.familiesUnchanged}
+                    </span>
+                  </div>
+                  <div className={styles.statCard}>
+                    <span className={styles.statLabel}>Usuwane rodziny</span>
+                    <span className={styles.statValue}>
+                      {activeSession.summaryPreview.familiesToDelete}
                     </span>
                   </div>
                 </div>
@@ -974,7 +1092,8 @@ export default function GedcomImportPage() {
                           {!absent.canBeDeleted && (
                             <div>
                               <span className={styles.blockReasonWarning}>
-                                🔒 Blokada usunięcia: {absent.deletionBlockReasons.join(', ')}
+                                🔒 Blokada usunięcia:{' '}
+                                {absent.deletionBlockReasons.map(translateBlockReason).join(', ')}
                               </span>
                             </div>
                           )}
@@ -993,7 +1112,7 @@ export default function GedcomImportPage() {
                                 }));
                               }}
                             />
-                            <span>📦 Zarchiwizuj (ARCHIVE)</span>
+                            <span>📦 Zarchiwizuj</span>
                           </label>
                           <label
                             className={`${styles.radioLabel} ${
@@ -1013,7 +1132,7 @@ export default function GedcomImportPage() {
                                 }));
                               }}
                             />
-                            <span>🗑️ Usuń całkowicie (DELETE)</span>
+                            <span>🗑️ Usuń całkowicie</span>
                           </label>
                         </div>
                       </div>
@@ -1049,59 +1168,62 @@ export default function GedcomImportPage() {
         </section>
       )}
 
-      {/* IMPORT HISTORY SECTION */}
+      {/* IMPORT HISTORY SECTION (Responsive Cards - No Horizontal Scroll) */}
       <section className={styles.card}>
         <h2 className={styles.sectionTitle}>Historia zakończonych importów</h2>
         {history.length === 0 ? (
           <p className={styles.pageSubtitle}>Brak zakończonych importów w historii.</p>
         ) : (
-          <div className={styles.tableWrapper}>
-            <table className={styles.historyTable}>
-              <thead>
-                <tr>
-                  <th>Sesja</th>
-                  <th>Nazwa pliku</th>
-                  <th>Źródło</th>
-                  <th>Data importu</th>
-                  <th>Zmiany (Osoby Nowe / Akt.)</th>
-                  <th>Akcja</th>
-                </tr>
-              </thead>
-              <tbody>
-                {history.map(item => (
-                  <tr key={item.sessionId}>
-                    <td>
-                      <span className={styles.xrefBadge}>#{item.sessionId}</span>
-                    </td>
-                    <td>
-                      <strong>{item.fileName ?? '—'}</strong>
-                    </td>
-                    <td>{item.sourceSystem ?? '—'}</td>
-                    <td>{item.createdAt}</td>
-                    <td>
-                      {item.summaryPreview
-                        ? `+${String(item.summaryPreview.individualsToCreate)} nowych / ~${String(
-                            item.summaryPreview.individualsToUpdate
-                          )} akt.`
-                        : '—'}
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        data-testid={`restore-session-button-${String(item.sessionId)}`}
-                        disabled={isSubmitting || activeSession !== null}
-                        onClick={() => {
-                          void handleRestoreSession(item.sessionId);
-                        }}
-                        className={styles.btnSecondary}
-                      >
-                        ↺ Przywróć ten stan
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className={styles.historyList}>
+            {history.map(item => (
+              <div key={item.sessionId} className={styles.historyCard}>
+                <div className={styles.historyCell}>
+                  <span className={styles.historyCellLabel}>Sesja</span>
+                  <span className={styles.historyCellValue}>
+                    <span className={styles.xrefBadge}>#{item.sessionId}</span>
+                  </span>
+                </div>
+                <div className={styles.historyCell}>
+                  <span className={styles.historyCellLabel}>Nazwa pliku</span>
+                  <strong className={styles.historyCellValue}>{item.fileName ?? '—'}</strong>
+                </div>
+                <div className={styles.historyCell}>
+                  <span className={styles.historyCellLabel}>Źródło</span>
+                  <span className={styles.historyCellValue}>{item.sourceSystem ?? '—'}</span>
+                </div>
+                <div className={styles.historyCell}>
+                  <span className={styles.historyCellLabel}>Data importu</span>
+                  <span className={styles.historyCellValue}>
+                    {formatPolishDateTime(item.createdAt)}
+                  </span>
+                </div>
+                <div className={styles.historyCell}>
+                  <span className={styles.historyCellLabel}>Podsumowanie osób</span>
+                  <span className={styles.historyCellValue}>
+                    {item.summaryPreview
+                      ? `Nowe: ${String(
+                          item.summaryPreview.individualsToCreate
+                        )}, zaktualizowane: ${String(
+                          item.summaryPreview.individualsToUpdate
+                        )}, bez zmian: ${String(item.summaryPreview.individualsUnchanged)}`
+                      : '—'}
+                  </span>
+                </div>
+                <div className={styles.historyCell}>
+                  <button
+                    type="button"
+                    data-testid={`restore-session-button-${String(item.sessionId)}`}
+                    disabled={isSubmitting || activeSession !== null}
+                    onClick={() => {
+                      void handleRestoreSession(item.sessionId);
+                    }}
+                    className={styles.btnSecondary}
+                  >
+                    ↺ Przywróć ten stan
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </section>

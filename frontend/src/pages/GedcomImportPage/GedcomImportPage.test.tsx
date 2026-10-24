@@ -128,8 +128,10 @@ describe('GedcomImportPage Component', () => {
     summaryPreview: {
       individualsToCreate: 0,
       individualsToUpdate: 1,
+      individualsUnchanged: 0,
       familiesToCreate: 0,
       familiesToUpdate: 1,
+      familiesUnchanged: 0,
       familiesToDelete: 0,
       absentPersonsCount: 1,
     },
@@ -146,8 +148,10 @@ describe('GedcomImportPage Component', () => {
       summaryPreview: {
         individualsToCreate: 3,
         individualsToUpdate: 2,
+        individualsUnchanged: 10,
         familiesToCreate: 1,
         familiesToUpdate: 1,
+        familiesUnchanged: 4,
         familiesToDelete: 0,
         absentPersonsCount: 0,
       },
@@ -219,7 +223,9 @@ describe('GedcomImportPage Component', () => {
       expect(screen.getByTestId('apply-import-button')).toBeInTheDocument();
     });
     expect(screen.getByText(/Maria Edytowana/i)).toBeInTheDocument();
-    expect(screen.getByText(/Person has manually edited personal details/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Osoba posiada ręcznie edytowane dane osobowe w aplikacji/i)
+    ).toBeInTheDocument();
     expect(screen.getByTestId('absent-delete-radio-88')).toBeDisabled();
 
     // 5. Execute import

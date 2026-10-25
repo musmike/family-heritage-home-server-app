@@ -1,10 +1,10 @@
 import { useState, useEffect, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { biographyApi } from '../../api/biographyApi';
+import AncestorTree from '../../components/AncestorTree/AncestorTree';
 import Loader from '../../components/Loader/Loader';
 import PersonAvatar from '../../components/PersonAvatar/PersonAvatar';
 import styles from './Biographies.module.css';
-import AncestorTree from '../../components/AncestorTree/AncestorTree';
 import type {
   ChildInFamilyDto,
   FamilyChildRelationshipType,
@@ -287,8 +287,8 @@ export default function PersonBiographyPage() {
       </div>
 
       {/* Wikipedia-Style Grid:
-          Desktop: Left (Header + Content), Right (Infobox)
-          Mobile: 1. Header -> 2. Infobox -> 3. Content */}
+          Desktop: Left (1. Header -> 2. Tree -> 3. Content), Right (Infobox)
+          Mobile: 1. Header -> 2. Tree -> 3. Infobox -> 4. Content */}
       <div className={styles.wikiGrid}>
         {/* 1. TITLE HEADER */}
         <header className={styles.articleHeaderBlock}>
@@ -298,7 +298,34 @@ export default function PersonBiographyPage() {
           </h1>
         </header>
 
-        {/* 2. UNIFIED RIGHT-HAND INFOBOX TABLE */}
+        {/* 2. ANCESTOR TREE (Above Infobox on Mobile, Below Header in Left Column on Desktop) */}
+        <section className={`${styles.wikiSection} ${styles.articleTreeBlock}`}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '0.5rem',
+            }}
+          >
+            <h2
+              className={styles.wikiSectionTitle}
+              style={{ borderBottom: 'none', paddingBottom: 0 }}
+            >
+              Drzewo przodków
+            </h2>
+            <Link
+              to={`/tree?personId=${String(bio.id)}`}
+              className={styles.btnSecondary}
+            >
+              🌳 Otwórz w pełnym drzewie →
+            </Link>
+          </div>
+          <AncestorTree rootPersonId={bio.id} mode="biography" />
+        </section>
+
+        {/* 3. UNIFIED RIGHT-HAND INFOBOX TABLE */}
         <aside className={styles.infobox}>
           <div className={styles.infoboxTitleBanner}>{fullName}</div>
 
@@ -451,7 +478,7 @@ export default function PersonBiographyPage() {
           })}
         </aside>
 
-        {/* 3. LEFT MAIN CONTENT (Tree + Biography Narrative + Optional Admin Raw View) */}
+        {/* 4. LEFT MAIN CONTENT (Biography Narrative + Optional Admin Raw View) */}
         <div className={styles.articleBodyBlock}>
           {showRawGedcom && bio.rawGedcomData && (
             <section className={styles.wikiSection} data-testid="raw-gedcom-panel">
@@ -491,21 +518,6 @@ export default function PersonBiographyPage() {
               </table>
             </section>
           )}
-
-          <section className={styles.wikiSection}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-              <h2 className={styles.wikiSectionTitle} style={{ borderBottom: 'none', paddingBottom: 0 }}>
-                Drzewo przodków
-              </h2>
-              <Link
-                to={`/tree?personId=${String(bio.id)}`}
-                className={styles.btnSecondary}
-              >
-                🌳 Otwórz w pełnym drzewie →
-              </Link>
-            </div>
-            <AncestorTree rootPersonId={bio.id} mode="biography" />
-          </section>
 
           <section className={styles.wikiSection}>
             <h2 className={styles.wikiSectionTitle}>Życiorys</h2>

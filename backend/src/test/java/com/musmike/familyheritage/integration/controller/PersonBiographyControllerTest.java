@@ -315,5 +315,17 @@ class PersonBiographyControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.father.weddingPlace").value("Warszawa"))
                 .andExpect(jsonPath("$.mother.givenName").value("Anna"))
                 .andExpect(jsonPath("$.mother.weddingDateText").value("10.06.1948"));
+
+        // 3. When requesting 2 generations for Tomek, Mother Anna is on the outer edge and has hasMoreAncestors = true
+        mockMvc.perform(get("/biographies/{id}/ancestor-tree", tomekId).param("generations", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mother.givenName").value("Anna"))
+                .andExpect(jsonPath("$.mother.hasMoreAncestors").value(true));
+
+        // 4. When viewing Father Jan as proband, his biological children (Marek & Piotr) are returned in children list,
+        // while adopted Tomek is excluded from biological children
+        mockMvc.perform(get("/biographies/{id}/ancestor-tree", deceasedFatherId).param("generations", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.children", hasSize(2)));
     }
 }

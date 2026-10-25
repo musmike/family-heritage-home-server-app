@@ -358,17 +358,13 @@
   cursor: not-allowed;
 }
 
-/* ==========================================================================
-   WIKIPEDIA-STYLE BIOGRAPHY PAGE LAYOUT
-   Desktop: Left = Title + Tree/Article, Right = Unified Infobox Table
-   Mobile (<= 960px): 1. Title -> 2. Infobox Table -> 3. Tree/Article
-   ========================================================================== */
 .wikiGrid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 370px;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto auto 1fr;
   grid-template-areas:
     "header infobox"
+    "tree infobox"
     "content infobox";
   gap: 1.5rem 2rem;
   align-items: start;
@@ -380,9 +376,14 @@
     grid-template-rows: auto;
     grid-template-areas:
       "header"
+      "tree"
       "infobox"
       "content";
   }
+}
+
+.articleTreeBlock {
+  grid-area: tree;
 }
 
 .articleHeaderBlock {

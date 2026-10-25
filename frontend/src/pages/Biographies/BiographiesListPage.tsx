@@ -232,7 +232,7 @@ export default function BiographiesListPage() {
                   <PersonAvatar sex={person.sex} size="lg" />
                   <div className={styles.cardTitleGroup}>
                     <div className={styles.personName}>
-                      {person.givenName ?? '—'} {person.surname ?? ''}
+                      {`${person.surname ?? ''} ${person.givenName ?? ''}`.trim() || '—'}
                     </div>
                     <div className={styles.lifespanLine}>{formatLifespanSummary(person)}</div>
                     <div className={styles.badgesRow}>

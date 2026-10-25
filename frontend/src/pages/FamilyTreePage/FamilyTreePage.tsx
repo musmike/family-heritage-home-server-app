@@ -145,6 +145,19 @@ export default function FamilyTreePage() {
       </section>
 
       <section className={styles.wikiSection}>
+        {previousProbands.length > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+            <button
+              type="button"
+              data-testid="tree-back-proband-button"
+              onClick={handleGoBackProband}
+              className={styles.btnSecondary}
+            >
+              ← Cofnij do poprzednio oglądanej osoby
+            </button>
+          </div>
+        )}
+
         {probandId === null ? (
           <div className={styles.placeholderBox}>Brak osób w bazie danych.</div>
         ) : (

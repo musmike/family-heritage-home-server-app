@@ -7,6 +7,9 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @Data
 @Builder
 @NoArgsConstructor
@@ -36,6 +39,11 @@ public class AncestorTreeNodeDto {
     private Integer age;
     private boolean ageApproximate;
 
+    private boolean hasMoreAncestors;
+
     private AncestorTreeNodeDto father;
     private AncestorTreeNodeDto mother;
+
+    @Builder.Default
+    private List<RelatedPersonDto> children = new ArrayList<>();
 }

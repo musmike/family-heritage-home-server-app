@@ -223,7 +223,7 @@ public class PersonBiographyService {
         }
         if (isGuest && person.getLifeState() != LifeState.DECEASED) {
             return RelatedPersonDto.builder()
-                    .id(null)
+                    .id(person.getId())
                     .givenName("<Prywatne>")
                     .surname(person.getCachedSurname())
                     .sex(person.getSex())
@@ -451,32 +451,35 @@ public class PersonBiographyService {
             return null;
         }
 
+        // Always check biological parents so we know if hasMoreAncestors is true on leaf nodes
+        Person bioFather = null;
+        Person bioMother = null;
+        Family bioParentsCommonFamily = null;
+
+        for (FamilyChild fc : familyChildRepository.findByChild(person)) {
+            Family fam = fc.getFamily();
+            boolean isBioFatherHere = fc.getFatherRelationshipType() == FamilyChildRelationshipType.BIOLOGICAL
+                    && fam.getHusband() != null;
+            boolean isBioMotherHere = fc.getMotherRelationshipType() == FamilyChildRelationshipType.BIOLOGICAL
+                    && fam.getWife() != null;
+
+            if (isBioFatherHere && bioFather == null) {
+                bioFather = fam.getHusband();
+            }
+            if (isBioMotherHere && bioMother == null) {
+                bioMother = fam.getWife();
+            }
+            if (isBioFatherHere && isBioMotherHere && bioParentsCommonFamily == null) {
+                bioParentsCommonFamily = fam;
+            }
+        }
+
+        boolean hasMoreAncestors = (bioFather != null || bioMother != null);
+
         AncestorTreeNodeDto fatherNode = null;
         AncestorTreeNodeDto motherNode = null;
 
         if (currentGeneration < maxGenerations) {
-            Person bioFather = null;
-            Person bioMother = null;
-            Family bioParentsCommonFamily = null;
-
-            for (FamilyChild fc : familyChildRepository.findByChild(person)) {
-                Family fam = fc.getFamily();
-                boolean isBioFatherHere = fc.getFatherRelationshipType() == FamilyChildRelationshipType.BIOLOGICAL
-                        && fam.getHusband() != null;
-                boolean isBioMotherHere = fc.getMotherRelationshipType() == FamilyChildRelationshipType.BIOLOGICAL
-                        && fam.getWife() != null;
-
-                if (isBioFatherHere && bioFather == null) {
-                    bioFather = fam.getHusband();
-                }
-                if (isBioMotherHere && bioMother == null) {
-                    bioMother = fam.getWife();
-                }
-                if (isBioFatherHere && isBioMotherHere && bioParentsCommonFamily == null) {
-                    bioParentsCommonFamily = fam;
-                }
-            }
-
             String parentsWeddingDate = null;
             String parentsWeddingPlace = null;
             if (bioParentsCommonFamily != null && bioParentsCommonFamily.getPrimaryWedding() != null) {
@@ -493,7 +496,11 @@ public class PersonBiographyService {
             );
         }
 
-        // Mask living/unknown individuals for GUEST role while keeping tree links to deceased ancestors
+        List<RelatedPersonDto> biologicalChildren = currentGeneration == 1
+                ? findBiologicalChildrenForTree(person, isGuest)
+                : List.of();
+
+        // Mask living/unknown individuals for GUEST role while keeping tree links
         if (isGuest && person.getLifeState() != LifeState.DECEASED) {
             return AncestorTreeNodeDto.builder()
                     .id(person.getId())
@@ -503,8 +510,10 @@ public class PersonBiographyService {
                     .lifeState(person.getLifeState())
                     .archived(Boolean.TRUE.equals(person.getIsArchived()))
                     .privateRecord(true)
+                    .hasMoreAncestors(hasMoreAncestors)
                     .father(fatherNode)
                     .mother(motherNode)
+                    .children(biologicalChildren)
                     .build();
         }
 
@@ -552,8 +561,32 @@ public class PersonBiographyService {
                 .weddingPlace(weddingPlaceWithCoParent)
                 .age(ageResult.age())
                 .ageApproximate(ageResult.approximate())
+                .hasMoreAncestors(hasMoreAncestors)
                 .father(fatherNode)
                 .mother(motherNode)
+                .children(biologicalChildren)
                 .build();
+    }
+
+    private List<RelatedPersonDto> findBiologicalChildrenForTree(Person parent, boolean isGuest) {
+        List<RelatedPersonDto> result = new ArrayList<>();
+        Set<Long> seenChildIds = new HashSet<>();
+
+        for (Family fam : familyRepository.findByHusbandOrWife(parent, parent)) {
+            boolean isFather = fam.getHusband() != null && fam.getHusband().getId().equals(parent.getId());
+            boolean isMother = fam.getWife() != null && fam.getWife().getId().equals(parent.getId());
+
+            for (FamilyChild fc : fam.getChildren()) {
+                boolean isBiologicalToParent =
+                        (isFather && fc.getFatherRelationshipType() == FamilyChildRelationshipType.BIOLOGICAL)
+                                || (isMother && fc.getMotherRelationshipType() == FamilyChildRelationshipType.BIOLOGICAL);
+
+                if (isBiologicalToParent && seenChildIds.add(fc.getChild().getId())) {
+                    result.add(toRelatedPersonDto(fc.getChild(), isGuest));
+                }
+            }
+        }
+        result.sort(Comparator.comparing(RelatedPersonDto::getId));
+        return result;
     }
 }

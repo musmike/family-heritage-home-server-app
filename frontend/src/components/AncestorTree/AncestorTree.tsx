@@ -133,6 +133,12 @@ export default function AncestorTree({
     expectedSex: PersonSex
   ) => {
     const hasFurther = currentGen < generations;
+    const showExpandTopArrow =
+      mode === 'full-tree' &&
+      !hasFurther &&
+      node !== null &&
+      node.hasMoreAncestors === true &&
+      onSelectProband !== undefined;
 
     return (
       <div className={styles.branchDesktop}>
@@ -153,9 +159,49 @@ export default function AncestorTree({
           </>
         )}
 
+        {showExpandTopArrow && (
+          <button
+            type="button"
+            title="Pokaż dalszych przodków tej osoby"
+            data-testid={`tree-expand-ancestors-${String(node.id)}`}
+            onClick={() => {
+              onSelectProband(node.id);
+            }}
+            className={styles.expandArrowTopBtn}
+          >
+            ↑ Dalsi przodkowie
+          </button>
+        )}
+
         <div className={styles.desktopCardSlot}>
           {renderCardButton(node, expectedSex, currentGen === 1)}
         </div>
+      </div>
+    );
+  };
+
+  const renderMobileOuterCard = (node: AncestorTreeNodeDto | null, expectedSex: PersonSex) => {
+    const canExpand =
+      mode === 'full-tree' &&
+      node !== null &&
+      onSelectProband !== undefined &&
+      (node.hasMoreAncestors === true || node.father !== null || node.mother !== null);
+
+    return (
+      <div className={styles.mobileCardWithArrow}>
+        {renderCardButton(node, expectedSex, false)}
+        {canExpand && (
+          <button
+            type="button"
+            title="Pokaż dalszych przodków tej osoby"
+            onClick={() => {
+              onSelectProband(node.id);
+            }}
+            className={styles.expandArrowRightBtn}
+          >
+            →
+          </button>
+        )}
       </div>
     );
   };
@@ -220,22 +266,22 @@ export default function AncestorTree({
 
         {/* 4. Paternal Grandfather (Row 1, Cols 5..8) */}
         <div style={{ gridRow: '1', gridColumn: '5 / 8' }}>
-          {renderCardButton(patGrandfather, 'MALE', false)}
+          {renderMobileOuterCard(patGrandfather, 'MALE')}
         </div>
 
         {/* 5. Paternal Grandmother (Row 3, Cols 5..8) */}
         <div style={{ gridRow: '3', gridColumn: '5 / 8' }}>
-          {renderCardButton(patGrandmother, 'FEMALE', false)}
+          {renderMobileOuterCard(patGrandmother, 'FEMALE')}
         </div>
 
         {/* 6. Maternal Grandfather (Row 5, Cols 5..8) */}
         <div style={{ gridRow: '5', gridColumn: '5 / 8' }}>
-          {renderCardButton(matGrandfather, 'MALE', false)}
+          {renderMobileOuterCard(matGrandfather, 'MALE')}
         </div>
 
         {/* 7. Maternal Grandmother (Row 7, Cols 5..8) */}
         <div style={{ gridRow: '7', gridColumn: '5 / 8' }}>
-          {renderCardButton(matGrandmother, 'FEMALE', false)}
+          {renderMobileOuterCard(matGrandmother, 'FEMALE')}
         </div>
       </div>
     );
@@ -253,6 +299,8 @@ export default function AncestorTree({
     ? formatPolishAge(selectedModalNode.age, selectedModalNode.ageApproximate)
     : null;
 
+  const probandChildren = treeRoot.children ?? [];
+
   return (
     <div className={styles.treeContainer} data-testid="ancestor-tree-root">
       <div className={styles.desktopTree}>
@@ -260,6 +308,44 @@ export default function AncestorTree({
       </div>
 
       {renderMobileStaggeredTree(treeRoot)}
+
+      {/* STEP DOWN TO CHILDREN / DESCENDANTS (Only in /tree tab) */}
+      {mode === 'full-tree' && onSelectProband && probandChildren.length > 0 && (
+        <div className={styles.descendantsSection}>
+          <span className={styles.descendantsLabel}>
+            ↓ Zejdź pokolenie niżej (dzieci aktualnego probanta):
+          </span>
+          <div className={styles.descendantsButtons}>
+            {probandChildren.map(child => {
+              if (child.id === null) return null;
+              const childId = child.id;
+              const childName = `${child.givenName ?? ''} ${child.surname ?? ''}`.trim();
+              const yearInfo =
+                !child.privateRecord && child.birthYear !== null
+                  ? ` (ur. ${String(child.birthYear)})`
+                  : '';
+
+              return (
+                <button
+                  key={childId}
+                  type="button"
+                  data-testid={`tree-step-down-child-${String(childId)}`}
+                  onClick={() => {
+                    onSelectProband(childId);
+                  }}
+                  className={styles.descendantPillBtn}
+                >
+                  <span>↓</span>
+                  <span>
+                    {childName}
+                    {yearInfo}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* PERSON DETAILS MODAL */}
       {selectedModalNode && (

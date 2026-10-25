@@ -1,6 +1,7 @@
-import type { ReactNode } from 'react';
+import { use, type ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useSidebar } from '../../context/SidebarContext';
+import { AuthContext } from '../../context/AuthContext';
 import logo from '../../assets/logo-light-mode.png';
 import styles from './Sidebar.module.css';
 
@@ -9,10 +10,15 @@ interface NavItem {
   path: string;
   icon: ReactNode;
   disabled?: boolean;
+  adminOnly?: boolean;
 }
 
 export default function Sidebar() {
   const { isSidebarOpen, screenSize, toggleSidebar } = useSidebar();
+  const auth = use(AuthContext);
+
+  const isAdmin =
+    auth?.user?.roles.some(r => r.replace(/^ROLE_/, '').toUpperCase() === 'ADMIN') ?? false;
 
   const navItems: (NavItem | null)[] = [
     {
@@ -51,7 +57,7 @@ export default function Sidebar() {
       ),
     },
     {
-      name: 'Wspomnienia i cytaty',
+      name: 'Wspomnienia i powiedzenia',
       path: '/memories',
       disabled: true,
       icon: (
@@ -64,6 +70,7 @@ export default function Sidebar() {
       name: 'Dziennik',
       path: '/journal',
       disabled: true,
+      adminOnly: true,
       icon: (
         <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={styles.navSvg}>
           <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
@@ -127,7 +134,7 @@ export default function Sidebar() {
       ),
     },
     {
-      name: 'Pochówki',
+      name: 'Nagrobki',
       path: '/gravestones',
       icon: (
         <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={styles.navSvg}>
@@ -164,6 +171,8 @@ export default function Sidebar() {
       ),
     },
   ];
+
+  const visibleNavItems = navItems.filter(item => item === null || !item.adminOnly || isAdmin);
 
   return (
     <>
@@ -206,7 +215,7 @@ export default function Sidebar() {
 
         <nav className={styles.sidebarNav}>
           <ul>
-            {navItems.map((item, index) => {
+            {visibleNavItems.map((item, index) => {
               if (item === null) {
                 return (
                   <hr

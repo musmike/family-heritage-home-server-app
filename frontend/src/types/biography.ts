@@ -148,6 +148,8 @@ export interface AncestorTreeNodeDto {
   weddingPlace: string | null;
   age: number | null;
   ageApproximate: boolean;
+  hasMoreAncestors?: boolean;
   father: AncestorTreeNodeDto | null;
   mother: AncestorTreeNodeDto | null;
+  children?: RelatedPersonDto[];
 }

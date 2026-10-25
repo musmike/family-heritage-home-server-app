@@ -7,6 +7,8 @@ import { useSidebar } from '../../context/SidebarContext';
 import HomePage from '../../pages/HomePage/HomePage';
 import GedcomImportPage from '../../pages/GedcomImportPage/GedcomImportPage';
 import GedcomImportHistoryPage from '../../pages/GedcomImportHistoryPage/GedcomImportHistoryPage';
+import BiographiesListPage from '../../pages/Biographies/BiographiesListPage';
+import PersonBiographyPage from '../../pages/Biographies/PersonBiographyPage';
 
 export default function MainLayout() {
   const { isSidebarOpen } = useSidebar();
@@ -20,6 +22,8 @@ export default function MainLayout() {
       <main className={styles.mainContentArea}>
         <Routes>
           <Route path="/" element={<HomePage />} />
+          <Route path="/biographies" element={<BiographiesListPage />} />
+          <Route path="/biographies/:personId" element={<PersonBiographyPage />} />
           <Route path="/gedcom-import" element={<GedcomImportPage />} />
           <Route path="/gedcom-import/history" element={<GedcomImportHistoryPage />} />
         </Routes>

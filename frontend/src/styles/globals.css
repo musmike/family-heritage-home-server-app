@@ -31,7 +31,6 @@ h1 {
 
 
 :root {
-  --sidebar-width-full: 230px;
+  --sidebar-width-full: 250px;
   --sidebar-width-collapsed: 60px;
 }
-

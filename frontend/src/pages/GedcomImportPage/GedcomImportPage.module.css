@@ -1,0 +1,823 @@
+.pageWrapper {
+  max-width: 1180px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+  padding-bottom: 3rem;
+}
+
+.pageHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  background-color: #ffffff;
+  padding: 1.5rem 2rem;
+  border: 1px solid #dee2e6;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.headerTitleGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.pageTitle {
+  font-size: 1.65rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.pageSubtitle {
+  font-size: 0.92rem;
+  color: #64748b;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.AlertError {
+  padding: 1rem 1.25rem;
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  border-left: 4px solid #ef4444;
+  border-radius: 8px;
+  color: #991b1b;
+  font-size: 0.92rem;
+  font-weight: 500;
+}
+
+.AlertSuccess {
+  padding: 1rem 1.25rem;
+  background-color: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-left: 4px solid #22c55e;
+  border-radius: 8px;
+  color: #166534;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.card {
+  background-color: #ffffff;
+  border: 1px solid #dee2e6;
+  border-radius: 10px;
+  padding: 1.75rem 2rem;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+@media (max-width: 767px) {
+  .pageHeader,
+  .card {
+    padding: 1.25rem 1rem;
+  }
+}
+
+.sectionTitle {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+/* Custom Polish File Picker */
+.uploadDropzone {
+  border: 2px dashed #cbd5e1;
+  background-color: #f8fafc;
+  border-radius: 10px;
+  padding: 2.25rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 1rem;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.uploadDropzone:hover {
+  border-color: #94a3b8;
+  background-color: #f1f5f9;
+}
+
+.uploadIcon {
+  font-size: 2.5rem;
+}
+
+.uploadHint {
+  font-size: 0.9rem;
+  color: #64748b;
+  max-width: 480px;
+}
+
+.fileInputRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  margin-top: 0.5rem;
+}
+
+.hiddenFileInput {
+  display: none;
+}
+
+.filePickerLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.15rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #1e293b;
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.filePickerLabel:hover {
+  background-color: #f1f5f9;
+}
+
+.selectedFileName {
+  font-size: 0.86rem;
+  color: #475569;
+  background-color: #e2e8f0;
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+/* Stepper */
+.stepperHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.stepperTrack {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.stepItem {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  background-color: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+
+.stepItemActive {
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+}
+
+.stepBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 0.75rem;
+  background-color: #cbd5e1;
+  color: #1e293b;
+}
+
+.stepItemActive .stepBadge {
+  background-color: #2563eb;
+  color: #ffffff;
+}
+
+.stepArrow {
+  color: #94a3b8;
+  font-weight: 700;
+}
+
+.sessionMeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.82rem;
+  color: #475569;
+  background-color: #f8fafc;
+  padding: 0.45rem 0.85rem;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+}
+
+/* Filter Bar */
+.filterBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background-color: #f8fafc;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.filterButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.filterPill {
+  padding: 0.45rem 0.9rem;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border: 1px solid #cbd5e1;
+  background-color: #ffffff;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.filterPill:hover {
+  background-color: #f1f5f9;
+}
+
+.filterPillActive {
+  background-color: #2563eb;
+  color: #ffffff;
+  border-color: #1d4ed8;
+}
+
+/* Match Cards */
+.matchList {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.matchCard {
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background-color: #ffffff;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+}
+
+.matchCardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.85rem 1.25rem;
+  background-color: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.xrefBadge {
+  font-family: monospace;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background-color: #e2e8f0;
+  color: #334155;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  margin-right: 0.6rem;
+}
+
+.recordTitle {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.classificationBadge {
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.badgeAuto {
+  background-color: #dcfce7;
+  color: #166534;
+}
+
+.badgeReview {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.badgeNew {
+  background-color: #e0f2fe;
+  color: #075985;
+}
+
+.matchCardBody {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 1.25rem;
+  padding: 1.25rem;
+}
+
+@media (max-width: 900px) {
+  .matchCardBody {
+    grid-template-columns: 1fr;
+  }
+}
+
+.gedcomDetailsBox {
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.86rem;
+  color: #334155;
+}
+
+.boxSubtitle {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #64748b;
+  margin-bottom: 0.25rem;
+}
+
+.detailRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-bottom: 1px dashed #e2e8f0;
+  padding-bottom: 0.35rem;
+}
+
+.detailLabel {
+  color: #64748b;
+  font-weight: 500;
+}
+
+.detailValue {
+  font-weight: 600;
+  color: #1e293b;
+  text-align: right;
+}
+
+.candidatesColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.candidateItem {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  background-color: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.candidateItemSelected {
+  border: 2px solid #2563eb;
+  background-color: #eff6ff;
+}
+
+.candidateTopRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.candidateInfo {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.92rem;
+}
+
+.confidencePill {
+  padding: 0.2rem 0.55rem;
+  border-radius: 4px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  background-color: #dcfce7;
+  color: #15803d;
+}
+
+.archivedTag {
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background-color: #fef3c7;
+  color: #b45309;
+}
+
+.reasonsList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.reasonChip {
+  font-size: 0.74rem;
+  background-color: #f1f5f9;
+  color: #475569;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+}
+
+.matchCardFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1.25rem;
+  background-color: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+}
+
+.lookupGroup {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.lookupInput {
+  padding: 0.45rem 0.75rem;
+  font-size: 0.84rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background-color: #ffffff;
+  min-width: 200px;
+}
+
+.lookupResultsBox {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.75rem;
+  background-color: #f1f5f9;
+  border-radius: 6px;
+}
+
+.lookupResultRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  background-color: #ffffff;
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+  font-size: 0.84rem;
+}
+
+/* Summary Sections (4 tiles per row) */
+.summarySection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.summarySectionTitle {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.85rem;
+}
+
+@media (max-width: 900px) {
+  .summaryGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 500px) {
+  .summaryGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.statCard {
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 1rem 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.statLabel {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.statValue {
+  font-size: 1.55rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+/* Absent People List */
+.absentList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.absentRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  background-color: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+}
+
+.blockReasonWarning {
+  margin-top: 0.35rem;
+  font-size: 0.8rem;
+  color: #b45309;
+  background-color: #fef3c7;
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.radioGroup {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.radioLabel {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: pointer;
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background-color: #ffffff;
+}
+
+.radioLabelDisabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background-color: #f1f5f9;
+}
+
+/* Navigation Footer */
+.wizardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+/* Buttons */
+.btnPrimary {
+  padding: 0.65rem 1.35rem;
+  background-color: #2563eb;
+  color: #ffffff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border: 1px solid #1d4ed8;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.btnPrimary:hover:not(:disabled) {
+  background-color: #1d4ed8;
+}
+
+.btnPrimary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btnSuccess {
+  padding: 0.7rem 1.5rem;
+  background-color: #16a34a;
+  color: #ffffff;
+  font-size: 0.95rem;
+  font-weight: 700;
+  border: 1px solid #15803d;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.btnSuccess:hover:not(:disabled) {
+  background-color: #15803d;
+}
+
+.btnSuccess:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btnSecondary {
+  padding: 0.55rem 1.1rem;
+  background-color: #f1f5f9;
+  color: #334155;
+  font-size: 0.88rem;
+  font-weight: 600;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.btnSecondary:hover:not(:disabled) {
+  background-color: #e2e8f0;
+}
+
+.btnDanger {
+  padding: 0.55rem 1.1rem;
+  background-color: #fef2f2;
+  color: #dc2626;
+  font-size: 0.88rem;
+  font-weight: 600;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.btnDanger:hover:not(:disabled) {
+  background-color: #fee2e2;
+}
+
+.btnChoice {
+  padding: 0.45rem 0.9rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background-color: #ffffff;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btnChoice:hover {
+  background-color: #f1f5f9;
+}
+
+.btnChoiceSelectedMatch {
+  background-color: #2563eb;
+  color: #ffffff;
+  border-color: #1d4ed8;
+}
+
+.btnChoiceSelectedNew {
+  background-color: #059669;
+  color: #ffffff;
+  border-color: #047857;
+}
+
+/* Responsive Import History List (No word splitting & No Horizontal Scroll) */
+.historyList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.historyCard {
+  display: grid;
+  grid-template-columns: 75px minmax(120px, 1.2fr) minmax(130px, auto) minmax(150px, auto) 1.6fr auto;
+  align-items: center;
+  gap: 1.15rem;
+  padding: 1rem 1.25rem;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.historyCell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.historyCellLabel {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.historyCellValue {
+  font-size: 0.9rem;
+  color: #1e293b;
+}
+
+.sourceBadge {
+  display: inline-block;
+  align-self: flex-start;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  background-color: #e0f2fe;
+  color: #0369a1;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.candidateDetailsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.35rem 1rem;
+  font-size: 0.8rem;
+  color: #475569;
+  background-color: #f8fafc;
+  padding: 0.55rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+}
+
+.manualSelectedBanner {
+  padding: 0.6rem 0.85rem;
+  background-color: #eff6ff;
+  border: 1px solid #93c5fd;
+  border-radius: 6px;
+  font-size: 0.84rem;
+  color: #1e40af;
+  font-weight: 600;
+}
+
+@media (max-width: 1120px) {
+  .historyCard {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  .historyCard {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .historyCard {
+    grid-template-columns: 1fr;
+  }
+}

@@ -15,21 +15,24 @@ describe('Sidebar Component', () => {
     );
   };
 
-  it('should render all main navigation links', () => {
+  it('should render enabled navigation links and disabled upcoming links', () => {
     renderSidebar();
 
-    expect(screen.getByRole('link', { name: /Panel główny/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Biografie/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Wydarzenia/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Wspomnienia i powiedzenia/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Dziennik/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Drzewo genealogiczne/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Statystyki/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Galeria/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Dokumenty/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Nagrobki/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Miejsca/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Pamiątki/i })).toBeInTheDocument();
+    // Enabled links
+    expect(screen.getByRole('link', { name: /Panel główny/i })).not.toHaveAttribute('aria-disabled');
+    expect(screen.getByRole('link', { name: /Biografie/i })).not.toHaveAttribute('aria-disabled');
+    expect(screen.getByRole('link', { name: /Wydarzenia/i })).not.toHaveAttribute('aria-disabled');
+    expect(screen.getByRole('link', { name: /Drzewo genealogiczne/i })).not.toHaveAttribute('aria-disabled');
+    expect(screen.getByRole('link', { name: /Pochówki/i })).not.toHaveAttribute('aria-disabled');
+
+    // Disabled upcoming links
+    expect(screen.getByRole('link', { name: /Wspomnienia i cytaty/i })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('link', { name: /Dziennik/i })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('link', { name: /Statystyki/i })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('link', { name: /Galeria/i })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('link', { name: /Dokumenty/i })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('link', { name: /Miejsca/i })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('link', { name: /Pamiątki/i })).toHaveAttribute('aria-disabled', 'true');
   });
 
   it('should render the dividers between sections', () => {

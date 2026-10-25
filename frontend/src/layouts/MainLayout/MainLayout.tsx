@@ -5,7 +5,8 @@ import Sidebar from '../../components/Sidebar/Sidebar';
 import Footer from '../../components/Footer/Footer';
 import { useSidebar } from '../../context/SidebarContext';
 import HomePage from '../../pages/HomePage/HomePage';
-
+import GedcomImportPage from '../../pages/GedcomImportPage/GedcomImportPage';
+import GedcomImportHistoryPage from '../../pages/GedcomImportHistoryPage/GedcomImportHistoryPage';
 
 export default function MainLayout() {
   const { isSidebarOpen } = useSidebar();
@@ -19,6 +20,8 @@ export default function MainLayout() {
       <main className={styles.mainContentArea}>
         <Routes>
           <Route path="/" element={<HomePage />} />
+          <Route path="/gedcom-import" element={<GedcomImportPage />} />
+          <Route path="/gedcom-import/history" element={<GedcomImportHistoryPage />} />
         </Routes>
       </main>
       <Footer />

@@ -103,7 +103,7 @@ class GedcomPersonMatcherTest {
                 "Exact given name and surname match",
                 "Exact birth date match",
                 "Matching birth place",
-                "Matching death date/year",
+                "Exact death date match",
                 "Matching death place",
                 "Matching parent given name",
                 "Matching spouse given name",
@@ -303,5 +303,46 @@ class GedcomPersonMatcherTest {
         assertThat(result.getClassification()).isEqualTo(MatchClassification.NEW);
         assertThat(result.getSelectedAction()).isEqualTo(DecisionAction.CREATE_NEW);
         assertThat(result.getCandidates()).isEmpty();
+    }
+
+    @Test
+    void shouldMatchCandidateInNeedsReviewWhenFirstNameChangedAndBirthYearMissingButOtherDataMatches() {
+        // GIVEN - "Janek Fitzgerald Kennedy" with unparseable French Republican birth date,
+        // vs DB "John Fitzgerald Kennedy" with matching surname, middle name, places, death date, parents & spouse
+        ParsedGedcomIndividualDto gedIndi = ParsedGedcomIndividualDto.builder()
+                .gedRefId("@I1@")
+                .givenName("Janek Fitzgerald")
+                .surname("Kennedy")
+                .sex("M")
+                .birthDate("@#DFRENCH R@ AFT FRIM 9 125")
+                .birthPlace("Brookline, Massachusetts")
+                .deathDate("22 NOV 1963")
+                .deathPlace("Dallas, Texas")
+                .parentGivenNames(Set.of("Joseph Patrick", "Rose"))
+                .spouseGivenNames(Set.of("Jacqueline Lee"))
+                .build();
+
+        DbPersonCandidateContext dbJfk = DbPersonCandidateContext.builder()
+                .personId(73L)
+                .givenName("John Fitzgerald")
+                .surname("Kennedy")
+                .sex(PersonSex.MALE)
+                .birthYear(null)
+                .birthPlace("Brookline, Massachusetts")
+                .deathYear(1963).deathMonth(11).deathDay(22)
+                .deathPlace("Dallas, Texas")
+                .parentGivenNames(Set.of("Joseph Patrick", "Rose"))
+                .spouseGivenNames(Set.of("Jacqueline Lee"))
+                .build();
+
+        // WHEN
+        IndividualMatchResultDto result = matcher.matchIndividual(gedIndi, List.of(dbJfk));
+
+        // THEN - 28 (surname + middle name) + 5 (birth place) + 15 (exact death date) + 5 (death place)
+        // + 15 (both parents) + 10 (spouse) = 78 -> NEEDS_REVIEW!
+        assertThat(result.getClassification()).isEqualTo(MatchClassification.NEEDS_REVIEW);
+        assertThat(result.getCandidates()).hasSize(1);
+        assertThat(result.getCandidates().getFirst().getPersonId()).isEqualTo(73L);
+        assertThat(result.getCandidates().getFirst().getConfidenceScore()).isEqualTo(78);
     }
 }

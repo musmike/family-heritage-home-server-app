@@ -14,7 +14,6 @@ export default function FamilyTreePage() {
     paramPersonId ? Number(paramPersonId) : null
   );
   const [previousProbands, setPreviousProbands] = useState<number[]>([]);
-  const [generations, setGenerations] = useState<number>(4);
 
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [searchResults, setSearchResults] = useState<PersonListItemDto[]>([]);
@@ -81,34 +80,20 @@ export default function FamilyTreePage() {
         <div>
           <h1 className={styles.pageTitle}>Drzewo genealogiczne (wywód przodków)</h1>
           <p className={styles.pageSubtitle}>
-            Przeglądaj przodków biologicznych wybranej osoby. Kliknij „Jako probant” na kafelku przodka, aby przejść wyżej w głąb drzewa.
+            Kliknij dowolną osobę w drzewie, aby zobaczyć jej szczegóły, przejść do biografii lub ustawić ją jako nowego probanta.
           </p>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-          {previousProbands.length > 0 && (
-            <button
-              type="button"
-              data-testid="tree-back-proband-button"
-              onClick={handleGoBackProband}
-              className={styles.btnSecondary}
-            >
-              ← Cofnij do poprzedniego probanta
-            </button>
-          )}
-
-          <select
-            value={generations}
-            aria-label="Liczba pokoleń"
-            onChange={e => {
-              setGenerations(Number(e.target.value));
-            }}
-            className={styles.selectInput}
+        {previousProbands.length > 0 && (
+          <button
+            type="button"
+            data-testid="tree-back-proband-button"
+            onClick={handleGoBackProband}
+            className={styles.btnSecondary}
           >
-            <option value={3}>3 pokolenia</option>
-            <option value={4}>4 pokolenia</option>
-          </select>
-        </div>
+            ← Cofnij do poprzedniego probanta
+          </button>
+        )}
       </div>
 
       {/* Proband Search Selector */}
@@ -117,7 +102,7 @@ export default function FamilyTreePage() {
           <label htmlFor="tree-proband-search" className={styles.filterLabel}>
             Zmień osobę centralną (probanta)
           </label>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
             <input
               id="tree-proband-search"
               type="text"
@@ -127,7 +112,7 @@ export default function FamilyTreePage() {
                 setSearchQuery(e.target.value);
               }}
               className={styles.textInput}
-              style={{ flex: 1 }}
+              style={{ flex: 1, minWidth: '180px' }}
             />
             <button
               type="button"
@@ -165,7 +150,6 @@ export default function FamilyTreePage() {
         ) : (
           <AncestorTree
             rootPersonId={probandId}
-            generations={generations}
             mode="full-tree"
             onSelectProband={handleSelectNewProband}
           />

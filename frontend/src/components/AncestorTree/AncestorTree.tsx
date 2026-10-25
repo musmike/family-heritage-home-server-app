@@ -8,7 +8,6 @@ import type { AncestorTreeNodeDto, PersonSex } from '../../types/biography';
 
 interface AncestorTreeProps {
   rootPersonId: number;
-  generations?: number;
   mode: 'biography' | 'full-tree';
   onSelectProband?: (personId: number) => void;
 }
@@ -25,20 +24,17 @@ const formatPolishAge = (age: number | null, approximate: boolean): string | nul
   return `${prefix}${String(age)} lat`;
 };
 
-const formatNodeLifespan = (node: AncestorTreeNodeDto): string => {
+const formatCompactYears = (node: AncestorTreeNodeDto): string => {
   if (node.privateRecord) {
     return 'Dane prywatne';
   }
   const b = node.birthYear !== null ? String(node.birthYear) : '?';
   const d = node.deathYear !== null ? String(node.deathYear) : '?';
-  const ageStr = formatPolishAge(node.age, node.ageApproximate);
-
   if (node.lifeState === 'DECEASED') {
-    const base = `${b}–${d}`;
-    return ageStr ? `${base} (${ageStr})` : base;
+    return `${b}–${d}`;
   }
   if (node.birthYear !== null) {
-    return ageStr ? `ur. ${b} (${ageStr})` : `ur. ${b}`;
+    return `ur. ${b}`;
   }
   return '';
 };
@@ -49,15 +45,34 @@ const getBorderClass = (sex: PersonSex | null): string => {
   return styles.borderNeutral;
 };
 
+const getOptimalGenerations = (mode: 'biography' | 'full-tree'): number => {
+  if (mode === 'biography') return 3;
+  if (typeof window !== 'undefined' && window.innerWidth >= 1280) {
+    return 4;
+  }
+  return 3;
+};
+
 export default function AncestorTree({
   rootPersonId,
-  generations = 3,
   mode,
   onSelectProband,
 }: AncestorTreeProps) {
+  const [generations, setGenerations] = useState<number>(() => getOptimalGenerations(mode));
   const [treeRoot, setTreeRoot] = useState<AncestorTreeNodeDto | null>(null);
+  const [selectedModalNode, setSelectedModalNode] = useState<AncestorTreeNodeDto | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setGenerations(getOptimalGenerations(mode));
+    };
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [mode]);
 
   useEffect(() => {
     const loadTree = async () => {
@@ -75,145 +90,153 @@ export default function AncestorTree({
     void loadTree();
   }, [rootPersonId, generations]);
 
-  const renderBranch = (
+  const renderCardButton = (
+    node: AncestorTreeNodeDto | null,
+    expectedSex: PersonSex,
+    isProband: boolean
+  ) => {
+    if (!node) {
+      return (
+        <div className={styles.nodeCardEmpty}>
+          {expectedSex === 'MALE' ? 'Nieznany ojciec' : 'Nieznana matka'}
+        </div>
+      );
+    }
+
+    const fullName = `${node.givenName ?? ''} ${node.surname ?? ''}`.trim() || 'Bez imienia';
+    const years = formatCompactYears(node);
+    const borderClass = getBorderClass(node.sex);
+    const probandClass = isProband ? styles.nodeCardProband : '';
+
+    return (
+      <button
+        type="button"
+        data-testid={`tree-node-${String(node.id)}`}
+        onClick={() => {
+          setSelectedModalNode(node);
+        }}
+        className={`${styles.nodeCard} ${borderClass} ${probandClass}`}
+      >
+        <PersonAvatar sex={node.sex} size="sm" />
+        <div className={styles.nodeTextGroup}>
+          <div className={styles.nodeName}>{fullName}</div>
+          {years && <div className={styles.nodeLifespan}>{years}</div>}
+        </div>
+      </button>
+    );
+  };
+
+  // Desktop recursive bottom-up renderer (Father on Left, Mother on Right)
+  const renderDesktopBranch = (
     node: AncestorTreeNodeDto | null,
     currentGen: number,
     expectedSex: PersonSex
   ) => {
-    const hasFurtherGenerations = currentGen < generations;
-    const isCompact = generations >= 4 && currentGen >= 3;
+    const hasFurther = currentGen < generations;
 
     return (
-      <div className={styles.branchContainer}>
-        {hasFurtherGenerations && (
+      <div className={styles.branchDesktop}>
+        {hasFurther && (
           <>
-            <div className={styles.parentsPairContainer}>
-              {/* Father is always First: Left on Desktop, Upper/Higher on Mobile */}
-              {renderBranch(node?.father ?? null, currentGen + 1, 'MALE')}
-              {/* Mother is always Second: Right on Desktop, Lower on Mobile */}
-              {renderBranch(node?.mother ?? null, currentGen + 1, 'FEMALE')}
+            <div className={styles.parentsRowDesktop}>
+              <div className={styles.parentHalfDesktop}>
+                {renderDesktopBranch(node?.father ?? null, currentGen + 1, 'MALE')}
+                <div className={styles.stemDownFromParent} aria-hidden="true" />
+              </div>
+              <div className={styles.parentHalfDesktop}>
+                {renderDesktopBranch(node?.mother ?? null, currentGen + 1, 'FEMALE')}
+                <div className={styles.stemDownFromParent} aria-hidden="true" />
+              </div>
             </div>
-            <div className={styles.forkConnector} aria-hidden="true" />
+            <div className={styles.horizontalBridgeDesktop} aria-hidden="true" />
+            <div className={styles.stemDownToChild} aria-hidden="true" />
           </>
         )}
 
-        <div className={styles.nodeCardWrapper}>
-          {!node ? (
-            <div className={styles.nodeCardEmpty}>
-              {expectedSex === 'MALE' ? 'Nieznany ojciec' : 'Nieznana matka'}
-            </div>
-          ) : (
-            renderNodeCard(node, currentGen === 1, isCompact)
-          )}
+        <div className={styles.desktopCardSlot}>
+          {renderCardButton(node, expectedSex, currentGen === 1)}
         </div>
       </div>
     );
   };
 
-  const renderNodeCard = (
-    node: AncestorTreeNodeDto,
-    isProband: boolean,
-    isCompact: boolean
-  ) => {
-    const fullName = `${node.givenName ?? ''} ${node.surname ?? ''}`.trim();
-    const lifespan = formatNodeLifespan(node);
-    const borderClass = getBorderClass(node.sex);
-    const compactClass = isCompact ? styles.nodeCardCompact : '';
-    const probandClass = isProband ? styles.nodeCardProband : '';
-
-    const cardInner = (
-      <>
-        <div className={styles.nodeHeader}>
-          {!isCompact && <PersonAvatar sex={node.sex} size="sm" />}
-          <div className={styles.nodeTitleBox}>
-            <div className={styles.nodeName}>{fullName}</div>
-            {lifespan && <div className={styles.nodeLifespan}>{lifespan}</div>}
-          </div>
-        </div>
-
-        {!node.privateRecord && (
-          <div className={styles.nodeDetails}>
-            {(node.birthDateText ?? node.birthPlace) && (
-              <div className={styles.detailItem}>
-                <span className={styles.detailTag}>Ur.:</span>{' '}
-                {node.birthDateText ?? ''}{' '}
-                {node.birthPlace ? `(${node.birthPlace})` : ''}
-              </div>
-            )}
-            {(node.weddingDateText ?? node.weddingPlace) && (
-              <div className={styles.detailItem}>
-                <span className={styles.detailTag}>Ślub:</span>{' '}
-                {node.weddingDateText ?? ''}{' '}
-                {node.weddingPlace ? `(${node.weddingPlace})` : ''}
-              </div>
-            )}
-            {node.lifeState === 'DECEASED' && (node.deathDateText ?? node.deathPlace) && (
-              <div className={styles.detailItem}>
-                <span className={styles.detailTag}>Zm.:</span>{' '}
-                {node.deathDateText ?? ''}{' '}
-                {node.deathPlace ? `(${node.deathPlace})` : ''}
-              </div>
-            )}
-            {!isCompact && node.causeOfDeath && (
-              <div className={styles.detailItem}>
-                <span className={styles.detailTag}>Przyczyna:</span> {node.causeOfDeath}
-              </div>
-            )}
-            {!isCompact && node.burialPlace && (
-              <div className={styles.detailItem}>
-                <span className={styles.detailTag}>Pochówek:</span> {node.burialPlace}
-              </div>
-            )}
-          </div>
-        )}
-
-        {mode === 'full-tree' && (
-          <div className={styles.nodeActions}>
-            {!isProband && onSelectProband && (
-              <button
-                type="button"
-                data-testid={`tree-set-proband-${String(node.id)}`}
-                onClick={() => {
-                  onSelectProband(node.id);
-                }}
-                className={styles.actionBtn}
-              >
-                🎯 Jako probant
-              </button>
-            )}
-            {!node.privateRecord && (
-              <Link
-                to={`/biographies/${String(node.id)}`}
-                data-testid={`tree-bio-link-${String(node.id)}`}
-                className={styles.actionBtn}
-              >
-                📖 Biografia
-              </Link>
-            )}
-          </div>
-        )}
-      </>
-    );
-
-    // In biography mode, clicking an ancestor card navigates directly to their biography
-    if (mode === 'biography' && !isProband && !node.privateRecord) {
-      return (
-        <Link
-          to={`/biographies/${String(node.id)}`}
-          data-testid={`bio-tree-node-${String(node.id)}`}
-          className={`${styles.nodeCard} ${styles.nodeCardClickable} ${borderClass} ${compactClass}`}
-        >
-          {cardInner}
-        </Link>
-      );
-    }
+  // Mobile 7x7 Staggered Overlapping Grid renderer (matches user's diagram 1:1)
+  const renderMobileStaggeredTree = (root: AncestorTreeNodeDto) => {
+    const father = root.father;
+    const mother = root.mother;
+    const patGrandfather = father?.father ?? null;
+    const patGrandmother = father?.mother ?? null;
+    const matGrandfather = mother?.father ?? null;
+    const matGrandmother = mother?.mother ?? null;
 
     return (
-      <div
-        data-testid={`tree-node-${String(node.id)}`}
-        className={`${styles.nodeCard} ${borderClass} ${probandClass} ${compactClass}`}
-      >
-        {cardInner}
+      <div className={styles.mobileStaggeredGrid}>
+        {/* Connectors */}
+        <div
+          className={styles.connUpRight}
+          style={{ gridRow: '2 / 4', gridColumn: '2 / 3' }}
+          aria-hidden="true"
+        />
+        <div
+          className={styles.connDownRight}
+          style={{ gridRow: '5 / 7', gridColumn: '2 / 3' }}
+          aria-hidden="true"
+        />
+        <div
+          className={styles.connUpRight}
+          style={{ gridRow: '1 / 2', gridColumn: '4 / 5' }}
+          aria-hidden="true"
+        />
+        <div
+          className={styles.connDownRight}
+          style={{ gridRow: '3 / 4', gridColumn: '4 / 5' }}
+          aria-hidden="true"
+        />
+        <div
+          className={styles.connUpRight}
+          style={{ gridRow: '5 / 6', gridColumn: '4 / 5' }}
+          aria-hidden="true"
+        />
+        <div
+          className={styles.connDownRight}
+          style={{ gridRow: '7 / 8', gridColumn: '4 / 5' }}
+          aria-hidden="true"
+        />
+
+        {/* 1. Proband (Row 4, Cols 1..4) */}
+        <div style={{ gridRow: '4', gridColumn: '1 / 4' }}>
+          {renderCardButton(root, root.sex ?? 'UNKNOWN', true)}
+        </div>
+
+        {/* 2. Father (Row 2, Cols 3..6) */}
+        <div style={{ gridRow: '2', gridColumn: '3 / 6' }}>
+          {renderCardButton(father, 'MALE', false)}
+        </div>
+
+        {/* 3. Mother (Row 6, Cols 3..6) */}
+        <div style={{ gridRow: '6', gridColumn: '3 / 6' }}>
+          {renderCardButton(mother, 'FEMALE', false)}
+        </div>
+
+        {/* 4. Paternal Grandfather (Row 1, Cols 5..8) */}
+        <div style={{ gridRow: '1', gridColumn: '5 / 8' }}>
+          {renderCardButton(patGrandfather, 'MALE', false)}
+        </div>
+
+        {/* 5. Paternal Grandmother (Row 3, Cols 5..8) */}
+        <div style={{ gridRow: '3', gridColumn: '5 / 8' }}>
+          {renderCardButton(patGrandmother, 'FEMALE', false)}
+        </div>
+
+        {/* 6. Maternal Grandfather (Row 5, Cols 5..8) */}
+        <div style={{ gridRow: '5', gridColumn: '5 / 8' }}>
+          {renderCardButton(matGrandfather, 'MALE', false)}
+        </div>
+
+        {/* 7. Maternal Grandmother (Row 7, Cols 5..8) */}
+        <div style={{ gridRow: '7', gridColumn: '5 / 8' }}>
+          {renderCardButton(matGrandmother, 'FEMALE', false)}
+        </div>
       </div>
     );
   };
@@ -226,9 +249,143 @@ export default function AncestorTree({
     return <div className={styles.nodeCardEmpty}>{error ?? 'Brak danych drzewa.'}</div>;
   }
 
+  const modalAge = selectedModalNode
+    ? formatPolishAge(selectedModalNode.age, selectedModalNode.ageApproximate)
+    : null;
+
   return (
     <div className={styles.treeContainer} data-testid="ancestor-tree-root">
-      {renderBranch(treeRoot, 1, treeRoot.sex ?? 'UNKNOWN')}
+      <div className={styles.desktopTree}>
+        {renderDesktopBranch(treeRoot, 1, treeRoot.sex ?? 'UNKNOWN')}
+      </div>
+
+      {renderMobileStaggeredTree(treeRoot)}
+
+      {/* PERSON DETAILS MODAL */}
+      {selectedModalNode && (
+        <div
+          className={styles.modalOverlay}
+          data-testid="tree-person-modal"
+          onClick={() => {
+            setSelectedModalNode(null);
+          }}
+        >
+          <div
+            className={styles.modalCard}
+            onClick={e => {
+              e.stopPropagation();
+            }}
+          >
+            <div className={styles.modalHeader}>
+              <div className={styles.modalHeaderLeft}>
+                <PersonAvatar sex={selectedModalNode.sex} size="md" />
+                <div>
+                  <div className={styles.modalPersonName}>
+                    {selectedModalNode.givenName ?? ''} {selectedModalNode.surname ?? ''}
+                  </div>
+                  <div className={styles.modalPersonSub}>
+                    {formatCompactYears(selectedModalNode)}
+                    {modalAge ? ` • ${modalAge}` : ''}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                aria-label="Zamknij"
+                onClick={() => {
+                  setSelectedModalNode(null);
+                }}
+                className={styles.modalCloseBtn}
+              >
+                ✕
+              </button>
+            </div>
+
+            {!selectedModalNode.privateRecord && (
+              <div className={styles.modalBody}>
+                {(selectedModalNode.birthDateText ?? selectedModalNode.birthPlace) && (
+                  <div className={styles.modalRow}>
+                    <span className={styles.modalLabel}>Urodzenie</span>
+                    <span className={styles.modalValue}>
+                      {selectedModalNode.birthDateText ?? ''}{' '}
+                      {selectedModalNode.birthPlace
+                        ? `(${selectedModalNode.birthPlace})`
+                        : ''}
+                    </span>
+                  </div>
+                )}
+                {(selectedModalNode.weddingDateText ?? selectedModalNode.weddingPlace) && (
+                  <div className={styles.modalRow}>
+                    <span className={styles.modalLabel}>Ślub z drugim rodzicem</span>
+                    <span className={styles.modalValue}>
+                      {selectedModalNode.weddingDateText ?? ''}{' '}
+                      {selectedModalNode.weddingPlace
+                        ? `(${selectedModalNode.weddingPlace})`
+                        : ''}
+                    </span>
+                  </div>
+                )}
+                {selectedModalNode.lifeState === 'DECEASED' &&
+                  (selectedModalNode.deathDateText ?? selectedModalNode.deathPlace) && (
+                    <div className={styles.modalRow}>
+                      <span className={styles.modalLabel}>Śmierć</span>
+                      <span className={styles.modalValue}>
+                        {selectedModalNode.deathDateText ?? ''}{' '}
+                        {selectedModalNode.deathPlace
+                          ? `(${selectedModalNode.deathPlace})`
+                          : ''}
+                      </span>
+                    </div>
+                  )}
+                {selectedModalNode.causeOfDeath && (
+                  <div className={styles.modalRow}>
+                    <span className={styles.modalLabel}>Przyczyna śmierci</span>
+                    <span className={styles.modalValue}>{selectedModalNode.causeOfDeath}</span>
+                  </div>
+                )}
+                {selectedModalNode.burialPlace && (
+                  <div className={styles.modalRow}>
+                    <span className={styles.modalLabel}>Miejsce pochówku</span>
+                    <span className={styles.modalValue}>{selectedModalNode.burialPlace}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className={styles.modalActions}>
+              {!selectedModalNode.privateRecord && (
+                <Link
+                  to={`/biographies/${String(selectedModalNode.id)}`}
+                  data-testid="modal-biography-link"
+                  onClick={() => {
+                    setSelectedModalNode(null);
+                  }}
+                  className={styles.modalBtnPrimary}
+                >
+                  📖 Przejdź do biografii
+                </Link>
+              )}
+
+              {mode === 'full-tree' &&
+                onSelectProband &&
+                selectedModalNode.id !== treeRoot.id && (
+                  <button
+                    type="button"
+                    data-testid="modal-set-proband-button"
+                    onClick={() => {
+                      const nextId = selectedModalNode.id;
+                      setSelectedModalNode(null);
+                      onSelectProband(nextId);
+                    }}
+                    className={styles.modalBtnSecondary}
+                  >
+                    🎯 Ustaw jako probanta
+                  </button>
+                )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

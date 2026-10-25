@@ -577,3 +577,19 @@
   font-size: 0.92rem;
   font-weight: 500;
 }
+
+@media (max-width: 767px) {
+  .pageWrapper {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .pageHeader,
+  .filterCard,
+  .articleHeaderBlock,
+  .wikiSection,
+  .personRowCard {
+    padding: 1rem;
+  }
+}

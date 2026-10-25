@@ -504,7 +504,7 @@ export default function PersonBiographyPage() {
                 🌳 Otwórz w pełnym drzewie →
               </Link>
             </div>
-            <AncestorTree rootPersonId={bio.id} generations={3} mode="biography" />
+            <AncestorTree rootPersonId={bio.id} mode="biography" />
           </section>
 
           <section className={styles.wikiSection}>

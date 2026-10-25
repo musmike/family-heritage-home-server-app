@@ -4,6 +4,7 @@ import { biographyApi } from '../../api/biographyApi';
 import Loader from '../../components/Loader/Loader';
 import PersonAvatar from '../../components/PersonAvatar/PersonAvatar';
 import styles from './Biographies.module.css';
+import AncestorTree from '../../components/AncestorTree/AncestorTree';
 import type {
   ChildInFamilyDto,
   FamilyChildRelationshipType,
@@ -492,10 +493,18 @@ export default function PersonBiographyPage() {
           )}
 
           <section className={styles.wikiSection}>
-            <h2 className={styles.wikiSectionTitle}>Drzewo przodków</h2>
-            <div className={styles.placeholderBox}>
-              Diagram przodków tej osoby zostanie wyświetlony w tym miejscu.
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <h2 className={styles.wikiSectionTitle} style={{ borderBottom: 'none', paddingBottom: 0 }}>
+                Drzewo przodków
+              </h2>
+              <Link
+                to={`/tree?personId=${String(bio.id)}`}
+                className={styles.btnSecondary}
+              >
+                🌳 Otwórz w pełnym drzewie →
+              </Link>
             </div>
+            <AncestorTree rootPersonId={bio.id} generations={3} mode="biography" />
           </section>
 
           <section className={styles.wikiSection}>

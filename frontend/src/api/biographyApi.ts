@@ -1,5 +1,6 @@
 import api from './axiosInstance';
 import type {
+  AncestorTreeNodeDto,
   BiographyListQueryParams,
   BiographyPageDto,
   PersonBiographyDto,
@@ -38,6 +39,17 @@ export const biographyApi = {
 
   getBiography: async (personId: number): Promise<PersonBiographyDto> => {
     const response = await api.get<PersonBiographyDto>(`/biographies/${String(personId)}`);
+    return response.data;
+  },
+
+  getAncestorTree: async (
+    personId: number,
+    generations = 3
+  ): Promise<AncestorTreeNodeDto> => {
+    const response = await api.get<AncestorTreeNodeDto>(
+      `/biographies/${String(personId)}/ancestor-tree`,
+      { params: { generations } }
+    );
     return response.data;
   },
 };

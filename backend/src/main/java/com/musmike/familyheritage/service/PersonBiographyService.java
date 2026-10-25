@@ -429,4 +429,131 @@ public class PersonBiographyService {
         }
         return event.getMainLocation().getName();
     }
+
+    @Transactional
+    public AncestorTreeNodeDto getAncestorTree(Long rootPersonId, int maxGenerations, boolean isGuest) {
+        Person rootPerson = personRepository.findById(rootPersonId)
+                .orElseThrow(() -> new IllegalArgumentException("Person not found: " + rootPersonId));
+
+        int clampedGenerations = Math.clamp(maxGenerations, 1, 5);
+        return buildAncestorNode(rootPerson, 1, clampedGenerations, isGuest, null, null);
+    }
+
+    private AncestorTreeNodeDto buildAncestorNode(
+            Person person,
+            int currentGeneration,
+            int maxGenerations,
+            boolean isGuest,
+            String weddingDateWithCoParent,
+            String weddingPlaceWithCoParent
+    ) {
+        if (person == null) {
+            return null;
+        }
+
+        AncestorTreeNodeDto fatherNode = null;
+        AncestorTreeNodeDto motherNode = null;
+
+        if (currentGeneration < maxGenerations) {
+            Person bioFather = null;
+            Person bioMother = null;
+            Family bioParentsCommonFamily = null;
+
+            for (FamilyChild fc : familyChildRepository.findByChild(person)) {
+                Family fam = fc.getFamily();
+                boolean isBioFatherHere = fc.getFatherRelationshipType() == FamilyChildRelationshipType.BIOLOGICAL
+                        && fam.getHusband() != null;
+                boolean isBioMotherHere = fc.getMotherRelationshipType() == FamilyChildRelationshipType.BIOLOGICAL
+                        && fam.getWife() != null;
+
+                if (isBioFatherHere && bioFather == null) {
+                    bioFather = fam.getHusband();
+                }
+                if (isBioMotherHere && bioMother == null) {
+                    bioMother = fam.getWife();
+                }
+                if (isBioFatherHere && isBioMotherHere && bioParentsCommonFamily == null) {
+                    bioParentsCommonFamily = fam;
+                }
+            }
+
+            String parentsWeddingDate = null;
+            String parentsWeddingPlace = null;
+            if (bioParentsCommonFamily != null && bioParentsCommonFamily.getPrimaryWedding() != null) {
+                Event wedding = bioParentsCommonFamily.getPrimaryWedding();
+                parentsWeddingDate = formatEventDates(wedding.getStartDate(), wedding.getEndDate());
+                parentsWeddingPlace = extractLocationName(wedding);
+            }
+
+            fatherNode = buildAncestorNode(
+                    bioFather, currentGeneration + 1, maxGenerations, isGuest, parentsWeddingDate, parentsWeddingPlace
+            );
+            motherNode = buildAncestorNode(
+                    bioMother, currentGeneration + 1, maxGenerations, isGuest, parentsWeddingDate, parentsWeddingPlace
+            );
+        }
+
+        // Mask living/unknown individuals for GUEST role while keeping tree links to deceased ancestors
+        if (isGuest && person.getLifeState() != LifeState.DECEASED) {
+            return AncestorTreeNodeDto.builder()
+                    .id(person.getId())
+                    .givenName("<Prywatne>")
+                    .surname(person.getCachedSurname())
+                    .sex(person.getSex())
+                    .lifeState(person.getLifeState())
+                    .archived(Boolean.TRUE.equals(person.getIsArchived()))
+                    .privateRecord(true)
+                    .father(fatherNode)
+                    .mother(motherNode)
+                    .build();
+        }
+
+        DateDescriptor birthStart = person.getBirthEvent() != null ? person.getBirthEvent().getStartDate() : null;
+        DateDescriptor birthEnd = person.getBirthEvent() != null ? person.getBirthEvent().getEndDate() : null;
+        DateDescriptor deathStart = person.getDeathEvent() != null ? person.getDeathEvent().getStartDate() : null;
+        DateDescriptor deathEnd = person.getDeathEvent() != null ? person.getDeathEvent().getEndDate() : null;
+
+        String causeOfDeath = person.getDeathEvent() == null ? null :
+                eventAttrValueRepository.findByEvent(person.getDeathEvent()).stream()
+                        .map(eav -> eav.getAttributeDictionaryValue().getCode())
+                        .findFirst()
+                        .orElse(null);
+
+        String burialPlace = burialRepository.findByPerson(person).stream()
+                .map(b -> {
+                    if (b.getGrave() != null && b.getGrave().getCemeteryLocation() != null) {
+                        return b.getGrave().getCemeteryLocation().getName();
+                    }
+                    return extractLocationName(b.getBurialEvent());
+                })
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+
+        AgeResult ageResult = calculateAge(person.getLifeState(), birthStart, deathStart);
+
+        return AncestorTreeNodeDto.builder()
+                .id(person.getId())
+                .givenName(person.getCachedGivenName())
+                .surname(person.getCachedSurname())
+                .sex(person.getSex())
+                .lifeState(person.getLifeState())
+                .archived(Boolean.TRUE.equals(person.getIsArchived()))
+                .privateRecord(false)
+                .birthYear(birthStart != null ? birthStart.getStartYear() : null)
+                .birthDateText(formatEventDates(birthStart, birthEnd))
+                .birthPlace(extractLocationName(person.getBirthEvent()))
+                .deathYear(deathStart != null ? deathStart.getStartYear() : null)
+                .deathDateText(formatEventDates(deathStart, deathEnd))
+                .deathPlace(extractLocationName(person.getDeathEvent()))
+                .causeOfDeath(causeOfDeath)
+                .burialPlace(burialPlace)
+                .weddingDateText(weddingDateWithCoParent)
+                .weddingPlace(weddingPlaceWithCoParent)
+                .age(ageResult.age())
+                .ageApproximate(ageResult.approximate())
+                .father(fatherNode)
+                .mother(motherNode)
+                .build();
+    }
 }

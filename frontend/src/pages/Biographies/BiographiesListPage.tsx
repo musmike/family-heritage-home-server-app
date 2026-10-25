@@ -102,7 +102,7 @@ export default function BiographiesListPage() {
         <div>
           <h1 className={styles.pageTitle}>Biografie</h1>
           <p className={styles.pageSubtitle}>
-            Przeglądaj osoby w drzewie genealogicznym, filtruj dane i otwieraj szczegółowe karty biograficzne.
+            Przeglądaj osoby w drzewie genealogicznym, filtruj dane i otwieraj karty biograficzne lub drzewo przodków.
           </p>
         </div>
       </div>
@@ -221,15 +221,14 @@ export default function BiographiesListPage() {
         </div>
       ) : (
         <>
-          <div className={styles.peopleGrid}>
+          <div className={styles.peopleList}>
             {pageData.content.map(person => (
-              <Link
+              <div
                 key={person.id}
-                to={`/biographies/${String(person.id)}`}
                 data-testid={`person-card-${String(person.id)}`}
-                className={`${styles.personCard} ${getCardAccentClass(person.sex)}`}
+                className={`${styles.personRowCard} ${getCardAccentClass(person.sex)}`}
               >
-                <div className={styles.cardTop}>
+                <div className={styles.rowLeft}>
                   <PersonAvatar sex={person.sex} size="lg" />
                   <div className={styles.cardTitleGroup}>
                     <div className={styles.personName}>
@@ -247,7 +246,7 @@ export default function BiographiesListPage() {
                   </div>
                 </div>
 
-                <div className={styles.cardEventsBox}>
+                <div className={styles.rowMiddleEvents}>
                   <div className={styles.eventLine}>
                     <span className={styles.eventLabel}>Urodzenie:</span>
                     <span className={styles.eventValue}>
@@ -265,7 +264,22 @@ export default function BiographiesListPage() {
                     </div>
                   )}
                 </div>
-              </Link>
+
+                <div className={styles.rowActions}>
+                  <Link
+                    to={`/biographies/${String(person.id)}`}
+                    className={styles.btnSecondary}
+                  >
+                    📖 Biografia
+                  </Link>
+                  <Link
+                    to={`/tree?personId=${String(person.id)}`}
+                    className={styles.btnSecondary}
+                  >
+                    🌳 Drzewo
+                  </Link>
+                </div>
+              </div>
             ))}
           </div>
 

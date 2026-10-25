@@ -11,6 +11,7 @@ vi.mock('../../api/biographyApi', () => ({
   biographyApi: {
     listPeople: vi.fn(),
     getBiography: vi.fn(),
+    getAncestorTree: vi.fn(),
   },
 }));
 
@@ -174,6 +175,29 @@ describe('Biographies Module (List and Biography Page)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(biographyApi).getAncestorTree.mockResolvedValue({
+      id: 1,
+      givenName: 'Jan',
+      surname: 'Kowalski',
+      sex: 'MALE',
+      lifeState: 'DECEASED',
+      archived: false,
+      privateRecord: false,
+      birthYear: 1920,
+      birthDateText: '10.01.1920',
+      birthPlace: 'Warszawa',
+      deathYear: 1990,
+      deathDateText: '15.02.1990',
+      deathPlace: 'Kraków',
+      causeOfDeath: 'Zawał serca',
+      burialPlace: 'Cmentarz Rakowicki, Kraków',
+      weddingDateText: null,
+      weddingPlace: null,
+      age: 70,
+      ageApproximate: false,
+      father: null,
+      mother: null,
+    });
   });
 
   it('should render people cards, filter by archived and search query', async () => {

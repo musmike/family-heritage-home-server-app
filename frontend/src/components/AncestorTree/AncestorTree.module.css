@@ -1,0 +1,271 @@
+.treeContainer {
+  width: 100%;
+  overflow-x: hidden;
+  padding: 0.5rem 0;
+}
+
+/* ==========================================================================
+   DESKTOP (> 860px): Bottom-Up Pedigree
+   - Proband at the bottom
+   - Parents above (Father on LEFT, Mother on RIGHT)
+   ========================================================================== */
+.branchContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1 1 0;
+  min-width: 0;
+  width: 100%;
+}
+
+.parentsPairContainer {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  justify-content: center;
+  width: 100%;
+  gap: 0.5rem;
+}
+
+.forkConnector {
+  width: 52%;
+  height: 16px;
+  border-top: 2px solid #94a3b8;
+  border-left: 2px solid #94a3b8;
+  border-right: 2px solid #94a3b8;
+  border-top-left-radius: 4px;
+  border-top-right-radius: 4px;
+  position: relative;
+  margin-top: 2px;
+  margin-bottom: 10px;
+}
+
+.forkConnector::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -10px;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 10px;
+  background-color: #94a3b8;
+}
+
+.nodeCardWrapper {
+  width: 100%;
+  max-width: 310px;
+  padding: 0 0.2rem;
+  display: flex;
+  justify-content: center;
+}
+
+/* ==========================================================================
+   MOBILE / VERTICAL SCREEN (<= 860px): Left-to-Right Pedigree
+   - Proband on the LEFT
+   - Parents on the RIGHT (Father in UPPER fork, Mother in LOWER fork)
+   ========================================================================== */
+@media (max-width: 860px) {
+  .branchContainer {
+    flex-direction: row-reverse;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0;
+  }
+
+  .parentsPairContainer {
+    flex-direction: column;
+    justify-content: space-around;
+    width: auto;
+    flex: 1 1 0;
+    gap: 0.65rem;
+  }
+
+  .forkConnector {
+    width: 14px;
+    height: 55%;
+    min-height: 48px;
+    border-top: 2px solid #94a3b8;
+    border-bottom: 2px solid #94a3b8;
+    border-left: 2px solid #94a3b8;
+    border-right: none;
+    border-radius: 4px 0 0 4px;
+    margin: 0 2px 0 8px;
+    flex-shrink: 0;
+  }
+
+  .forkConnector::after {
+    left: -8px;
+    top: 50%;
+    bottom: auto;
+    transform: translateY(-50%);
+    width: 8px;
+    height: 2px;
+  }
+
+  .nodeCardWrapper {
+    width: auto;
+    flex: 0 0 31%;
+    min-width: 96px;
+    max-width: 165px;
+    padding: 0.15rem 0;
+  }
+}
+
+/* Node Card Styling */
+.nodeCard {
+  width: 100%;
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-top-width: 4px;
+  border-radius: 8px;
+  padding: 0.6rem 0.7rem;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  text-decoration: none;
+  color: #0f172a;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.nodeCardClickable:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.12);
+  border-color: #60a5fa;
+}
+
+.nodeCardProband {
+  background-color: #f8fafc;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+}
+
+.borderMale {
+  border-top-color: #2563eb;
+}
+
+.borderFemale {
+  border-top-color: #db2777;
+}
+
+.borderNeutral {
+  border-top-color: #64748b;
+}
+
+.nodeCardEmpty {
+  width: 100%;
+  background-color: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  padding: 0.65rem 0.5rem;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 0.76rem;
+  font-style: italic;
+}
+
+.nodeHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.nodeTitleBox {
+  min-width: 0;
+  flex: 1;
+}
+
+.nodeName {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+.nodeLifespan {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: #475569;
+  margin-top: 0.1rem;
+}
+
+.nodeDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  font-size: 0.72rem;
+  color: #334155;
+  border-top: 1px dashed #e2e8f0;
+  padding-top: 0.3rem;
+}
+
+.detailItem {
+  line-height: 1.25;
+  word-break: break-word;
+}
+
+.detailTag {
+  font-weight: 700;
+  color: #64748b;
+}
+
+/* Compact mode for 4th generation or narrow mobile cards */
+.nodeCardCompact .nodeName {
+  font-size: 0.76rem;
+}
+
+.nodeCardCompact .nodeLifespan {
+  font-size: 0.68rem;
+}
+
+.nodeCardCompact .nodeDetails {
+  font-size: 0.67rem;
+}
+
+@media (max-width: 860px) {
+  .nodeCard {
+    padding: 0.45rem 0.5rem;
+  }
+
+  .nodeName {
+    font-size: 0.75rem;
+  }
+
+  .nodeLifespan {
+    font-size: 0.67rem;
+  }
+
+  .nodeDetails {
+    display: none;
+  }
+}
+
+.nodeActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.25rem;
+  padding-top: 0.3rem;
+  border-top: 1px solid #f1f5f9;
+}
+
+.actionBtn {
+  flex: 1;
+  text-align: center;
+  padding: 0.22rem 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  border-radius: 4px;
+  border: 1px solid #cbd5e1;
+  background-color: #f8fafc;
+  color: #1e293b;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.actionBtn:hover {
+  background-color: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}

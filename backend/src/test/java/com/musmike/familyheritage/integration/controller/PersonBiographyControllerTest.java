@@ -191,4 +191,129 @@ class PersonBiographyControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.originFamilies[0].mother.givenName").value("Anna"))
                 .andExpect(jsonPath("$.originFamilies[0].siblings[0].givenName").value("Piotr"));
     }
+
+    @Test
+    @Transactional
+    @WithMockUser(username = "guest", roles = {"GUEST"})
+    void shouldReturnBiologicalOnlyAncestorTreeAndMaskLivingNodesForGuest() throws Exception {
+        // GIVEN - Add a child @I5@ adopted by Father (@I1@) but biological child of Mother (@I2@),
+        // and add biological parents (Grandparents) for Mother (@I2@)
+        String extraGedcom = """
+            0 HEAD
+            1 SOUR MYHERITAGE
+            1 CHAR UTF-8
+            0 @I1@ INDI
+            1 _UID bio-uid-father
+            1 NAME Jan /Kowalski/
+            1 SEX M
+            1 BIRT
+            2 DATE 10 JAN 1920
+            2 PLAC Warszawa
+            1 DEAT
+            2 DATE 15 FEB 1990
+            2 PLAC Kraków
+            2 CAUS Zawał serca
+            1 BURI
+            2 PLAC Cmentarz Rakowicki, Kraków
+            1 FAMS @F1@
+            0 @I2@ INDI
+            1 _UID bio-uid-mother
+            1 NAME Anna /Nowak/
+            1 SEX F
+            1 BIRT
+            2 DATE ABT 1925
+            1 DEAT
+            2 DATE 2005
+            1 FAMS @F1@
+            1 FAMC @F2@
+            0 @I3@ INDI
+            1 _UID bio-uid-child-living
+            1 NAME Marek /Kowalski/
+            1 SEX M
+            1 BIRT
+            2 DATE 5 MAY 1955
+            2 PLAC Gdańsk
+            1 FAMC @F1@
+            0 @I4@ INDI
+            1 _UID bio-uid-child-deceased
+            1 NAME Piotr /Kowalski/
+            1 SEX M
+            1 BIRT
+            2 DATE 1950
+            1 DEAT
+            2 DATE 2010
+            1 FAMC @F1@
+            0 @I5@ INDI
+            1 _UID bio-uid-adopted-by-husb
+            1 NAME Tomek /Kowalski/
+            1 SEX M
+            1 BIRT
+            2 DATE 1952
+            1 DEAT
+            2 DATE 2020
+            1 FAMC @F1@
+            2 PEDI adopted
+            1 ADOP
+            2 FAMC @F1@
+            3 ADOP HUSB
+            0 @I6@ INDI
+            1 _UID bio-uid-grandpa
+            1 NAME Stanisław /Nowak/
+            1 SEX M
+            1 BIRT
+            2 DATE 1895
+            1 DEAT
+            2 DATE 1970
+            1 FAMS @F2@
+            0 @F1@ FAM
+            1 HUSB @I1@
+            1 WIFE @I2@
+            1 CHIL @I3@
+            1 CHIL @I4@
+            1 CHIL @I5@
+            1 MARR
+            2 DATE 10 JUN 1948
+            2 PLAC Warszawa
+            0 @F2@ FAM
+            1 HUSB @I6@
+            1 CHIL @I2@
+            1 MARR
+            2 DATE 1920
+            2 PLAC Lublin
+            0 TRLR
+            """;
+
+        importService.importGedcom(new ByteArrayInputStream(extraGedcom.getBytes(StandardCharsets.UTF_8)));
+        entityManager.flush();
+        entityManager.clear();
+
+        Long tomekId = personRepository.findByGedcomDataGedRefId("@I5@").orElseThrow().getId();
+        Long marekId = personRepository.findByGedcomDataGedRefId("@I3@").orElseThrow().getId();
+
+        // 1. Tomek (@I5@) was adopted by Husband (Jan), so biological father in tree MUST be null,
+        // while biological mother (Anna) and maternal grandfather (Stanisław) ARE present!
+        mockMvc.perform(get("/biographies/{id}/ancestor-tree", tomekId).param("generations", "3"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.givenName").value("Tomek"))
+                .andExpect(jsonPath("$.father").value(nullValue()))
+                .andExpect(jsonPath("$.mother.givenName").value("Anna"))
+                .andExpect(jsonPath("$.mother.father.givenName").value("Stanisław"));
+
+        // 2. Living Marek (@I3@) viewed by GUEST: Marek himself is masked as "<Prywatne> Kowalski",
+        // but his deceased biological parents (Jan & Anna) and their wedding details ARE visible!
+        mockMvc.perform(get("/biographies/{id}/ancestor-tree", marekId).param("generations", "3"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.givenName").value("<Prywatne>"))
+                .andExpect(jsonPath("$.surname").value("Kowalski"))
+                .andExpect(jsonPath("$.privateRecord").value(true))
+                .andExpect(jsonPath("$.birthDateText").value(nullValue()))
+                .andExpect(jsonPath("$.father.givenName").value("Jan"))
+                .andExpect(jsonPath("$.father.age").value(70))
+                .andExpect(jsonPath("$.father.causeOfDeath").value("Zawał serca"))
+                .andExpect(jsonPath("$.father.burialPlace").value("Cmentarz Rakowicki, Kraków"))
+                .andExpect(jsonPath("$.father.weddingDateText").value("10.06.1948"))
+                .andExpect(jsonPath("$.father.weddingPlace").value("Warszawa"))
+                .andExpect(jsonPath("$.mother.givenName").value("Anna"))
+                .andExpect(jsonPath("$.mother.weddingDateText").value("10.06.1948"));
+    }
 }

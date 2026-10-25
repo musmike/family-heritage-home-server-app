@@ -148,38 +148,65 @@
   margin-top: 12%;
 }
 
-/* Responsive People Grid (Biographies List Page) */
-.peopleGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
-  gap: 1.15rem;
-}
-
-@media (max-width: 480px) {
-  .peopleGrid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.personCard {
+/* 1 Person Per Row List */
+.peopleList {
   display: flex;
   flex-direction: column;
+  gap: 0.85rem;
+}
+
+.personRowCard {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   background-color: #ffffff;
   border: 1px solid #cbd5e1;
   border-left-width: 5px;
   border-radius: 10px;
-  padding: 1.15rem 1.25rem;
-  text-decoration: none;
-  color: inherit;
+  padding: 1rem 1.35rem;
   box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
-  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
-  gap: 0.9rem;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+  gap: 1.25rem;
 }
 
-.personCard:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+.personRowCard:hover {
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+}
+
+.rowLeft {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1.2 1 260px;
+  min-width: 0;
+}
+
+.rowMiddleEvents {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex: 1.5 1 280px;
+  font-size: 0.85rem;
+  color: #334155;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+}
+
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .rowActions {
+    width: 100%;
+    justify-content: flex-end;
+  }
 }
 
 .cardMale {

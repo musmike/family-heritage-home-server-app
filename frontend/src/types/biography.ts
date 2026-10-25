@@ -127,3 +127,27 @@ export interface BiographyListQueryParams {
   page?: number;
   size?: number;
 }
+
+export interface AncestorTreeNodeDto {
+  id: number;
+  givenName: string | null;
+  surname: string | null;
+  sex: PersonSex | null;
+  lifeState: LifeState | null;
+  archived: boolean;
+  privateRecord: boolean;
+  birthYear: number | null;
+  birthDateText: string | null;
+  birthPlace: string | null;
+  deathYear: number | null;
+  deathDateText: string | null;
+  deathPlace: string | null;
+  causeOfDeath: string | null;
+  burialPlace: string | null;
+  weddingDateText: string | null;
+  weddingPlace: string | null;
+  age: number | null;
+  ageApproximate: boolean;
+  father: AncestorTreeNodeDto | null;
+  mother: AncestorTreeNodeDto | null;
+}

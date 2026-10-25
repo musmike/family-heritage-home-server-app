@@ -1,5 +1,6 @@
 package com.musmike.familyheritage.controller;
 
+import com.musmike.familyheritage.dto.AncestorTreeNodeDto;
 import com.musmike.familyheritage.dto.BiographyPageDto;
 import com.musmike.familyheritage.dto.ErrorResponse;
 import com.musmike.familyheritage.dto.PersonBiographyDto;
@@ -58,6 +59,15 @@ public class PersonBiographyController {
     public ResponseEntity<ErrorResponse> handleNotFound(IllegalArgumentException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(new ErrorResponse("NOT_FOUND", ex.getMessage()));
+    }
+
+    @GetMapping("/{personId}/ancestor-tree")
+    public ResponseEntity<AncestorTreeNodeDto> getAncestorTree(
+            @PathVariable Long personId,
+            @RequestParam(name = "generations", defaultValue = "3") int generations
+    ) {
+        boolean isGuest = isCurrentUserGuestOnly();
+        return ResponseEntity.ok(biographyService.getAncestorTree(personId, generations, isGuest));
     }
 
     private Set<String> getCurrentAuthorities() {

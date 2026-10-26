@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { eventTimelineApi } from '../../api/eventTimelineApi';
 import Loader from '../../components/Loader/Loader';
@@ -36,7 +36,6 @@ export default function EventsPage() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Collapsed by default! Stores expanded decade starts (e.g. 1920) and expanded years (e.g. 1925)
   const [expandedDecades, setExpandedDecades] = useState<Record<string, boolean | undefined>>({});
   const [expandedYears, setExpandedYears] = useState<Record<number, boolean | undefined>>({});
 
@@ -44,33 +43,64 @@ export default function EventsPage() {
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [isTypesDropdownOpen, setIsTypesDropdownOpen] = useState<boolean>(false);
   const [typeSearchQuery, setTypeSearchQuery] = useState<string>('');
+  const typesDropdownRef = useRef<HTMLDivElement | null>(null);
 
-  const [yearFromInput, setYearFromInput] = useState<string>('');
-  const [yearToInput, setYearToInput] = useState<string>('');
-  const [includeUndated, setIncludeUndated] = useState<boolean>(false);
+  const [boundsInitialized, setBoundsInitialized] = useState<boolean>(false);
+  const [minBound, setMinBound] = useState<number>(1800);
+  const [maxBound, setMaxBound] = useState<number>(2026);
+  const [yearFrom, setYearFrom] = useState<number | null>(null);
+  const [yearTo, setYearTo] = useState<number | null>(null);
+
   const [includeArchived, setIncludeArchived] = useState<boolean>(false);
   const [sortOrder, setSortOrder] = useState<string>('ASC');
+
+  // Close Event Types popover when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        typesDropdownRef.current &&
+        !typesDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsTypesDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   useEffect(() => {
     const fetchEvents = async () => {
       setIsLoading(true);
       setErrorMessage(null);
       try {
-        const parsedFrom = yearFromInput.trim() !== '' ? Number(yearFromInput) : null;
-        const parsedTo = yearToInput.trim() !== '' ? Number(yearToInput) : null;
-
         const data = await eventTimelineApi.getEventsTimeline({
           search,
           types: selectedTypes,
-          yearFrom: parsedFrom !== null && !Number.isNaN(parsedFrom) ? parsedFrom : null,
-          yearTo: parsedTo !== null && !Number.isNaN(parsedTo) ? parsedTo : null,
-          includeUndated,
+          yearFrom,
+          yearTo,
+          includeUndated: true,
           includeArchived,
           sortOrder,
           page: 0,
           size: 5000,
         });
         setTimelineData(data);
+
+        if (
+          !boundsInitialized &&
+          data.minAvailableYear !== undefined &&
+          data.minAvailableYear !== null &&
+          data.maxAvailableYear !== undefined &&
+          data.maxAvailableYear !== null
+        ) {
+          setMinBound(data.minAvailableYear);
+          setMaxBound(data.maxAvailableYear);
+          setYearFrom(data.minAvailableYear);
+          setYearTo(data.maxAvailableYear);
+          setBoundsInitialized(true);
+        }
       } catch {
         setErrorMessage('Nie udało się pobrać osi czasu wydarzeń.');
       } finally {
@@ -78,15 +108,21 @@ export default function EventsPage() {
       }
     };
     void fetchEvents();
-  }, [
-    search,
-    selectedTypes,
-    yearFromInput,
-    yearToInput,
-    includeUndated,
-    includeArchived,
-    sortOrder,
-  ]);
+  }, [search, selectedTypes, yearFrom, yearTo, includeArchived, sortOrder, boundsInitialized]);
+
+  const handleYearFromChange = (rawVal: number) => {
+    if (Number.isNaN(rawVal)) return;
+    const upper = yearTo ?? maxBound;
+    const clamped = Math.min(Math.max(rawVal, minBound), upper);
+    setYearFrom(clamped);
+  };
+
+  const handleYearToChange = (rawVal: number) => {
+    if (Number.isNaN(rawVal)) return;
+    const lower = yearFrom ?? minBound;
+    const clamped = Math.max(Math.min(rawVal, maxBound), lower);
+    setYearTo(clamped);
+  };
 
   const toggleDecade = (decadeKey: string) => {
     setExpandedDecades(prev => ({
@@ -151,6 +187,9 @@ export default function EventsPage() {
     t.label.toLowerCase().includes(typeSearchQuery.trim().toLowerCase())
   );
 
+  const currentFrom = yearFrom ?? minBound;
+  const currentTo = yearTo ?? maxBound;
+
   return (
     <div className={styles.pageWrapper}>
       <div className={styles.pageHeader}>
@@ -204,8 +243,8 @@ export default function EventsPage() {
           />
         </div>
 
-        {/* Multi-Select Dropdown for Event Types */}
-        <div className={styles.filterField}>
+        {/* Multi-Select Dropdown for Event Types (Closes on Outside Click) */}
+        <div className={styles.filterField} ref={typesDropdownRef}>
           <span className={styles.filterLabel}>Typy wydarzeń</span>
           <button
             type="button"
@@ -273,31 +312,63 @@ export default function EventsPage() {
           )}
         </div>
 
-        {/* Year Range Filter */}
-        <div className={styles.filterField}>
-          <span className={styles.filterLabel}>Zakres lat (od – do)</span>
-          <div className={styles.yearRangeGroup}>
-            <input
-              type="number"
-              placeholder="Od roku"
-              value={yearFromInput}
-              onChange={e => {
-                setYearFromInput(e.target.value);
-              }}
-              className={styles.textInput}
-            />
-            <span>–</span>
-            <input
-              type="number"
-              placeholder="Do roku"
-              value={yearToInput}
-              onChange={e => {
-                setYearToInput(e.target.value);
-              }}
-              className={styles.textInput}
-            />
+        {/* Year Range Filter (Editable Inputs + Sliders bounded by [minBound, maxBound]) */}
+        {boundsInitialized && (
+          <div className={styles.filterField} style={{ flex: '1.4 1 240px' }}>
+            <span className={styles.filterLabel}>
+              Zakres lat ({minBound} – {maxBound})
+            </span>
+            <div className={styles.yearRangeGroup}>
+              <input
+                type="number"
+                aria-label="Od roku"
+                min={minBound}
+                max={currentTo}
+                value={currentFrom}
+                onChange={e => {
+                  handleYearFromChange(Number(e.target.value));
+                }}
+                className={styles.textInput}
+              />
+              <span>–</span>
+              <input
+                type="number"
+                aria-label="Do roku"
+                min={currentFrom}
+                max={maxBound}
+                value={currentTo}
+                onChange={e => {
+                  handleYearToChange(Number(e.target.value));
+                }}
+                className={styles.textInput}
+              />
+            </div>
+            <div className={styles.rangeSlidersRow}>
+              <input
+                type="range"
+                aria-label="Suwak od roku"
+                min={minBound}
+                max={maxBound}
+                value={currentFrom}
+                onChange={e => {
+                  handleYearFromChange(Number(e.target.value));
+                }}
+                className={styles.rangeInput}
+              />
+              <input
+                type="range"
+                aria-label="Suwak do roku"
+                min={minBound}
+                max={maxBound}
+                value={currentTo}
+                onChange={e => {
+                  handleYearToChange(Number(e.target.value));
+                }}
+                className={styles.rangeInput}
+              />
+            </div>
           </div>
-        </div>
+        )}
 
         <div className={styles.filterField}>
           <label htmlFor="events-sort-select" className={styles.filterLabel}>
@@ -315,18 +386,6 @@ export default function EventsPage() {
             <option value="DESC">Od najnowszych</option>
           </select>
         </div>
-
-        <label className={styles.checkboxLabel}>
-          <input
-            type="checkbox"
-            data-testid="events-undated-checkbox"
-            checked={includeUndated}
-            onChange={e => {
-              setIncludeUndated(e.target.checked);
-            }}
-          />
-          <span>Pokaż wydarzenia bez daty</span>
-        </label>
 
         <label className={styles.checkboxLabel}>
           <input
@@ -422,7 +481,7 @@ export default function EventsPage() {
             );
           })}
 
-          {/* UNDATED EVENTS ACCORDION */}
+          {/* UNDATED EVENTS ACCORDION (Visible by default when undated events exist) */}
           {timelineData.undatedEvents.length > 0 && (
             <div className={styles.decadeAccordion} data-testid="undated-events-section">
               <button

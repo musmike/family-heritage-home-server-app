@@ -11,4 +11,5 @@ public interface PersonRepository extends JpaRepository<Person, Long> {
     Optional<Person> findByGedcomDataGedUid(String gedUid);
     Optional<Person> findByExternalIdsUidValue(String uidValue);
     List<Person> findByIsArchivedFalse();
+    Optional<Person> findFirstByIsDefaultProbandTrue();
 }

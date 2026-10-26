@@ -74,9 +74,7 @@ export default function EventDetailsPage() {
       <div className={styles.pageHeader}>
         <div>
           <h1 className={styles.pageTitle}>{eventData.typeLabel}</h1>
-          <p className={styles.pageSubtitle}>
-            Szczegóły wydarzenia rodzinnego #{eventData.eventId}
-          </p>
+          <p className={styles.pageSubtitle}>Szczegóły wydarzenia rodzinnego</p>
         </div>
         <Link to="/events" className={styles.btnSecondary}>
           ← Wróć do osi czasu wydarzeń

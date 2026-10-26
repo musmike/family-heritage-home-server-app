@@ -313,40 +313,23 @@ export default function BurialsPage() {
                         key={b.burialId}
                         className={`${styles.burialPersonCard} ${getBorderClass(b.sex)}`}
                       >
-                        <div className={styles.personTopRow}>
-                          <div className={styles.personIdentity}>
-                            <PersonAvatar sex={b.sex} size="md" />
-                            <div className={styles.personTitleBox}>
-                              <div className={styles.personName}>{fullName}</div>
-                              <div className={styles.personLifespan}>{formatLifespan(b)}</div>
-                              {(!b.current || b.archived) && (
-                                <div className={styles.badgesRow}>
-                                  {!b.current && (
-                                    <span className={styles.nonCurrentBadge}>
-                                      Nieaktualne miejsce pochówku
-                                    </span>
-                                  )}
-                                  {b.archived && (
-                                    <span className={styles.archivedBadge}>Zarchiwizowana</span>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className={styles.cardActions}>
-                            <Link
-                              to={`/biographies/${String(b.personId)}`}
-                              className={styles.actionLink}
-                            >
-                              📖 Biografia
-                            </Link>
-                            <Link
-                              to={`/tree?personId=${String(b.personId)}`}
-                              className={styles.actionLink}
-                            >
-                              🌳 Drzewo
-                            </Link>
+                        <div className={styles.personIdentity}>
+                          <PersonAvatar sex={b.sex} size="md" />
+                          <div className={styles.personTitleBox}>
+                            <div className={styles.personName}>{fullName}</div>
+                            <div className={styles.personLifespan}>{formatLifespan(b)}</div>
+                            {(!b.current || b.archived) && (
+                              <div className={styles.badgesRow}>
+                                {!b.current && (
+                                  <span className={styles.nonCurrentBadge}>
+                                    Nieaktualne miejsce pochówku
+                                  </span>
+                                )}
+                                {b.archived && (
+                                  <span className={styles.archivedBadge}>Zarchiwizowana</span>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
 
@@ -381,6 +364,21 @@ export default function BurialsPage() {
                               <span className={styles.detailValue}>{b.causeOfDeath}</span>
                             </div>
                           )}
+                        </div>
+
+                        <div className={styles.cardActions}>
+                          <Link
+                            to={`/biographies/${String(b.personId)}`}
+                            className={styles.actionLink}
+                          >
+                            📖 Biografia
+                          </Link>
+                          <Link
+                            to={`/tree?personId=${String(b.personId)}`}
+                            className={styles.actionLink}
+                          >
+                            🌳 Drzewo
+                          </Link>
                         </div>
                       </div>
                     );

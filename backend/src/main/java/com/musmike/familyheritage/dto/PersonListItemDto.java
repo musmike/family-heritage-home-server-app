@@ -18,6 +18,7 @@ public class PersonListItemDto {
     private PersonSex sex;
     private LifeState lifeState;
     private boolean archived;
+    private boolean defaultProband;
     private Integer birthYear;
     private String birthDateText;
     private String birthPlace;

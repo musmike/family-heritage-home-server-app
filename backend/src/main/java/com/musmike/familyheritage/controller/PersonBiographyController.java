@@ -1,15 +1,13 @@
 package com.musmike.familyheritage.controller;
 
-import com.musmike.familyheritage.dto.AncestorTreeNodeDto;
-import com.musmike.familyheritage.dto.BiographyPageDto;
-import com.musmike.familyheritage.dto.ErrorResponse;
-import com.musmike.familyheritage.dto.PersonBiographyDto;
+import com.musmike.familyheritage.dto.*;
 import com.musmike.familyheritage.model.enums.LifeState;
 import com.musmike.familyheritage.model.enums.PersonSex;
 import com.musmike.familyheritage.service.PersonBiographyService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -65,5 +63,26 @@ public class PersonBiographyController {
                 .map(GrantedAuthority::getAuthority)
                 .map(a -> a.replaceFirst("^ROLE_", "").toUpperCase())
                 .anyMatch("ADMIN"::equals);
+    }
+
+    @GetMapping("/default-proband")
+    public ResponseEntity<PersonListItemDto> getDefaultProband() {
+        return biographyService.getDefaultProband()
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    @PutMapping("/{personId}/default-proband")
+    public ResponseEntity<PersonListItemDto> setDefaultProband(@PathVariable Long personId) {
+        if (!isCurrentUserAdmin()) {
+            throw new AccessDeniedException("Only ADMIN can set the default proband.");
+        }
+        return ResponseEntity.ok(biographyService.setDefaultProband(personId));
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(new ErrorResponse("FORBIDDEN", ex.getMessage()));
     }
 }

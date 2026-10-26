@@ -17,6 +17,8 @@ public class EventsTimelinePageDto {
     private int size;
     private long totalEvents;
     private int totalPages;
+    private Integer minAvailableYear;
+    private Integer maxAvailableYear;
 
     @Builder.Default
     private List<EventTypeOptionDto> availableTypes = new ArrayList<>();

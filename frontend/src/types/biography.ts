@@ -11,6 +11,7 @@ export interface PersonListItemDto {
   sex: PersonSex | null;
   lifeState: LifeState | null;
   archived: boolean;
+  defaultProband?: boolean;
   birthYear: number | null;
   birthDateText: string | null;
   birthPlace: string | null;

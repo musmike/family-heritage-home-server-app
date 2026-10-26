@@ -34,6 +34,9 @@ public class Person {
     @Column(name = "is_archived", nullable = false)
     private Boolean isArchived = false;
 
+    @Column(name = "is_default_proband", nullable = false)
+    private Boolean isDefaultProband = false;
+
     @OneToOne(mappedBy = "person", cascade = CascadeType.ALL, orphanRemoval = true)
     private PersonGedcomData gedcomData;
 

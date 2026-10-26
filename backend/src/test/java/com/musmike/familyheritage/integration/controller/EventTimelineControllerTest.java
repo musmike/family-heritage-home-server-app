@@ -128,7 +128,10 @@ class EventTimelineControllerTest extends AbstractIntegrationTest {
         // 1920 (Jan birth), 1925 (Anna birth), 1948 (Wedding), 1952 (Marek birth), 1960 (Vacation), 1990 (Jan death), 2005 (Anna death)
         mockMvc.perform(get("/events"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalEvents").value(7))
+                .andExpect(jsonPath("$.totalEvents").value(8))
+                .andExpect(jsonPath("$.minAvailableYear").value(1920))
+                .andExpect(jsonPath("$.maxAvailableYear").value(2005))
+                .andExpect(jsonPath("$.undatedEvents", hasSize(1)))
                 .andExpect(jsonPath("$.availableTypes[*].label", hasItems("Narodziny", "Ślub", "Śmierć", "Pochówek", "Wakacje w górach")))
                 .andExpect(jsonPath("$.decades[0].decadeStart").value(1920))
                 .andExpect(jsonPath("$.decades[0].years[0].year").value(1920))
@@ -162,7 +165,7 @@ class EventTimelineControllerTest extends AbstractIntegrationTest {
     void shouldAllowGuestToViewAllFamilyEvents() throws Exception {
         mockMvc.perform(get("/events"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalEvents").value(7))
+                .andExpect(jsonPath("$.totalEvents").value(8))
                 .andExpect(jsonPath("$.decades[*].years[*].year", hasItem(1952)));
     }
 }

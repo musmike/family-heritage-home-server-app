@@ -25,7 +25,7 @@ public class EventTimelineController {
             @RequestParam(name = "types", required = false) String typesParam,
             @RequestParam(name = "yearFrom", required = false) Integer yearFrom,
             @RequestParam(name = "yearTo", required = false) Integer yearTo,
-            @RequestParam(name = "includeUndated", defaultValue = "false") boolean includeUndated,
+            @RequestParam(name = "includeUndated", defaultValue = "true") boolean includeUndated,
             @RequestParam(name = "includeArchived", defaultValue = "false") boolean includeArchived,
             @RequestParam(name = "sortOrder", defaultValue = "ASC") String sortOrder,
             @RequestParam(name = "page", defaultValue = "0") int page,

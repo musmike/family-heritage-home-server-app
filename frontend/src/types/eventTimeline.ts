@@ -54,6 +54,8 @@ export interface EventsTimelinePageDto {
   size: number;
   totalEvents: number;
   totalPages: number;
+  minAvailableYear?: number | null;
+  maxAvailableYear?: number | null;
   availableTypes: EventTypeOptionDto[];
   decades: TimelineDecadeGroupDto[];
   undatedEvents: TimelineEventDto[];

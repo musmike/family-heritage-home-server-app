@@ -4,6 +4,7 @@ import type {
   BiographyListQueryParams,
   BiographyPageDto,
   PersonBiographyDto,
+  PersonListItemDto,
 } from '../types/biography';
 
 export const biographyApi = {
@@ -49,6 +50,21 @@ export const biographyApi = {
     const response = await api.get<AncestorTreeNodeDto>(
       `/biographies/${String(personId)}/ancestor-tree`,
       { params: { generations } }
+    );
+    return response.data;
+  },
+
+  getDefaultProband: async (): Promise<PersonListItemDto | null> => {
+    const response = await api.get<PersonListItemDto | ''>('/biographies/default-proband');
+    if (response.status === 204 || !response.data) {
+      return null;
+    }
+    return response.data;
+  },
+
+  setDefaultProband: async (personId: number): Promise<PersonListItemDto> => {
+    const response = await api.put<PersonListItemDto>(
+      `/biographies/${String(personId)}/default-proband`
     );
     return response.data;
   },

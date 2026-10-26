@@ -327,4 +327,21 @@ class PersonBiographyControllerTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.children", hasSize(2)));
     }
+
+    @Test
+    @Transactional
+    @WithMockUser(username = "admin", roles = {"ADMIN"})
+    void shouldGetAndSetDefaultProbandForAdmin() throws Exception {
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .put("/biographies/{id}/default-proband", livingChildId)
+                        .cookie(new jakarta.servlet.http.Cookie("XSRF-TOKEN", "csrf-1"))
+                        .header("X-XSRF-TOKEN", "csrf-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(livingChildId))
+                .andExpect(jsonPath("$.defaultProband").value(true));
+
+        mockMvc.perform(get("/biographies/default-proband"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(livingChildId));
+    }
 }

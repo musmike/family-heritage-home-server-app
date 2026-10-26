@@ -164,6 +164,7 @@ public class PersonBiographyService {
                 .sex(person.getSex())
                 .lifeState(person.getLifeState())
                 .archived(Boolean.TRUE.equals(person.getIsArchived()))
+                .defaultProband(Boolean.TRUE.equals(person.getIsDefaultProband()))
                 .birthYear(birthStart != null ? birthStart.getStartYear() : null)
                 .birthDateText(formatEventDates(birthStart, birthEnd))
                 .birthPlace(birthPlace)
@@ -178,6 +179,7 @@ public class PersonBiographyService {
                 .originFamilies(originFamilies)
                 .spouseFamilies(spouseFamilies)
                 .rawGedcomData(rawGedcomView)
+                .defaultProband(Boolean.TRUE.equals(person.getIsDefaultProband()))
                 .build();
     }
 
@@ -337,6 +339,7 @@ public class PersonBiographyService {
                 .sex(person.getSex())
                 .lifeState(person.getLifeState())
                 .archived(Boolean.TRUE.equals(person.getIsArchived()))
+                .defaultProband(Boolean.TRUE.equals(person.getIsDefaultProband()))
                 .birthYear(birthStart != null ? birthStart.getStartYear() : null)
                 .birthDateText(formatEventDates(birthStart, birthEnd))
                 .birthPlace(extractLocationName(person.getBirthEvent()))
@@ -546,5 +549,32 @@ public class PersonBiographyService {
             return null;
         }
         return event.getMainLocation().getName();
+    }
+
+    @Transactional
+    public Optional<PersonListItemDto> getDefaultProband() {
+        Optional<Person> explicitDefault = personRepository.findFirstByIsDefaultProbandTrue();
+        if (explicitDefault.isPresent()) {
+            return explicitDefault.map(this::toListItemDto);
+        }
+        return personRepository.findByIsArchivedFalse().stream()
+                .min(Comparator.comparing(Person::getId))
+                .map(this::toListItemDto);
+    }
+
+    @Transactional
+    public PersonListItemDto setDefaultProband(Long personId) {
+        Person target = personRepository.findById(personId)
+                .orElseThrow(() -> new IllegalArgumentException("Person not found: " + personId));
+
+        personRepository.findFirstByIsDefaultProbandTrue().ifPresent(prev -> {
+            prev.setIsDefaultProband(false);
+            personRepository.save(prev);
+        });
+        personRepository.flush();
+
+        target.setIsDefaultProband(true);
+        target = personRepository.saveAndFlush(target);
+        return toListItemDto(target);
     }
 }

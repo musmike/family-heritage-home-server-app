@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, use } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { biographyApi } from '../../api/biographyApi';
+import { AuthContext } from '../../context/AuthContext';
 import AncestorTree from '../../components/AncestorTree/AncestorTree';
 import Loader from '../../components/Loader/Loader';
 import styles from '../Biographies/Biographies.module.css';
@@ -9,10 +10,15 @@ import type { PersonListItemDto } from '../../types/biography';
 export default function FamilyTreePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const paramPersonId = searchParams.get('personId');
+  const auth = use(AuthContext);
+
+  const isAdmin =
+    auth?.user?.roles.some(r => r.replace(/^ROLE_/, '').toUpperCase() === 'ADMIN') ?? false;
 
   const [probandId, setProbandId] = useState<number | null>(
     paramPersonId ? Number(paramPersonId) : null
   );
+  const [defaultProbandId, setDefaultProbandId] = useState<number | null>(null);
   const [previousProbands, setPreviousProbands] = useState<number[]>([]);
 
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -20,25 +26,32 @@ export default function FamilyTreePage() {
   const [isInitialLoading, setIsInitialLoading] = useState<boolean>(probandId === null);
 
   useEffect(() => {
-    if (paramPersonId) {
-      setProbandId(Number(paramPersonId));
-      setIsInitialLoading(false);
-      return;
-    }
-
-    const loadDefaultProband = async () => {
-      setIsInitialLoading(true);
+    const initDefaultProband = async () => {
+      if (paramPersonId) {
+        setProbandId(Number(paramPersonId));
+      } else {
+        setIsInitialLoading(true);
+      }
       try {
-        const page = await biographyApi.listPeople({ page: 0, size: 1 });
-        if (page.content.length > 0) {
-          setProbandId(page.content[0].id);
+        const def = await biographyApi.getDefaultProband();
+        if (def) {
+          setDefaultProbandId(def.defaultProband ? def.id : null);
+          if (!paramPersonId) {
+            setProbandId(def.id);
+          }
         }
       } finally {
         setIsInitialLoading(false);
       }
     };
-    void loadDefaultProband();
+    void initDefaultProband();
   }, [paramPersonId]);
+
+  const handleSetMainDefaultProband = async () => {
+    if (probandId === null) return;
+    const saved = await biographyApi.setDefaultProband(probandId);
+    setDefaultProbandId(saved.id);
+  };
 
   const handleSearchProband = async () => {
     const page = await biographyApi.listPeople({
@@ -84,15 +97,25 @@ export default function FamilyTreePage() {
           </p>
         </div>
 
-        {previousProbands.length > 0 && (
-          <button
-            type="button"
-            data-testid="tree-back-proband-button"
-            onClick={handleGoBackProband}
-            className={styles.btnSecondary}
-          >
-            ← Cofnij do poprzedniego probanta
-          </button>
+        {isAdmin && probandId !== null && (
+          <div>
+            {defaultProbandId === probandId ? (
+              <span className={styles.sexBadgeMale} style={{ padding: '0.45rem 0.9rem', fontSize: '0.84rem' }}>
+                ⭐ Główny probant drzewa
+              </span>
+            ) : (
+              <button
+                type="button"
+                data-testid="set-default-proband-button"
+                onClick={() => {
+                  void handleSetMainDefaultProband();
+                }}
+                className={styles.btnSecondary}
+              >
+                ⭐ Ustaw jako głównego probanta drzewa
+              </button>
+            )}
+          </div>
         )}
       </div>
 
@@ -137,7 +160,7 @@ export default function FamilyTreePage() {
                 }}
                 className={styles.btnSecondary}
               >
-                🎯 {p.givenName} {p.surname} ({p.birthYear ?? '?'})
+                🎯 {p.surname} {p.givenName} ({p.birthYear ?? '?'})
               </button>
             ))}
           </div>

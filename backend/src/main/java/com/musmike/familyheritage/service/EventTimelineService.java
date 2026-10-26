@@ -72,7 +72,17 @@ public class EventTimelineService {
         Map<Long, List<String>> parentNamesByChildId = buildParentNamesMap();
 
         List<Event> allEvents = eventRepository.findAll();
+        Integer minAvailableYear = null;
+        Integer maxAvailableYear = null;
+        for (Event e : allEvents) {
+            Integer y = extractEventYear(e);
+            if (y != null) {
+                minAvailableYear = (minAvailableYear == null) ? y : Math.min(minAvailableYear, y);
+                maxAvailableYear = (maxAvailableYear == null) ? y : Math.max(maxAvailableYear, y);
+            }
+        }
         List<ScoredTimelineEvent> matchingEvents = new ArrayList<>();
+
 
         for (Event evt : allEvents) {
             String typeCode = evt.getEventType().getCode();
@@ -178,6 +188,8 @@ public class EventTimelineService {
                 .size(safeSize)
                 .totalEvents(totalEvents)
                 .totalPages(totalPages)
+                .minAvailableYear(minAvailableYear)
+                .maxAvailableYear(maxAvailableYear)
                 .availableTypes(availableTypes)
                 .decades(decadeGroups)
                 .undatedEvents(undatedList)

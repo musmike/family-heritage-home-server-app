@@ -128,8 +128,11 @@
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
-  width: 290px;
-  max-width: 90vw;
+  right: 0;
+  width: 100%;
+  min-width: 220px;
+  max-width: 100%;
+  box-sizing: border-box;
   background-color: #ffffff;
   border: 1px solid #cbd5e1;
   border-radius: 10px;
@@ -139,6 +142,19 @@
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
+}
+
+.rangeSlidersRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.rangeInput {
+  flex: 1;
+  accent-color: #2563eb;
+  cursor: pointer;
 }
 
 .popoverHeaderActions {

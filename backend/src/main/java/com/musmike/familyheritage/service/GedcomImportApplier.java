@@ -358,7 +358,7 @@ public class GedcomImportApplier {
                         null,
                         gedIndi.getBurialPlace(),
                         null,
-                        false,
+                        true,
                         burialPlaceEdited,
                         false,
                         person,

@@ -33,7 +33,7 @@ describe('Sidebar Component', () => {
     expect(screen.getByRole('link', { name: /Biografie/i })).not.toHaveAttribute('aria-disabled');
     expect(screen.getByRole('link', { name: /Wydarzenia/i })).not.toHaveAttribute('aria-disabled');
     expect(screen.getByRole('link', { name: /Drzewo genealogiczne/i })).not.toHaveAttribute('aria-disabled');
-    expect(screen.getByRole('link', { name: /Nagrobki/i })).not.toHaveAttribute('aria-disabled');
+    expect(screen.getByRole('link', { name: /Groby/i })).not.toHaveAttribute('aria-disabled');
 
     // Disabled upcoming links (including admin-only Dziennik)
     expect(screen.getByRole('link', { name: /Wspomnienia i powiedzenia/i })).toHaveAttribute('aria-disabled', 'true');

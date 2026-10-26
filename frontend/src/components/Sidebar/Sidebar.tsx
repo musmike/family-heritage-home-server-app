@@ -134,8 +134,8 @@ export default function Sidebar() {
       ),
     },
     {
-      name: 'Nagrobki',
-      path: '/gravestones',
+      name: 'Groby',
+      path: '/burials',
       icon: (
         <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={styles.navSvg}>
           <path d="M6 20V10a6 6 0 0 1 12 0v10" />

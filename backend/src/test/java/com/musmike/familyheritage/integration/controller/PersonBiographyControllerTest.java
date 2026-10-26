@@ -138,19 +138,20 @@ class PersonBiographyControllerTest extends AbstractIntegrationTest {
     @Test
     @Transactional
     @WithMockUser(username = "guest", roles = {"GUEST"})
-    void shouldHideNonDeceasedPeopleFromListAndBlockDirectBiographyForGuest() throws Exception {
-        // Guest sees ONLY DECEASED people (Jan, Anna, Piotr = 3; Marek who has UNKNOWN/LIVING lifeState is hidden!)
+    void shouldAllowGuestToViewAllFamilyMembersWhileHidingAdminRawGedcomData() throws Exception {
+        // Guest sees all 4 active family members (including living Marek)
         mockMvc.perform(get("/biographies"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalElements").value(3))
-                .andExpect(jsonPath("$.content[*].givenName", not(hasItem("Marek"))));
+                .andExpect(jsonPath("$.totalElements").value(4))
+                .andExpect(jsonPath("$.content[*].givenName", hasItem("Marek")));
 
-        // Guest attempting to open living/unknown Marek's biography gets 403 Forbidden
+        // Guest can open living Marek's biography
         mockMvc.perform(get("/biographies/{id}", livingChildId))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.givenName").value("Marek"))
+                .andExpect(jsonPath("$.rawGedcomData").value(nullValue()));
 
-        // Guest opening deceased Jan's biography succeeds, but living child Marek is masked as "<Prywatne> Kowalski"
-        // and rawGedcomData is null for non-admin
+        // Guest opening deceased Jan's biography sees all children unmasked, while rawGedcomData is null
         mockMvc.perform(get("/biographies/{id}", deceasedFatherId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.givenName").value("Jan"))
@@ -158,7 +159,7 @@ class PersonBiographyControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.causeOfDeath").value("Zawał serca"))
                 .andExpect(jsonPath("$.burialPlace").value("Cmentarz Rakowicki, Kraków"))
                 .andExpect(jsonPath("$.rawGedcomData").value(nullValue()))
-                .andExpect(jsonPath("$.spouseFamilies[0].children[*].person.givenName", hasItems("Piotr", "<Prywatne>")));
+                .andExpect(jsonPath("$.spouseFamilies[0].children[*].person.givenName", hasItems("Piotr", "Marek")));
     }
 
     @Test
@@ -299,14 +300,12 @@ class PersonBiographyControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.mother.givenName").value("Anna"))
                 .andExpect(jsonPath("$.mother.father.givenName").value("Stanisław"));
 
-        // 2. Living Marek (@I3@) viewed by GUEST: Marek himself is masked as "<Prywatne> Kowalski",
-        // but his deceased biological parents (Jan & Anna) and their wedding details ARE visible!
+        // 2. Living Marek (@I3@) viewed by GUEST: Marek and his biological parents (Jan & Anna) are visible!
         mockMvc.perform(get("/biographies/{id}/ancestor-tree", marekId).param("generations", "3"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.givenName").value("<Prywatne>"))
+                .andExpect(jsonPath("$.givenName").value("Marek"))
                 .andExpect(jsonPath("$.surname").value("Kowalski"))
-                .andExpect(jsonPath("$.privateRecord").value(true))
-                .andExpect(jsonPath("$.birthDateText").value(nullValue()))
+                .andExpect(jsonPath("$.privateRecord").value(false))
                 .andExpect(jsonPath("$.father.givenName").value("Jan"))
                 .andExpect(jsonPath("$.father.age").value(70))
                 .andExpect(jsonPath("$.father.causeOfDeath").value("Zawał serca"))

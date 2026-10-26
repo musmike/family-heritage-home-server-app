@@ -1045,4 +1045,26 @@ public class GedcomImportApplier {
     private String nullToEmpty(String s) {
         return s == null ? "" : s;
     }
+
+    @Transactional
+    public void resetAllGenealogicalData() {
+        familyRepository.deleteAll();
+        familyRepository.flush();
+
+        burialRepository.deleteAll();
+        burialRepository.flush();
+
+        graveRepository.deleteAll();
+        graveRepository.flush();
+
+        personRepository.deleteAll();
+        personRepository.flush();
+
+        eventRepository.deleteAll();
+        eventRepository.flush();
+
+        dateDescriptorRepository.deleteOrphanDateDescriptors();
+        locationRepository.deleteOrphanLocations();
+        attrDictValueRepository.deleteOrphanValues();
+    }
 }

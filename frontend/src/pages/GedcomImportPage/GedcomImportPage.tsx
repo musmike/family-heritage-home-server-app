@@ -140,6 +140,7 @@ export default function GedcomImportPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [showResetConfirm, setShowResetConfirm] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -275,6 +276,25 @@ export default function GedcomImportPage() {
       setAbsentDecisions({});
     } catch {
       setErrorMessage('Nie udało się anulować sesji importu.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleResetTreeData = async () => {
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    try {
+      await gedcomImportApi.resetTreeData();
+      setActiveSession(null);
+      setIndiDecisions({});
+      setFamDecisions({});
+      setAbsentDecisions({});
+      setShowResetConfirm(false);
+      setSuccessMessage('Wszystkie dane genealogiczne i sesje importu zostały wyczyszczone.');
+    } catch {
+      setErrorMessage('Nie udało się wyczyścić danych drzewa.');
     } finally {
       setIsSubmitting(false);
     }
@@ -448,6 +468,17 @@ export default function GedcomImportPage() {
           >
             🕓 Historia importów
           </Link>
+          <button
+            type="button"
+            data-testid="open-reset-tree-modal-button"
+            disabled={isSubmitting}
+            onClick={() => {
+              setShowResetConfirm(true);
+            }}
+            className={styles.btnDanger}
+          >
+            🗑️ Wyczyść całe drzewo
+          </button>
           {activeSession && (
             <button
               type="button"
@@ -463,6 +494,49 @@ export default function GedcomImportPage() {
           )}
         </div>
       </div>
+
+      {showResetConfirm && (
+        <div role="dialog" aria-modal="true" className={styles.AlertError}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '1rem',
+            }}
+          >
+            <span>
+              <strong>
+                Czy na pewno chcesz usunąć wszystkie osoby, rodziny, groby i historię importów z bazy?
+              </strong>{' '}
+              Tej operacji nie można cofnąć.
+            </span>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button
+                type="button"
+                data-testid="confirm-reset-tree-button"
+                disabled={isSubmitting}
+                onClick={() => {
+                  void handleResetTreeData();
+                }}
+                className={styles.btnDanger}
+              >
+                Tak, usuń wszystko
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowResetConfirm(false);
+                }}
+                className={styles.btnSecondary}
+              >
+                Anuluj
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {errorMessage && (
         <div role="alert" className={styles.AlertError}>

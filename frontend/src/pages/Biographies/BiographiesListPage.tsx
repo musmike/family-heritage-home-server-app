@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { biographyApi } from '../../api/biographyApi';
-import { useAuth } from '../../context/AuthContext';
 import Loader from '../../components/Loader/Loader';
 import PersonAvatar from '../../components/PersonAvatar/PersonAvatar';
 import styles from './Biographies.module.css';
@@ -41,7 +40,6 @@ const translateSexLabel = (sex: PersonSex | null): string => {
 };
 
 export default function BiographiesListPage() {
-  const { user } = useAuth();
   const [pageData, setPageData] = useState<BiographyPageDto | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -52,13 +50,6 @@ export default function BiographiesListPage() {
   const [includeArchived, setIncludeArchived] = useState<boolean>(false);
   const [sortBy, setSortBy] = useState<string>('SURNAME_ASC');
   const [page, setPage] = useState<number>(0);
-
-  const isGuestOnly = user
-    ? !user.roles.some(r => {
-        const clean = r.replace(/^ROLE_/, '').toUpperCase();
-        return clean === 'ADMIN' || clean === 'PRIVILEGED_GUEST';
-      })
-    : true;
 
   useEffect(() => {
     const fetchList = async () => {
@@ -147,27 +138,25 @@ export default function BiographiesListPage() {
           </select>
         </div>
 
-        {!isGuestOnly && (
-          <div className={styles.filterField}>
-            <label htmlFor="bio-lifestate-select" className={styles.filterLabel}>
-              Status życia
-            </label>
-            <select
-              id="bio-lifestate-select"
-              value={lifeStateFilter}
-              onChange={e => {
-                setLifeStateFilter(e.target.value);
-                setPage(0);
-              }}
-              className={styles.selectInput}
-            >
-              <option value="ALL">Wszystkie</option>
-              <option value="DECEASED">Zmarli</option>
-              <option value="LIVING">Żyjący</option>
-              <option value="UNKNOWN">Nieznany los</option>
-            </select>
-          </div>
-        )}
+        <div className={styles.filterField}>
+          <label htmlFor="bio-lifestate-select" className={styles.filterLabel}>
+            Status życia
+          </label>
+          <select
+            id="bio-lifestate-select"
+            value={lifeStateFilter}
+            onChange={e => {
+              setLifeStateFilter(e.target.value);
+              setPage(0);
+            }}
+            className={styles.selectInput}
+          >
+            <option value="ALL">Wszystkie</option>
+            <option value="DECEASED">Zmarli</option>
+            <option value="LIVING">Żyjący</option>
+            <option value="UNKNOWN">Nieznany los</option>
+          </select>
+        </div>
 
         <div className={styles.filterField}>
           <label htmlFor="bio-sort-select" className={styles.filterLabel}>

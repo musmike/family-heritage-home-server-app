@@ -11,6 +11,8 @@ import BiographiesListPage from '../../pages/Biographies/BiographiesListPage';
 import PersonBiographyPage from '../../pages/Biographies/PersonBiographyPage';
 import FamilyTreePage from '../../pages/FamilyTreePage/FamilyTreePage';
 import BurialsPage from '../../pages/BurialsPage/BurialsPage';
+import EventsPage from '../../pages/EventsPage/EventsPage';
+import EventDetailsPage from '../../pages/EventsPage/EventDetailsPage';
 
 export default function MainLayout() {
   const { isSidebarOpen } = useSidebar();
@@ -26,6 +28,8 @@ export default function MainLayout() {
           <Route path="/" element={<HomePage />} />
           <Route path="/biographies" element={<BiographiesListPage />} />
           <Route path="/biographies/:personId" element={<PersonBiographyPage />} />
+          <Route path="/events" element={<EventsPage />} />
+          <Route path="/events/:eventId" element={<EventDetailsPage />} />
           <Route path="/tree" element={<FamilyTreePage />} />
           <Route path="/burials" element={<BurialsPage />} />
           <Route path="/gedcom-import" element={<GedcomImportPage />} />

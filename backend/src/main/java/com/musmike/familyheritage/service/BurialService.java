@@ -29,8 +29,7 @@ public class BurialService {
             PersonSex sex,
             boolean includeNonCurrent,
             boolean includeArchived,
-            String sortBy,
-            boolean isGuest
+            String sortBy
     ) {
         String normSearch = search != null ? search.trim().toLowerCase() : "";
 
@@ -39,7 +38,6 @@ public class BurialService {
                 .filter(b -> includeNonCurrent || Boolean.TRUE.equals(b.getIsCurrent()))
                 .filter(b -> b.getPerson() != null)
                 .filter(b -> includeArchived || !Boolean.TRUE.equals(b.getPerson().getIsArchived()))
-                .filter(b -> !isGuest || b.getPerson().getLifeState() == LifeState.DECEASED)
                 .toList();
 
         Map<Long, Integer> totalCountPerCemetery = new HashMap<>();

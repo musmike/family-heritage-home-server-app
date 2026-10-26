@@ -742,6 +742,13 @@ public class GedcomImportSessionService {
         return false;
     }
 
+    @Transactional
+    public void resetTreeData() {
+        sessionRepository.deleteAll();
+        sessionRepository.flush();
+        importApplier.resetAllGenealogicalData();
+    }
+
     private String nullToEmpty(String s) {
         return s == null ? "" : s;
     }

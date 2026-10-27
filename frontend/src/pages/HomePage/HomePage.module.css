@@ -1,5 +1,5 @@
 .homeContainer {
-  max-width: 1180px;
+  max-width: 1240px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -7,29 +7,216 @@
   padding-bottom: 3rem;
 }
 
-.topBar {
+/* Unified Page Header (matching Biographies, Events, Burials) */
+.pageHeader {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 1.25rem;
-  padding: 0.5rem 0;
+  gap: 1rem;
+  background-color: #ffffff;
+  padding: 1.5rem 2rem;
+  border: 1px solid #dee2e6;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
-.welcomeHeading {
-  font-size: 1.85rem;
+.pageTitle {
+  font-size: 1.65rem;
+  font-weight: 700;
+  color: #1e293b;
+  line-height: 1.3;
+}
+
+.pageSubtitle {
+  font-size: 0.92rem;
+  color: #64748b;
+  margin-top: 0.25rem;
+}
+
+/* Section Card */
+.sectionBlock {
+  background-color: #ffffff;
+  border: 1px solid #dee2e6;
+  border-radius: 12px;
+  padding: 1.4rem 1.75rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.sectionHeading {
+  font-size: 1.15rem;
   font-weight: 800;
   color: #0f172a;
-  line-height: 1.3;
-  margin-bottom: 0.65rem;
 }
 
-.welcomeSubtext {
-  font-size: 1.05rem;
-  color: #334155;
+/* Quick Actions Grid */
+.actionsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(245px, 1fr));
+  gap: 0.9rem;
 }
 
-.recentCard {
+.actionCard {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 1rem 1.1rem;
+  background-color: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  text-decoration: none;
+  color: #0f172a;
+  transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease,
+    background-color 0.14s ease;
+}
+
+.actionCard:hover {
+  transform: translateY(-2px);
+  background-color: #ffffff;
+  border-color: #60a5fa;
+  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.1);
+}
+
+.actionCardDisabled {
+  opacity: 0.52;
+  cursor: not-allowed;
+  user-select: none;
+  background-color: #f8fafc;
+}
+
+.actionCardDisabled:hover {
+  transform: none;
+  border-color: #cbd5e1;
+  box-shadow: none;
+}
+
+.actionIconBox {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background-color: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.actionCardDisabled .actionIconBox {
+  background-color: #f1f5f9;
+  color: #64748b;
+  border-color: #cbd5e1;
+}
+
+.actionSvg {
+  width: 20px;
+  height: 20px;
+}
+
+.actionTextGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.actionTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.actionTitle {
+  font-size: 0.93rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.25;
+}
+
+.soonBadge {
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 0.1rem 0.42rem;
+  border-radius: 4px;
+  background-color: #e2e8f0;
+  color: #475569;
+  flex-shrink: 0;
+}
+
+.actionDesc {
+  font-size: 0.78rem;
+  color: #64748b;
+  line-height: 1.35;
+}
+
+/* Small Statistics Grid (10 tiles) */
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+@media (max-width: 1023px) {
+  .statsGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .statsGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.statTile {
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.statTileMuted {
+  opacity: 0.68;
+}
+
+.statLabel {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+}
+
+.statValue {
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+/* Bottom Two-Column Layout (Activities Left + Anniversaries Right, Equal Height) */
+.bottomPanelsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.5rem;
+  align-items: stretch;
+}
+
+@media (max-width: 1023px) {
+  .bottomPanelsGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.panelCard {
   background-color: #ffffff;
   border: 1px solid #dee2e6;
   border-radius: 12px;
@@ -37,10 +224,11 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
   display: flex;
   flex-direction: column;
-  gap: 1.15rem;
+  height: 100%;
+  gap: 1rem;
 }
 
-.recentHeader {
+.panelHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -50,25 +238,26 @@
   padding-bottom: 0.75rem;
 }
 
-.recentTitle {
-  font-size: 1.2rem;
+.panelTitle {
+  font-size: 1.15rem;
   font-weight: 800;
   color: #0f172a;
 }
 
-.activityList {
+.panelList {
   display: flex;
   flex-direction: column;
-  gap: 0.7rem;
+  gap: 0.65rem;
+  flex: 1;
 }
 
-.activityItem {
+.listItem {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 0.85rem;
-  padding: 0.85rem 1.1rem;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
   background-color: #f8fafc;
   border: 1px solid #cbd5e1;
   border-left-width: 4px;
@@ -95,10 +284,14 @@
   border-left-color: #2563eb;
 }
 
+.accentDeath {
+  border-left-color: #6366f1;
+}
+
 .itemMain {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.22rem;
   min-width: 0;
   flex: 1;
 }
@@ -107,44 +300,60 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0.45rem;
 }
 
 .typeBadge {
-  font-size: 0.71rem;
+  font-size: 0.69rem;
   font-weight: 800;
   text-transform: uppercase;
-  padding: 0.14rem 0.5rem;
+  padding: 0.14rem 0.48rem;
   border-radius: 4px;
   background-color: #ffffff;
   border: 1px solid #cbd5e1;
   color: #334155;
 }
 
+.daysPill {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.14rem 0.5rem;
+  border-radius: 999px;
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.daysPillToday {
+  background-color: #dcfce7;
+  color: #15803d;
+  border-color: #86efac;
+}
+
 .descriptionText {
-  font-size: 0.94rem;
+  font-size: 0.9rem;
   font-weight: 700;
   color: #0f172a;
   word-break: break-word;
 }
 
 .metaRow {
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   color: #64748b;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: 0.7rem;
 }
 
 .showMoreBtn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
-  padding: 0.55rem 1.15rem;
+  gap: 0.35rem;
+  padding: 0.45rem 0.95rem;
   background-color: #eff6ff;
   color: #1d4ed8;
-  font-size: 0.88rem;
+  font-size: 0.84rem;
   font-weight: 700;
   border: 1px solid #bfdbfe;
   border-radius: 8px;
@@ -157,8 +366,8 @@
 }
 
 .targetLink {
-  padding: 0.35rem 0.75rem;
-  font-size: 0.78rem;
+  padding: 0.32rem 0.68rem;
+  font-size: 0.76rem;
   font-weight: 600;
   color: #334155;
   background-color: #ffffff;
@@ -173,7 +382,9 @@
 }
 
 @media (max-width: 640px) {
-  .recentCard {
+  .pageHeader,
+  .sectionBlock,
+  .panelCard {
     padding: 1rem;
   }
 }

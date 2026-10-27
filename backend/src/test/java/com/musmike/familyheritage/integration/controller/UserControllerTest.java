@@ -43,6 +43,30 @@ public class UserControllerTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @Transactional
+    @WithMockUser(username = "linkedadmin", roles = {"ADMIN"})
+    void shouldReturnCurrentUserWithAssignedPersonDetails() throws Exception {
+        Person jan = new Person();
+        jan.setCachedGivenName("Jan Maria");
+        jan.setCachedSurname("Kowalski");
+        jan = personRepository.saveAndFlush(jan);
+
+        User user = new User();
+        user.setUsername("linkedadmin");
+        user.setPassword("pw");
+        user.setRole(UserRole.ADMIN);
+        user.setPerson(jan);
+        userRepository.saveAndFlush(user);
+
+        mockMvc.perform(get("/users/me"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.username").value("linkedadmin"))
+                .andExpect(jsonPath("$.personId").value(jan.getId()))
+                .andExpect(jsonPath("$.personGivenName").value("Jan Maria"))
+                .andExpect(jsonPath("$.personSurname").value("Kowalski"));
+    }
+
+    @Test
     void shouldReturnForbiddenWhenNotAuthenticated() throws Exception {
         mockMvc.perform(get("/users/me"))
                 .andExpect(status().isForbidden());

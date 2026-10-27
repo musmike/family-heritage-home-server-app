@@ -38,6 +38,7 @@ public class UserController {
     private final ActivityLogService activityLogService;
 
     @GetMapping("/me")
+    @Transactional
     public ResponseEntity<UserDto> getCurrentUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
@@ -52,7 +53,28 @@ public class UserController {
                 .map(GrantedAuthority::getAuthority)
                 .collect(Collectors.toList());
 
-        UserDto userDto = new UserDto(username, roles);
+        Long personId = null;
+        String personGivenName = null;
+        String personSurname = null;
+
+        Optional<User> dbUserOpt = userRepository.findByUsername(username);
+        if (dbUserOpt.isPresent()) {
+            User dbUser = dbUserOpt.get();
+            if (dbUser.getRole() != UserRole.GUEST && dbUser.getPerson() != null) {
+                Person p = dbUser.getPerson();
+                personId = p.getId();
+                personGivenName = p.getCachedGivenName();
+                personSurname = p.getCachedSurname();
+            }
+        }
+
+        UserDto userDto = UserDto.builder()
+                .username(username)
+                .roles(roles)
+                .personId(personId)
+                .personGivenName(personGivenName)
+                .personSurname(personSurname)
+                .build();
         return ResponseEntity.ok(userDto);
     }
 

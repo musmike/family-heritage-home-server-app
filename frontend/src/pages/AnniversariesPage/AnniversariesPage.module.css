@@ -1,0 +1,345 @@
+.pageWrapper {
+  max-width: 1180px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding-bottom: 3rem;
+}
+
+.pageHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  background-color: #ffffff;
+  padding: 1.5rem 2rem;
+  border: 1px solid #dee2e6;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.pageTitle {
+  font-size: 1.65rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.pageSubtitle {
+  font-size: 0.92rem;
+  color: #64748b;
+  margin-top: 0.25rem;
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.statsBadge {
+  background-color: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #334155;
+  padding: 0.45rem 0.95rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.btnSecondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 1rem;
+  background-color: #ffffff;
+  color: #334155;
+  font-size: 0.86rem;
+  font-weight: 600;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background-color 0.15s ease;
+}
+
+.btnSecondary:hover:not(:disabled) {
+  background-color: #f1f5f9;
+}
+
+.btnSecondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Filters Card */
+.filterCard {
+  background-color: #ffffff;
+  border: 1px solid #dee2e6;
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+}
+
+.filterField {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 1 1 180px;
+  position: relative;
+}
+
+.filterLabel {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+}
+
+.textInput,
+.selectInput,
+.multiSelectTrigger {
+  height: 38px;
+  padding: 0 0.75rem;
+  font-size: 0.88rem;
+  color: #1e293b;
+  background-color: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  width: 100%;
+}
+
+.multiSelectTrigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.multiSelectPopover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  width: 100%;
+  min-width: 220px;
+  max-width: 100%;
+  box-sizing: border-box;
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.14);
+  z-index: 50;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.popoverHeaderActions {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.popoverActionBtn {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #2563eb;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.popoverTypesList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  border-top: 1px solid #f1f5f9;
+  padding-top: 0.45rem;
+}
+
+.typeCheckboxItem {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: #1e293b;
+  padding: 0.25rem 0.35rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.typeCheckboxItem:hover {
+  background-color: #f8fafc;
+}
+
+.checkboxLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 38px;
+  padding: 0 0.85rem;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: #334155;
+  background-color: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+/* Anniversaries List */
+.listCard {
+  background-color: #ffffff;
+  border: 1px solid #dee2e6;
+  border-radius: 12px;
+  padding: 1.5rem 1.75rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.anniversaryRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 0.95rem 1.2rem;
+  background-color: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-left-width: 5px;
+  border-radius: 8px;
+}
+
+.accentBirth {
+  border-left-color: #10b981;
+}
+
+.accentWedding {
+  border-left-color: #f59e0b;
+}
+
+.accentDeath {
+  border-left-color: #6366f1;
+}
+
+.rowLeft {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  min-width: 0;
+  flex: 1 1 280px;
+}
+
+.avatarsGroup {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.rowMain {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.rowTop {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.typeBadge {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  padding: 0.16rem 0.55rem;
+  border-radius: 4px;
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #334155;
+}
+
+.daysPill {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.daysPillToday {
+  background-color: #dcfce7;
+  color: #15803d;
+  border-color: #86efac;
+}
+
+.participantsTitle {
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: #0f172a;
+  word-break: break-word;
+}
+
+.metaRow {
+  font-size: 0.82rem;
+  color: #64748b;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+}
+
+.rowActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.paginationBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  background-color: #ffffff;
+  border: 1px solid #dee2e6;
+  border-radius: 10px;
+  padding: 1rem 1.5rem;
+}
+
+.AlertError {
+  padding: 1rem 1.25rem;
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  border-left: 4px solid #ef4444;
+  border-radius: 8px;
+  color: #991b1b;
+  font-size: 0.92rem;
+}
+
+@media (max-width: 640px) {
+  .pageHeader,
+  .filterCard,
+  .listCard {
+    padding: 1rem;
+  }
+}

@@ -14,6 +14,7 @@ import BurialsPage from '../../pages/BurialsPage/BurialsPage';
 import EventsPage from '../../pages/EventsPage/EventsPage';
 import EventDetailsPage from '../../pages/EventsPage/EventDetailsPage';
 import UsersManagementPage from '../../pages/UsersManagementPage/UsersManagementPage';
+import ActivitiesPage from '../../pages/ActivitiesPage/ActivitiesPage';
 
 export default function MainLayout() {
   const { isSidebarOpen } = useSidebar();
@@ -27,6 +28,7 @@ export default function MainLayout() {
       <main className={styles.mainContentArea}>
         <Routes>
           <Route path="/" element={<HomePage />} />
+          <Route path="/activities" element={<ActivitiesPage />} />
           <Route path="/users-management" element={<UsersManagementPage />} />
           <Route path="/biographies" element={<BiographiesListPage />} />
           <Route path="/biographies/:personId" element={<PersonBiographyPage />} />

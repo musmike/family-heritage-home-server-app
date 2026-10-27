@@ -22,6 +22,7 @@ public class PersonBiographyService {
     private final FamilyChildRepository familyChildRepository;
     private final BurialRepository burialRepository;
     private final EventAttributeValueRepository eventAttrValueRepository;
+    private final ActivityLogService activityLogService;
 
     @Transactional
     public BiographyPageDto listPeople(
@@ -575,6 +576,16 @@ public class PersonBiographyService {
 
         target.setIsDefaultProband(true);
         target = personRepository.saveAndFlush(target);
+
+        String fullName = ((target.getCachedSurname() != null ? target.getCachedSurname() : "") + " "
+                + (target.getCachedGivenName() != null ? target.getCachedGivenName() : "")).trim();
+        activityLogService.logActivity(
+                ActivityActionType.DEFAULT_PROBAND_SET,
+                "Ustawiono głównego probanta drzewa: " + fullName,
+                "PERSON",
+                target.getId()
+        );
+
         return toListItemDto(target);
     }
 }

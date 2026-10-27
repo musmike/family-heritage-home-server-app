@@ -2,7 +2,9 @@ package com.musmike.familyheritage.controller;
 
 import com.musmike.familyheritage.dto.ErrorResponse;
 import com.musmike.familyheritage.dto.LoginRequest;
+import com.musmike.familyheritage.service.ActivityLogService;
 import com.musmike.familyheritage.service.JwtService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,6 +35,7 @@ public class AuthenticationController {
     private final JwtService jwtService;
     private final AuthenticationManager authenticationManager;
     private final UserDetailsService userDetailsService;
+    private final ActivityLogService activityLogService;
 
     @Value("${app.jwt.access-expiration-ms}")
     private long accessExpirationMs;
@@ -40,21 +43,23 @@ public class AuthenticationController {
     @Value("${app.jwt.refresh-expiration-ms}")
     private long refreshExpirationMs;
 
-    public AuthenticationController(JwtService jwtService,
-                                    AuthenticationManager authenticationManager, UserDetailsService userDetailsService) {
+    public AuthenticationController(JwtService jwtService, AuthenticationManager authenticationManager,
+                                    UserDetailsService userDetailsService, ActivityLogService activityLogService) {
         this.jwtService = jwtService;
         this.authenticationManager = authenticationManager;
         this.userDetailsService = userDetailsService;
+        this.activityLogService = activityLogService;
     }
 
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody LoginRequest request, HttpServletResponse response) {
+    public ResponseEntity<?> login(@RequestBody LoginRequest request, HttpServletRequest httpRequest, HttpServletResponse response) {
         try {
             Authentication authentication = authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(request.getUsername(), request.getPassword())
             );
 
             UserDetails userDetails = (UserDetails) authentication.getPrincipal();
+            activityLogService.logUserLogin(userDetails.getUsername(), httpRequest);
 
             String accessToken = jwtService.generateAccessToken(userDetails);
             String refreshToken = jwtService.generateRefreshToken(userDetails);

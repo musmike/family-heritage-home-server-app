@@ -10,6 +10,7 @@ import com.musmike.familyheritage.model.User;
 import com.musmike.familyheritage.model.enums.UserRole;
 import com.musmike.familyheritage.repository.PersonRepository;
 import com.musmike.familyheritage.repository.UserRepository;
+import com.musmike.familyheritage.service.ActivityLogService;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -34,6 +35,7 @@ public class UserController {
     private final UserRepository userRepository;
     private final PersonRepository personRepository;
     private final PasswordEncoder passwordEncoder;
+    private final ActivityLogService activityLogService;
 
     @GetMapping("/me")
     public ResponseEntity<UserDto> getCurrentUser() {
@@ -103,6 +105,14 @@ public class UserController {
         }
 
         newUser = userRepository.saveAndFlush(newUser);
+
+        activityLogService.logActivity(
+                com.musmike.familyheritage.model.enums.ActivityActionType.USER_CREATED,
+                "Utworzono konto użytkownika: " + newUser.getUsername() + " (rola: " + newUser.getRole().name() + ")",
+                "USER",
+                newUser.getId()
+        );
+
         return ResponseEntity.status(HttpStatus.CREATED).body(toAssignmentDto(newUser));
     }
 
@@ -139,6 +149,14 @@ public class UserController {
         }
 
         user = userRepository.saveAndFlush(user);
+
+        activityLogService.logActivity(
+                com.musmike.familyheritage.model.enums.ActivityActionType.USER_UPDATED,
+                "Zaktualizowano konto użytkownika: " + user.getUsername(),
+                "USER",
+                user.getId()
+        );
+
         return ResponseEntity.ok(toAssignmentDto(user));
     }
 
@@ -182,6 +200,14 @@ public class UserController {
 
         userRepository.delete(user);
         userRepository.flush();
+
+        activityLogService.logActivity(
+                com.musmike.familyheritage.model.enums.ActivityActionType.USER_DELETED,
+                "Usunięto konto użytkownika: " + user.getUsername(),
+                "USER",
+                null
+        );
+
         return ResponseEntity.noContent().build();
     }
 

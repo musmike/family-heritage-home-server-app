@@ -35,6 +35,8 @@ public class GedcomImportApplier {
     private final EventParticipantRepository eventParticipantRepository;
     private final PersonNameRepository personNameRepository;
     private final GedcomDateParser dateParser;
+    private final ActivityLogService activityLogService;
+    private final UserRepository userRepository;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -127,10 +129,6 @@ public class GedcomImportApplier {
         return new AppliedImportResult(resolvedGedRefToPersonId, resolvedGedRefToFamilyId);
     }
 
-    /**
-     * Checks whether a person has manually edited data or extra application attachments
-     * that prevent physical deletion.
-     */
     public List<String> getPersonDeletionBlockReasons(Person person) {
         List<String> reasons = new ArrayList<>();
         PersonGedcomData raw = person.getGedcomData();
@@ -231,10 +229,8 @@ public class GedcomImportApplier {
             person.setGedcomData(newGedData);
         }
 
-        // Accumulate external UID without overwriting existing ones
         person.addExternalId(gedIndi.getGedUid(), sourceSystem);
 
-        // 3-way merge for Person scalar fields
         boolean givenNameEdited = oldSnapshot != null
                 && !Objects.equals(nullToEmpty(person.getCachedGivenName()), nullToEmpty(oldSnapshot.getRawGivenName()));
         boolean surnameEdited = oldSnapshot != null
@@ -265,7 +261,6 @@ public class GedcomImportApplier {
             person.setLifeState(gedIndi.isDeathIndicated() ? LifeState.DECEASED : LifeState.UNKNOWN);
         }
 
-        // Always update raw GEDCOM data
         PersonGedcomData rawData = person.getGedcomData();
         String previousBurialPlace = oldSnapshot != null ? oldSnapshot.getRawBurialPlace() : null;
         rawData.setGedRefId(gedIndi.getGedRefId());
@@ -285,10 +280,29 @@ public class GedcomImportApplier {
         person = personRepository.save(person);
         updatePersonName(person, person.getCachedGivenName(), person.getCachedSurname());
 
+        String personFullName = ((person.getCachedSurname() != null ? person.getCachedSurname() : "") + " "
+                + (person.getCachedGivenName() != null ? person.getCachedGivenName() : "")).trim();
+        if (!isUpdate) {
+            activityLogService.logActivity(
+                    ActivityActionType.PERSON_CREATED,
+                    "Dodano osobę: " + personFullName,
+                    "PERSON",
+                    person.getId()
+            );
+        } else if (hasPersonRawDataChanged(gedIndi, oldSnapshot)) {
+            activityLogService.logActivity(
+                    ActivityActionType.PERSON_UPDATED,
+                    "Zaktualizowano dane osoby: " + personFullName,
+                    "PERSON",
+                    person.getId()
+            );
+        }
+
         // BIRTH EVENT (3-way merge)
         boolean hasNewBirth = gedIndi.getBirthDate() != null || gedIndi.getBirthPlace() != null;
         boolean birthDateEdited = isEventDateEdited(person.getBirthEvent(), oldSnapshot != null ? oldSnapshot.getRawBirthDate() : null);
         boolean birthPlaceEdited = isEventPlaceEdited(person.getBirthEvent(), oldSnapshot != null ? oldSnapshot.getRawBirthPlace() : null);
+        boolean hadBirthBefore = person.getBirthEvent() != null;
 
         if (hasNewBirth || birthDateEdited || birthPlaceEdited) {
             if (person.getBirthEvent() != null || hasNewBirth) {
@@ -305,21 +319,44 @@ public class GedcomImportApplier {
                         null
                 );
                 person.setBirthEvent(savedBirth);
+                if (!hadBirthBefore) {
+                    activityLogService.logActivity(
+                            ActivityActionType.EVENT_CREATED,
+                            "Dodano wydarzenie: Narodziny (" + personFullName + ")",
+                            "EVENT",
+                            savedBirth.getId()
+                    );
+                } else if (oldSnapshot != null && (!Objects.equals(gedIndi.getBirthDate(), oldSnapshot.getRawBirthDate())
+                        || !Objects.equals(gedIndi.getBirthPlace(), oldSnapshot.getRawBirthPlace()))) {
+                    activityLogService.logActivity(
+                            ActivityActionType.EVENT_UPDATED,
+                            "Zaktualizowano wydarzenie: Narodziny (" + personFullName + ")",
+                            "EVENT",
+                            savedBirth.getId()
+                    );
+                }
             }
         } else if (person.getBirthEvent() != null) {
             Event oldBirth = person.getBirthEvent();
             person.setBirthEvent(null);
             personRepository.save(person);
             eventRepository.delete(oldBirth);
+            activityLogService.logActivity(
+                    ActivityActionType.EVENT_DELETED,
+                    "Usunięto wydarzenie: Narodziny (" + personFullName + ")",
+                    "EVENT",
+                    null
+            );
         }
 
-        // DEATH EVENT (3-way merge - only create Event row when date, place, or cause is present)
+        // DEATH EVENT (3-way merge)
         boolean hasNewDeathDetails = gedIndi.getDeathDate() != null
                 || gedIndi.getDeathPlace() != null
                 || gedIndi.getCauseOfDeath() != null;
         boolean deathDateEdited = isEventDateEdited(person.getDeathEvent(), oldSnapshot != null ? oldSnapshot.getRawDeathDate() : null);
         boolean deathPlaceEdited = isEventPlaceEdited(person.getDeathEvent(), oldSnapshot != null ? oldSnapshot.getRawDeathPlace() : null);
         boolean causeEdited = isEventCauseEdited(person.getDeathEvent(), oldSnapshot != null ? oldSnapshot.getRawCauseOfDeath() : null);
+        boolean hadDeathBefore = person.getDeathEvent() != null;
 
         if (hasNewDeathDetails || deathDateEdited || deathPlaceEdited || causeEdited) {
             if (person.getDeathEvent() != null || hasNewDeathDetails) {
@@ -336,12 +373,35 @@ public class GedcomImportApplier {
                         causeOfDeathDef
                 );
                 person.setDeathEvent(savedDeath);
+                if (!hadDeathBefore) {
+                    activityLogService.logActivity(
+                            ActivityActionType.EVENT_CREATED,
+                            "Dodano wydarzenie: Śmierć (" + personFullName + ")",
+                            "EVENT",
+                            savedDeath.getId()
+                    );
+                } else if (oldSnapshot != null && (!Objects.equals(gedIndi.getDeathDate(), oldSnapshot.getRawDeathDate())
+                        || !Objects.equals(gedIndi.getDeathPlace(), oldSnapshot.getRawDeathPlace())
+                        || !Objects.equals(gedIndi.getCauseOfDeath(), oldSnapshot.getRawCauseOfDeath()))) {
+                    activityLogService.logActivity(
+                            ActivityActionType.EVENT_UPDATED,
+                            "Zaktualizowano wydarzenie: Śmierć (" + personFullName + ")",
+                            "EVENT",
+                            savedDeath.getId()
+                    );
+                }
             }
         } else if (person.getDeathEvent() != null) {
             Event oldDeath = person.getDeathEvent();
             person.setDeathEvent(null);
             personRepository.save(person);
             eventRepository.delete(oldDeath);
+            activityLogService.logActivity(
+                    ActivityActionType.EVENT_DELETED,
+                    "Usunięto wydarzenie: Śmierć (" + personFullName + ")",
+                    "EVENT",
+                    null
+            );
         }
 
         // BURIAL EVENT (3-way merge)
@@ -367,6 +427,21 @@ public class GedcomImportApplier {
                         null
                 );
                 processGraveAndBurial(savedBurial, person, previousBurialPlace);
+                if (existingBurialEvent == null) {
+                    activityLogService.logActivity(
+                            ActivityActionType.GRAVE_CREATED,
+                            "Dodano grób: " + gedIndi.getBurialPlace() + " (" + personFullName + ")",
+                            "BURIAL",
+                            person.getId()
+                    );
+                } else if (!Objects.equals(gedIndi.getBurialPlace(), previousBurialPlace)) {
+                    activityLogService.logActivity(
+                            ActivityActionType.GRAVE_UPDATED,
+                            "Zaktualizowano grób: " + gedIndi.getBurialPlace() + " (" + personFullName + ")",
+                            "BURIAL",
+                            person.getId()
+                    );
+                }
             }
         } else if (previousBurialPlace != null) {
             burialRepository.findByPerson(person).forEach(b -> {
@@ -378,6 +453,12 @@ public class GedcomImportApplier {
                     eventRepository.delete(burEvt);
                 }
             });
+            activityLogService.logActivity(
+                    ActivityActionType.GRAVE_DELETED,
+                    "Usunięto grób: " + previousBurialPlace + " (" + personFullName + ")",
+                    "BURIAL",
+                    null
+            );
         }
 
         return personRepository.save(person);
@@ -465,6 +546,10 @@ public class GedcomImportApplier {
         boolean hasNewWedding = gedFam.getWeddingDate() != null || gedFam.getWeddingPlace() != null;
         boolean weddingDateEdited = isUpdate && isEventDateEdited(family.getPrimaryWedding(), oldRawWeddingDate);
         boolean weddingPlaceEdited = isUpdate && isEventPlaceEdited(family.getPrimaryWedding(), oldRawWeddingPlace);
+        boolean hadWeddingBefore = family.getPrimaryWedding() != null;
+        String coupleNames = ((husband != null ? husband.getCachedSurname() + " " + husband.getCachedGivenName() : "")
+                + (husband != null && wife != null ? " & " : "")
+                + (wife != null ? wife.getCachedSurname() + " " + wife.getCachedGivenName() : "")).trim();
 
         if (hasNewWedding || weddingDateEdited || weddingPlaceEdited) {
             raw.setRawWeddingDate(gedFam.getWeddingDate());
@@ -479,6 +564,22 @@ public class GedcomImportApplier {
                         weddingRole
                 );
                 family.setPrimaryWedding(weddingEvent);
+                if (!hadWeddingBefore) {
+                    activityLogService.logActivity(
+                            ActivityActionType.EVENT_CREATED,
+                            "Dodano wydarzenie: Ślub (" + coupleNames + ")",
+                            "EVENT",
+                            weddingEvent.getId()
+                    );
+                } else if (!Objects.equals(gedFam.getWeddingDate(), oldRawWeddingDate)
+                        || !Objects.equals(gedFam.getWeddingPlace(), oldRawWeddingPlace)) {
+                    activityLogService.logActivity(
+                            ActivityActionType.EVENT_UPDATED,
+                            "Zaktualizowano wydarzenie: Ślub (" + coupleNames + ")",
+                            "EVENT",
+                            weddingEvent.getId()
+                    );
+                }
             }
         } else if (family.getPrimaryWedding() != null) {
             Event oldWedding = family.getPrimaryWedding();
@@ -487,6 +588,12 @@ public class GedcomImportApplier {
             raw.setRawWeddingPlace(null);
             familyRepository.save(family);
             eventRepository.delete(oldWedding);
+            activityLogService.logActivity(
+                    ActivityActionType.EVENT_DELETED,
+                    "Usunięto wydarzenie: Ślub (" + coupleNames + ")",
+                    "EVENT",
+                    null
+            );
         } else {
             raw.setRawWeddingDate(null);
             raw.setRawWeddingPlace(null);
@@ -508,7 +615,6 @@ public class GedcomImportApplier {
             return;
         }
 
-        // 1. Validate first before mutating anything that no protected person is marked for physical deletion
         Map<Long, AbsentPersonAction> resolvedActions = new HashMap<>();
         for (Person absentPerson : initialAbsentPeople) {
             AbsentPersonAction action = resolveAbsentPersonAction(absentPerson, absentPersonDecisions);
@@ -523,13 +629,10 @@ public class GedcomImportApplier {
             resolvedActions.put(absentPerson.getId(), action);
         }
 
-        // Clear persistence context so lazy Event/EventParticipant entities loaded during validation
-        // do not cause TransientObjectException when deleting Person entities
         entityManager.clear();
 
         Set<Long> absentIds = resolvedActions.keySet();
 
-        // 2. Detach absent people from any remaining families
         List<Family> remainingFamilies = familyRepository.findAll();
         for (Family f : remainingFamilies) {
             boolean changed = false;
@@ -567,22 +670,45 @@ public class GedcomImportApplier {
         familyRepository.flush();
         entityManager.clear();
 
-        // 3. Execute ARCHIVE or DELETE per absent person
         List<Person> absentPeople = personRepository.findAllById(absentIds);
         for (Person absentPerson : absentPeople) {
             AbsentPersonAction action = resolvedActions.get(absentPerson.getId());
+            String absentName = ((absentPerson.getCachedSurname() != null ? absentPerson.getCachedSurname() : "") + " "
+                    + (absentPerson.getCachedGivenName() != null ? absentPerson.getCachedGivenName() : "")).trim();
+            boolean wasAlreadyArchived = Boolean.TRUE.equals(absentPerson.getIsArchived());
 
             if (action == AbsentPersonAction.ARCHIVE) {
                 absentPerson.setIsArchived(true);
                 absentPerson.setGedcomData(null);
                 personRepository.save(absentPerson);
+                if (!wasAlreadyArchived) {
+                    activityLogService.logActivity(
+                            ActivityActionType.PERSON_ARCHIVED,
+                            "Zarchiwizowano osobę: " + absentName,
+                            "PERSON",
+                            absentPerson.getId()
+                    );
+                }
             } else {
+                for (User u : userRepository.findAll()) {
+                    if (u.getPerson() != null && u.getPerson().getId().equals(absentPerson.getId())) {
+                        u.setPerson(null);
+                        userRepository.save(u);
+                    }
+                }
+                userRepository.flush();
                 burialRepository.findByPerson(absentPerson).forEach(b -> {
                     b.setBurialEvent(null);
                     burialRepository.delete(b);
                 });
                 burialRepository.flush();
                 personRepository.delete(absentPerson);
+                activityLogService.logActivity(
+                        ActivityActionType.PERSON_DELETED,
+                        "Usunięto osobę: " + absentName,
+                        "PERSON",
+                        null
+                );
             }
         }
         personRepository.flush();
@@ -748,7 +874,6 @@ public class GedcomImportApplier {
             eventRepository.flush();
         }
 
-        // Remove participants that are no longer husband or wife in this family
         event.getParticipants().removeIf(ep -> {
             Long pid = ep.getPerson().getId();
             boolean isHusb = family.getHusband() != null && family.getHusband().getId().equals(pid);
@@ -1048,6 +1173,14 @@ public class GedcomImportApplier {
 
     @Transactional
     public void resetAllGenealogicalData() {
+        for (User u : userRepository.findAll()) {
+            if (u.getPerson() != null) {
+                u.setPerson(null);
+                userRepository.save(u);
+            }
+        }
+        userRepository.flush();
+
         familyRepository.deleteAll();
         familyRepository.flush();
 
@@ -1066,5 +1199,19 @@ public class GedcomImportApplier {
         dateDescriptorRepository.deleteOrphanDateDescriptors();
         locationRepository.deleteOrphanLocations();
         attrDictValueRepository.deleteOrphanValues();
+    }
+
+    private boolean hasPersonRawDataChanged(ParsedGedcomIndividualDto gedIndi, PersonGedcomData oldSnapshot) {
+        if (oldSnapshot == null) return true;
+        return !Objects.equals(nullToEmpty(gedIndi.getGivenName()), nullToEmpty(oldSnapshot.getRawGivenName()))
+                || !Objects.equals(nullToEmpty(gedIndi.getSurname()), nullToEmpty(oldSnapshot.getRawSurname()))
+                || !Objects.equals(gedIndi.getSex(), oldSnapshot.getRawSex())
+                || gedIndi.isDeathIndicated() != Boolean.TRUE.equals(oldSnapshot.getRawDeathIndicated())
+                || !Objects.equals(gedIndi.getBirthDate(), oldSnapshot.getRawBirthDate())
+                || !Objects.equals(gedIndi.getBirthPlace(), oldSnapshot.getRawBirthPlace())
+                || !Objects.equals(gedIndi.getDeathDate(), oldSnapshot.getRawDeathDate())
+                || !Objects.equals(gedIndi.getDeathPlace(), oldSnapshot.getRawDeathPlace())
+                || !Objects.equals(gedIndi.getCauseOfDeath(), oldSnapshot.getRawCauseOfDeath())
+                || !Objects.equals(gedIndi.getBurialPlace(), oldSnapshot.getRawBurialPlace());
     }
 }

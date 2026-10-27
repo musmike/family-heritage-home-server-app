@@ -33,6 +33,7 @@ public class GedcomImportSessionService {
     private final PersonAndFamilyMatchingStrategy matchingStrategy;
     private final GedcomImportApplier importApplier;
     private final ObjectMapper objectMapper;
+    private final ActivityLogService activityLogService;
 
     @Transactional
     public ImportSessionResponseDto createSession(InputStream inputStream) throws Exception {
@@ -253,6 +254,14 @@ public class GedcomImportSessionService {
             }
         }
 
+        String fName = session.getFileName() != null ? session.getFileName() : "plik.ged";
+        activityLogService.logActivity(
+                com.musmike.familyheritage.model.enums.ActivityActionType.GEDCOM_IMPORT,
+                "Zaimportowano plik GEDCOM: " + fName,
+                "IMPORT_SESSION",
+                session.getId()
+        );
+
         GedcomImportApplier.AppliedImportResult appliedResult =
                 importApplier.applyImport(state.getParsedFile(), indiDecisions, famDecisions, absentMap);
 
@@ -334,6 +343,14 @@ public class GedcomImportSessionService {
                 safeArchiveAllAbsent.put(p.getId(), AbsentPersonAction.ARCHIVE);
             }
         }
+
+        String fName = session.getFileName() != null ? session.getFileName() : "plik.ged";
+        activityLogService.logActivity(
+                com.musmike.familyheritage.model.enums.ActivityActionType.GEDCOM_RESTORE,
+                "Przywrócono stan drzewa z importu GEDCOM: " + fName,
+                "IMPORT_SESSION",
+                session.getId()
+        );
 
         GedcomImportApplier.AppliedImportResult appliedResult =
                 importApplier.applyImport(parsedFile, indiDecisions, famDecisions, safeArchiveAllAbsent);
@@ -747,6 +764,13 @@ public class GedcomImportSessionService {
         sessionRepository.deleteAll();
         sessionRepository.flush();
         importApplier.resetAllGenealogicalData();
+
+        activityLogService.logActivity(
+                com.musmike.familyheritage.model.enums.ActivityActionType.TREE_RESET,
+                "Wyczyszczono całe drzewo genealogiczne",
+                "SYSTEM",
+                null
+        );
     }
 
     private String nullToEmpty(String s) {

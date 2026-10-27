@@ -1,12 +1,12 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 import Header from './Header';
 import { AuthContext } from '../../context/AuthContext';
 import { SidebarProvider } from '../../context/SidebarContext';
 
 describe('Header Component', () => {
-  it('should call logout function when logout button is clicked', () => {
-    // GIVEN
+  it('should open user menu, show admin links and call logout when clicked', () => {
     const mockLogout = vi.fn();
     const mockAuthContext = {
       user: { username: 'testuser', roles: ['ADMIN'] },
@@ -16,23 +16,24 @@ describe('Header Component', () => {
     };
 
     render(
-      <AuthContext value={mockAuthContext}>
-        <SidebarProvider>
-          <Header />
-        </SidebarProvider>
-      </AuthContext>
+      <MemoryRouter>
+        <AuthContext value={mockAuthContext}>
+          <SidebarProvider>
+            <Header />
+          </SidebarProvider>
+        </AuthContext>
+      </MemoryRouter>
     );
 
-    // WHEN
-    const logoutButton = screen.getByTestId('logout-button');
-    fireEvent.click(logoutButton);
+    fireEvent.click(screen.getByTestId('user-menu-button'));
+    expect(screen.getByTestId('menu-gedcom-import-link')).toBeInTheDocument();
+    expect(screen.getByTestId('menu-users-management-link')).toBeInTheDocument();
 
-    // THEN
+    fireEvent.click(screen.getByTestId('logout-button'));
     expect(mockLogout).toHaveBeenCalledTimes(1);
   });
 
-  it('should not render logout button when user is not authenticated', () => {
-    // GIVEN
+  it('should not render user menu button when user is not authenticated', () => {
     const mockAuthContext = {
       user: null,
       isLoading: false,
@@ -41,15 +42,15 @@ describe('Header Component', () => {
     };
 
     render(
-      <AuthContext value={mockAuthContext}>
-        <SidebarProvider>
-          <Header />
-        </SidebarProvider>
-      </AuthContext>
+      <MemoryRouter>
+        <AuthContext value={mockAuthContext}>
+          <SidebarProvider>
+            <Header />
+          </SidebarProvider>
+        </AuthContext>
+      </MemoryRouter>
     );
 
-    // THEN
-    const logoutButton = screen.queryByTestId('logout-button');
-    expect(logoutButton).not.toBeInTheDocument();
+    expect(screen.queryByTestId('user-menu-button')).not.toBeInTheDocument();
   });
 });

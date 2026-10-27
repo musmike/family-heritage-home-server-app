@@ -312,7 +312,7 @@ export default function EventsPage() {
           )}
         </div>
 
-        {/* Year Range Filter (Editable Inputs + Sliders bounded by [minBound, maxBound]) */}
+        {/* Year Range Filter (Editable Inputs + Single Dual-Thumb Slider) */}
         {boundsInitialized && (
           <div className={styles.filterField} style={{ flex: '1.4 1 240px' }}>
             <span className={styles.filterLabel}>
@@ -343,30 +343,40 @@ export default function EventsPage() {
                 className={styles.textInput}
               />
             </div>
-            <div className={styles.rangeSlidersRow}>
-              <input
-                type="range"
-                aria-label="Suwak od roku"
-                min={minBound}
-                max={maxBound}
-                value={currentFrom}
-                onChange={e => {
-                  handleYearFromChange(Number(e.target.value));
-                }}
-                className={styles.rangeInput}
-              />
-              <input
-                type="range"
-                aria-label="Suwak do roku"
-                min={minBound}
-                max={maxBound}
-                value={currentTo}
-                onChange={e => {
-                  handleYearToChange(Number(e.target.value));
-                }}
-                className={styles.rangeInput}
-              />
-            </div>
+            {maxBound > minBound && (
+              <div className={styles.dualSliderContainer}>
+                <div className={styles.sliderTrackBg} />
+                <div
+                  className={styles.sliderTrackFill}
+                  style={{
+                    left: `${String(((currentFrom - minBound) / (maxBound - minBound)) * 100)}%`,
+                    width: `${String(((currentTo - currentFrom) / (maxBound - minBound)) * 100)}%`,
+                  }}
+                />
+                <input
+                  type="range"
+                  aria-label="Suwak od roku"
+                  min={minBound}
+                  max={maxBound}
+                  value={currentFrom}
+                  onChange={e => {
+                    handleYearFromChange(Number(e.target.value));
+                  }}
+                  className={styles.dualRangeInput}
+                />
+                <input
+                  type="range"
+                  aria-label="Suwak do roku"
+                  min={minBound}
+                  max={maxBound}
+                  value={currentTo}
+                  onChange={e => {
+                    handleYearToChange(Number(e.target.value));
+                  }}
+                  className={styles.dualRangeInput}
+                />
+              </div>
+            )}
           </div>
         )}
 

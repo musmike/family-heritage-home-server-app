@@ -48,6 +48,6 @@ describe('App Routing and Layout', () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByTestId('logout-button')).toBeInTheDocument();
+    expect(screen.getByTestId('user-menu-button')).toBeInTheDocument();
   });
 });

@@ -13,22 +13,28 @@ import org.gedcom4j.parser.GedcomParser;
 import org.springframework.stereotype.Service;
 
 import java.io.BufferedInputStream;
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class GedcomFileExtractor {
 
+    private static final Pattern GEDCOM_LINE_HEADER_PATTERN =
+            Pattern.compile("^(\\d+)\\s+(?:(@[^@]+@)\\s+)?(\\S+)(.*)$");
+
     public ParsedGedcomFileDto extract(InputStream inputStream) throws Exception {
-        String sanitizedGedcom = new String(inputStream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8)
-                .lines()
-                .map(String::stripLeading)
-                .filter(line -> !line.isBlank())
-                .collect(java.util.stream.Collectors.joining("\n"));
+        String rawContent = new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
+        String sanitizedGedcom = sanitizeGedcomContent(rawContent);
 
         GedcomParser gp = new GedcomParser();
+        gp.setStrictCustomTags(false);
+        gp.setStrictLineBreaks(false);
         gp.load(new BufferedInputStream(
-                new java.io.ByteArrayInputStream(sanitizedGedcom.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                new ByteArrayInputStream(sanitizedGedcom.getBytes(StandardCharsets.UTF_8))
         ));
         Gedcom gedcom = gp.getGedcom();
 
@@ -52,6 +58,45 @@ public class GedcomFileExtractor {
                 .individuals(individuals)
                 .families(families)
                 .build();
+    }
+
+    private String sanitizeGedcomContent(String rawContent) {
+        if (rawContent == null || rawContent.isEmpty()) {
+            return "";
+        }
+        String withoutBom = rawContent.startsWith("\uFEFF")
+                ? rawContent.substring(1)
+                : rawContent;
+
+        List<String> normalizedLines = new ArrayList<>();
+        int lastLevel = 0;
+
+        for (String rawLine : withoutBom.lines().toList()) {
+            String stripped = rawLine.replace("\uFEFF", "").stripLeading();
+            if (stripped.isBlank()) {
+                continue;
+            }
+
+            Matcher matcher = GEDCOM_LINE_HEADER_PATTERN.matcher(stripped);
+            if (matcher.matches()) {
+                String levelStr = matcher.group(1);
+                String xref = matcher.group(2);
+                String tag = matcher.group(3);
+                String rest = matcher.group(4);
+
+                lastLevel = Integer.parseInt(levelStr);
+                if (xref != null) {
+                    normalizedLines.add(levelStr + " " + xref + " " + tag + rest);
+                } else {
+                    normalizedLines.add(levelStr + " " + tag + rest);
+                }
+            } else {
+                // Convert unprefixed multiline note/description lines into valid CONT lines
+                normalizedLines.add((lastLevel + 1) + " CONT " + stripped);
+            }
+        }
+
+        return String.join("\n", normalizedLines);
     }
 
     private String extractSourceSystem(Gedcom gedcom) {
@@ -265,7 +310,6 @@ public class GedcomFileExtractor {
     }
 
     private String extractAdoptedBy(Individual child, String familyXref) {
-        // 1. Check standard GEDCOM 1 ADOP -> 2 FAMC @F1@ -> 3 ADOP <HUSB|WIFE|BOTH>
         List<IndividualEvent> adoptions = child.getEventsOfType(IndividualEventType.ADOPTION);
         for (IndividualEvent adop : adoptions) {
             FamilyChild fc = adop.getFamily();
@@ -277,7 +321,6 @@ public class GedcomFileExtractor {
             }
         }
 
-        // 2. Fallback: check if adoptedBy was attached directly to 1 FAMC @F1@
         if (child.getFamiliesWhereChild() != null) {
             for (FamilyChild link : child.getFamiliesWhereChild()) {
                 if (link.getFamily() != null && familyXref.equals(link.getFamily().getXref())) {

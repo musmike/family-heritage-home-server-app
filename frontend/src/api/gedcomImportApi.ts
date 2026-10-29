@@ -91,4 +91,8 @@ export const gedcomImportApi = {
     });
     return response.data;
   },
+
+  resetTreeData: async (): Promise<void> => {
+    await api.delete(`${BASE_PATH}/reset-tree`);
+  },
 };

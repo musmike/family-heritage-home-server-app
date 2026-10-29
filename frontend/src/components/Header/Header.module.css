@@ -42,14 +42,25 @@
   border-color: #94a3b8;
 }
 
-.logoutBtn {
+.btnSvg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+/* Unified User Dropdown Menu */
+.userMenuWrapper {
+  position: relative;
+}
+
+.userMenuTrigger {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
   height: 38px;
   padding: 0 0.95rem;
   background-color: #f8fafc;
-  color: #334155;
+  color: #1e293b;
   font-size: 0.88rem;
   font-weight: 600;
   border: 1px solid #cbd5e1;
@@ -58,48 +69,67 @@
   transition: all 0.15s ease;
 }
 
-.logoutBtn:hover {
-  background-color: #fef2f2;
+.userMenuTrigger:hover {
+  background-color: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+.userDropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 235px;
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.14);
+  padding: 0.45rem;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.dropdownItem {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: #334155;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  text-decoration: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.dropdownItem:hover {
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+
+.dropdownItemDanger {
   color: #dc2626;
-  border-color: #fecaca;
 }
 
-.btnSvg {
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
+.dropdownItemDanger:hover {
+  background-color: #fef2f2;
+  color: #b91c1c;
 }
 
-.logoutBtnText {
-  white-space: nowrap;
+.dropdownDivider {
+  margin: 0.25rem 0.4rem;
+  border: 0;
+  border-top: 1px solid #e2e8f0;
 }
 
 @media (max-width: 767px) {
-  .logoutBtnText {
-    display: none;
-  }
-
-  .logoutBtn {
-    padding: 0;
-    width: 38px;
-    justify-content: center;
-  }
-
   .headerLogo {
     display: none;
   }
-}
-
-.userBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  height: 38px;
-  padding: 0 0.85rem;
-  background-color: #f1f5f9;
-  color: #1e293b;
-  font-size: 0.88rem;
-  font-weight: 600;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
 }

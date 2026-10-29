@@ -100,4 +100,10 @@ public class GedcomImportController {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(new ErrorResponse("INVALID_IMPORT_REQUEST", ex.getMessage()));
     }
+
+    @DeleteMapping("/reset-tree")
+    public ResponseEntity<Void> resetTreeData() {
+        sessionService.resetTreeData();
+        return ResponseEntity.noContent().build();
+    }
 }

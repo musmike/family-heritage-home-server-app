@@ -1,9 +1,12 @@
 import { createContext, useState, type ReactNode, use, useEffect, useMemo } from 'react';
 import api from '../api/axiosInstance';
 
-interface AuthUser {
+export interface AuthUser {
   username: string;
   roles: string[];
+  personId?: number | null;
+  personGivenName?: string | null;
+  personSurname?: string | null;
 }
 
 interface AuthContextType {

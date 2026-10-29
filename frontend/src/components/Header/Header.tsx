@@ -1,3 +1,5 @@
+import { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import logo from '../../assets/logo-light-mode.png';
 import styles from './Header.module.css';
 import { useAuth } from '../../context/AuthContext';
@@ -6,8 +8,26 @@ import { useSidebar } from '../../context/SidebarContext';
 export default function Header() {
   const sidebar = useSidebar();
   const { user, logout } = useAuth();
+  const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  const isAdmin =
+    user?.roles.some(r => r.replace(/^ROLE_/, '').toUpperCase() === 'ADMIN') ?? false;
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   const handleLogout = () => {
+    setIsMenuOpen(false);
     logout();
   };
 
@@ -62,8 +82,15 @@ export default function Header() {
         </button>
 
         {user && (
-          <>
-            <div className={styles.userBadge} data-testid="header-username">
+          <div className={styles.userMenuWrapper} ref={menuRef}>
+            <button
+              type="button"
+              data-testid="user-menu-button"
+              onClick={() => {
+                setIsMenuOpen(prev => !prev);
+              }}
+              className={styles.userMenuTrigger}
+            >
               <svg
                 aria-hidden="true"
                 viewBox="0 0 24 24"
@@ -78,31 +105,64 @@ export default function Header() {
                 <circle cx="12" cy="7" r="4" />
               </svg>
               <span>{user.username}</span>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleLogout}
-              className={styles.logoutBtn}
-              data-testid="logout-button"
-            >
-              <svg
-                aria-hidden="true"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className={styles.btnSvg}
-              >
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                <polyline points="16 17 21 12 16 7" />
-                <line x1="21" y1="12" x2="9" y2="12" />
-              </svg>
-              <span className={styles.logoutBtnText}>Wyloguj się</span>
+              <span>▾</span>
             </button>
-          </>
+
+            {isMenuOpen && (
+              <div className={styles.userDropdown} data-testid="user-dropdown-menu">
+                {isAdmin && (
+                  <>
+                    <Link
+                      to="/gedcom-import"
+                      data-testid="menu-gedcom-import-link"
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                      }}
+                      className={styles.dropdownItem}
+                    >
+                      <span>📥</span>
+                      <span>Import pliku GEDCOM</span>
+                    </Link>
+                    <Link
+                      to="/users-management"
+                      data-testid="menu-users-management-link"
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                      }}
+                      className={styles.dropdownItem}
+                    >
+                      <span>👥</span>
+                      <span>Zarządzanie użytkownikami</span>
+                    </Link>
+                    <hr className={styles.dropdownDivider} />
+                  </>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  data-testid="logout-button"
+                  className={`${styles.dropdownItem} ${styles.dropdownItemDanger}`}
+                >
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className={styles.btnSvg}
+                  >
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                    <polyline points="16 17 21 12 16 7" />
+                    <line x1="21" y1="12" x2="9" y2="12" />
+                  </svg>
+                  <span>Wyloguj się</span>
+                </button>
+              </div>
+            )}
+          </div>
         )}
       </div>
     </header>

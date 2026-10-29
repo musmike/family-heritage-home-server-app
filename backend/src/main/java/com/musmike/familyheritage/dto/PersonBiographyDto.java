@@ -37,6 +37,8 @@ public class PersonBiographyDto {
     private Integer age;
     private boolean ageApproximate;
 
+    private String biographyContent;
+
     @Builder.Default
     private List<PersonNameDto> names = new ArrayList<>();
 

@@ -59,6 +59,15 @@ export const burialApi = {
     await api.delete(`/burials/cemeteries/${String(cemeteryId)}`);
   },
 
+  assignGravesToCemetery: async (
+    cemeteryId: number,
+    graveIds: number[]
+  ): Promise<void> => {
+    await api.put(`/burials/cemeteries/${String(cemeteryId)}/assign-graves`, {
+      graveIds,
+    });
+  },
+
   createGrave: async (payload: SaveGraveRequestDto): Promise<GraveGroupDto> => {
     const response = await api.post<GraveGroupDto>('/burials/graves', payload);
     return response.data;

@@ -60,6 +60,8 @@ const BLOCK_REASON_LABELS: Record<string, string | undefined> = {
     'Osoba posiada dodatkowe imiona lub nazwiska dodane w aplikacji',
   'Person participates in custom events':
     'Osoba uczestniczy w dodatkowych wydarzeniach w aplikacji',
+  'Person has a custom biography article':
+    'Osoba posiada opracowany życiorys w aplikacji',
 };
 
 const FAMILY_STATUS_LABELS: Record<string, string | undefined> = {

@@ -344,4 +344,46 @@ class PersonBiographyControllerTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(livingChildId));
     }
+
+    @Test
+    @Transactional
+    @WithMockUser(username = "admin", roles = {"ADMIN"})
+    void shouldUpdateAndReturnWikipediaStyleBiographyContentForAdmin() throws Exception {
+        String wikiContent = """
+            ## Młodość i edukacja
+            Urodził się w **Warszawie**, gdzie mieszkał z żoną [Anną Nowak](person:2).
+            > W stanie faktycznym sprawy zachowanie wyczerpywało znamiona...
+            ### Działalność powojenna
+            - Pierwsza publikacja *Wspomnienia*
+            - Druga publikacja *Listy*
+            """;
+
+        String payload = "{\"biographyContent\":" + new tools.jackson.databind.ObjectMapper().writeValueAsString(wikiContent) + "}";
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .put("/biographies/{id}/biography-content", deceasedFatherId)
+                        .cookie(new jakarta.servlet.http.Cookie("XSRF-TOKEN", "csrf-bio"))
+                        .header("X-XSRF-TOKEN", "csrf-bio")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.biographyContent").value(wikiContent.trim()));
+
+        mockMvc.perform(get("/biographies/{id}", deceasedFatherId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.biographyContent").value(wikiContent.trim()));
+    }
+
+    @Test
+    @Transactional
+    @WithMockUser(username = "guest", roles = {"GUEST"})
+    void shouldForbidGuestFromUpdatingBiographyContent() throws Exception {
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .put("/biographies/{id}/biography-content", deceasedFatherId)
+                        .cookie(new jakarta.servlet.http.Cookie("XSRF-TOKEN", "csrf-bio"))
+                        .header("X-XSRF-TOKEN", "csrf-bio")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"biographyContent\":\"Test\"}"))
+                .andExpect(status().isForbidden());
+    }
 }

@@ -167,11 +167,36 @@ public class PersonBiographyService {
                 .burialGraveId(burialInfo.graveId())
                 .age(ageResult.age())
                 .ageApproximate(ageResult.approximate())
+                .biographyContent(person.getBiographyContent())
                 .names(names)
                 .originFamilies(originFamilies)
                 .spouseFamilies(spouseFamilies)
                 .rawGedcomData(rawGedcomView)
                 .build();
+    }
+
+    @Transactional
+    public PersonBiographyDto updateBiographyContent(Long personId, String biographyContent, boolean isAdmin) {
+        Person person = personRepository.findById(personId)
+                .orElseThrow(() -> new IllegalArgumentException("Person not found: " + personId));
+
+        String normalized = (biographyContent == null || biographyContent.isBlank())
+                ? null
+                : biographyContent.trim();
+
+        person.setBiographyContent(normalized);
+        personRepository.saveAndFlush(person);
+
+        String fullName = ((person.getCachedSurname() != null ? person.getCachedSurname() : "") + " "
+                + (person.getCachedGivenName() != null ? person.getCachedGivenName() : "")).trim();
+        activityLogService.logActivity(
+                ActivityActionType.PERSON_UPDATED,
+                "Zaktualizowano życiorys osoby: " + fullName,
+                "PERSON",
+                person.getId()
+        );
+
+        return getBiography(personId, isAdmin);
     }
 
     @Transactional

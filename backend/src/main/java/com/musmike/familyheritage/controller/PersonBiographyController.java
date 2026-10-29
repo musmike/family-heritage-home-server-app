@@ -40,29 +40,25 @@ public class PersonBiographyController {
         return ResponseEntity.ok(biographyService.getBiography(personId, isCurrentUserAdmin()));
     }
 
+    @PutMapping("/{personId}/biography-content")
+    public ResponseEntity<PersonBiographyDto> updateBiographyContent(
+            @PathVariable Long personId,
+            @RequestBody UpdateBiographyContentRequestDto request
+    ) {
+        if (!isCurrentUserAdmin()) {
+            throw new AccessDeniedException("Only ADMIN can edit person biography content.");
+        }
+        return ResponseEntity.ok(
+                biographyService.updateBiographyContent(personId, request.getBiographyContent(), true)
+        );
+    }
+
     @GetMapping("/{personId}/ancestor-tree")
     public ResponseEntity<AncestorTreeNodeDto> getAncestorTree(
             @PathVariable Long personId,
             @RequestParam(name = "generations", defaultValue = "3") int generations
     ) {
         return ResponseEntity.ok(biographyService.getAncestorTree(personId, generations));
-    }
-
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<ErrorResponse> handleNotFound(IllegalArgumentException ex) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(new ErrorResponse("NOT_FOUND", ex.getMessage()));
-    }
-
-    private boolean isCurrentUserAdmin() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || auth.getAuthorities() == null) {
-            return false;
-        }
-        return auth.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .map(a -> a.replaceFirst("^ROLE_", "").toUpperCase())
-                .anyMatch("ADMIN"::equals);
     }
 
     @GetMapping("/default-proband")
@@ -80,9 +76,26 @@ public class PersonBiographyController {
         return ResponseEntity.ok(biographyService.setDefaultProband(personId));
     }
 
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ErrorResponse> handleNotFound(IllegalArgumentException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ErrorResponse("NOT_FOUND", ex.getMessage()));
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException ex) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(new ErrorResponse("FORBIDDEN", ex.getMessage()));
+    }
+
+    private boolean isCurrentUserAdmin() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || auth.getAuthorities() == null) {
+            return false;
+        }
+        return auth.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .map(a -> a.replaceFirst("^ROLE_", "").toUpperCase())
+                .anyMatch("ADMIN"::equals);
     }
 }

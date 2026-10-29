@@ -1,7 +1,9 @@
-import { useState, useEffect, type ReactNode } from 'react';
+import { useState, useEffect, use, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { biographyApi } from '../../api/biographyApi';
+import { AuthContext } from '../../context/AuthContext';
 import AncestorTree from '../../components/AncestorTree/AncestorTree';
+import WikiBiographySection from '../../components/WikiBiography/WikiBiographySection';
 import Loader from '../../components/Loader/Loader';
 import PersonAvatar from '../../components/PersonAvatar/PersonAvatar';
 import styles from './Biographies.module.css';
@@ -160,6 +162,10 @@ const describeNonBiologicalChildRelation = (ch: ChildInFamilyDto): string => {
 
 export default function PersonBiographyPage() {
   const { personId } = useParams<{ personId: string }>();
+  const auth = use(AuthContext);
+  const isAdmin =
+    auth?.user?.roles.some(r => r.replace(/^ROLE_/, '').toUpperCase() === 'ADMIN') ?? false;
+
   const [bio, setBio] = useState<PersonBiographyDto | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -218,7 +224,6 @@ export default function PersonBiographyPage() {
     ? `${birthNameRecord.givenName ?? ''} ${birthNameRecord.surname ?? ''}`.trim()
     : null;
 
-  // Separate biological parents, adoptive/foster parents, and siblings across originFamilies
   const biologicalFathers: RelatedPersonDto[] = [];
   const biologicalMothers: RelatedPersonDto[] = [];
   const nonBiologicalParents: { person: RelatedPersonDto; note: string }[] = [];
@@ -266,7 +271,6 @@ export default function PersonBiographyPage() {
 
   return (
     <div className={styles.pageWrapper}>
-      {/* Top Action Bar */}
       <div className={styles.topNavBar}>
         <Link to="/biographies" className={styles.btnSecondary}>
           ← Wróć do listy biografii
@@ -286,9 +290,6 @@ export default function PersonBiographyPage() {
         )}
       </div>
 
-      {/* Wikipedia-Style Grid:
-          Desktop: Left (1. Header -> 2. Tree -> 3. Content), Right (Infobox)
-          Mobile: 1. Header -> 2. Tree -> 3. Infobox -> 4. Content */}
       <div className={styles.wikiGrid}>
         {/* 1. TITLE HEADER */}
         <header className={styles.articleHeaderBlock}>
@@ -298,7 +299,7 @@ export default function PersonBiographyPage() {
           </h1>
         </header>
 
-        {/* 2. ANCESTOR TREE (Above Infobox on Mobile, Below Header in Left Column on Desktop) */}
+        {/* 2. ANCESTOR TREE */}
         <section className={`${styles.wikiSection} ${styles.articleTreeBlock}`}>
           <div
             style={{
@@ -334,7 +335,6 @@ export default function PersonBiographyPage() {
             {bio.archived && <span className={styles.archivedBadge}>Osoba zarchiwizowana</span>}
           </div>
 
-          {/* Section: Basic Info */}
           <div className={styles.infoboxSectionHeader}>Podstawowe informacje</div>
           <table className={styles.infoboxTable}>
             <tbody>
@@ -346,7 +346,6 @@ export default function PersonBiographyPage() {
             </tbody>
           </table>
 
-          {/* Section: Birth and Death */}
           <div className={styles.infoboxSectionHeader}>Urodzenie i śmierć</div>
           <table className={styles.infoboxTable}>
             <tbody>
@@ -381,7 +380,6 @@ export default function PersonBiographyPage() {
             </tbody>
           </table>
 
-          {/* Section: Origin Family (Parents, Adoptive/Foster Parents, Siblings) */}
           {hasOriginSection && (
             <>
               <div className={styles.infoboxSectionHeader}>Rodzina pochodzenia</div>
@@ -422,7 +420,6 @@ export default function PersonBiographyPage() {
             </>
           )}
 
-          {/* Section(s): Partnerships / Marriages & Children */}
           {bio.spouseFamilies.map((fam, idx) => {
             const sectionTitle =
               bio.spouseFamilies.length > 1
@@ -492,7 +489,7 @@ export default function PersonBiographyPage() {
           })}
         </aside>
 
-        {/* 4. LEFT MAIN CONTENT (Biography Narrative + Optional Admin Raw View) */}
+        {/* 4. LEFT MAIN CONTENT (Wikipedia-Style Biography + Optional Admin Raw View) */}
         <div className={styles.articleBodyBlock}>
           {showRawGedcom && bio.rawGedcomData && (
             <section className={styles.wikiSection} data-testid="raw-gedcom-panel">
@@ -533,12 +530,14 @@ export default function PersonBiographyPage() {
             </section>
           )}
 
-          <section className={styles.wikiSection}>
-            <h2 className={styles.wikiSectionTitle}>Życiorys</h2>
-            <div className={styles.placeholderBox}>
-              Brak opracowanego życiorysu tekstowego dla tej osoby.
-            </div>
-          </section>
+          <WikiBiographySection
+            personId={bio.id}
+            biographyContent={bio.biographyContent}
+            isAdmin={isAdmin}
+            onBiographyUpdated={updated => {
+              setBio(updated);
+            }}
+          />
         </div>
       </div>
     </div>

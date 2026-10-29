@@ -188,6 +188,10 @@ public class GedcomImportApplier {
             reasons.add("Person participates in custom events");
         }
 
+        if (person.getBiographyContent() != null && !person.getBiographyContent().isBlank()) {
+            reasons.add("Person has a custom biography article");
+        }
+
         return reasons;
     }
 

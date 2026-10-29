@@ -14,6 +14,8 @@ vi.mock('../../api/burialApi', () => ({
     createCemetery: vi.fn(),
     updateCemetery: vi.fn(),
     deleteCemetery: vi.fn(),
+    assignGravesToCemetery: vi.fn(),
+    createGrave: vi.fn(),
     updateGrave: vi.fn(),
     deleteGrave: vi.fn(),
     addPersonToGrave: vi.fn(),
@@ -81,7 +83,7 @@ describe('BurialsPage and GraveDetailsPage Components', () => {
         managementType: 'MUNICIPAL',
         managementTypeLabel: 'Komunalny',
         denomination: 'ROMAN_CATHOLIC',
-        denominationLabel: 'Rzymskokatolickie',
+        denominationLabel: 'Rzymskokatolicki',
         locationName: 'Kraków',
         description: 'Najstarszy cmentarz komunalny w Krakowie.',
         otherGroup: false,
@@ -143,9 +145,10 @@ describe('BurialsPage and GraveDetailsPage Components', () => {
     vi.clearAllMocks();
   });
 
-  it('should render cemeteries, show cemetery description and compact person tiles on cemetery view, and display GEDCOM place only in Inne', async () => {
+  it('should render cemeteries with description snippet, show full coordinate pills, and allow bulk assigning graves', async () => {
     const mockedApi = vi.mocked(burialApi);
     mockedApi.getBurialsOverview.mockResolvedValue(mockOverview);
+    mockedApi.assignGravesToCemetery.mockResolvedValue();
 
     render(
       <MemoryRouter initialEntries={['/burials']}>
@@ -160,29 +163,93 @@ describe('BurialsPage and GraveDetailsPage Components', () => {
     await waitFor(() => {
       expect(screen.getByTestId('cemetery-card-Cmentarz Rakowicki')).toBeInTheDocument();
     });
-    expect(screen.getByTestId('cemetery-card-Inne')).toBeInTheDocument();
-
-    // Open "Cmentarz Rakowicki" -> shows description banner at top, compact person tile without GEDCOM description
-    fireEvent.click(screen.getByTestId('cemetery-card-Cmentarz Rakowicki'));
-    expect(screen.getByTestId('cemetery-description-banner')).toHaveTextContent(
+    expect(screen.getByTestId('cemetery-card-desc-Cmentarz Rakowicki')).toHaveTextContent(
       'Najstarszy cmentarz komunalny w Krakowie.'
     );
-    expect(screen.getByTestId('grave-card-100')).toBeInTheDocument();
-    expect(screen.getByText('Kowalski Jan')).toBeInTheDocument();
-    expect(
-      screen.queryByText(/GEDCOM: Cmentarz Rakowicki, kw\. XII, Kraków/i)
-    ).not.toBeInTheDocument();
+    expect(screen.getByText('Rzymskokatolicki')).toBeInTheDocument();
 
-    // Go back and open "Inne" -> GEDCOM placeDescription IS displayed on the compact tile
-    fireEvent.click(screen.getByTestId('back-to-cemeteries-button'));
-    fireEvent.click(screen.getByTestId('cemetery-card-Inne'));
-    expect(screen.getByTestId('grave-card-101')).toBeInTheDocument();
+    // Open "Cmentarz Rakowicki" -> shows full coordinate pills ("Kwatera: XII", "Sektor: B", "Rząd: 4", "Numer grobu: 18")
+    fireEvent.click(screen.getByTestId('cemetery-card-Cmentarz Rakowicki'));
+    expect(screen.getByText('Kwatera: XII')).toBeInTheDocument();
+    expect(screen.getByText('Sektor: B')).toBeInTheDocument();
+    expect(screen.getByText('Rząd: 4')).toBeInTheDocument();
+    expect(screen.getByText('Numer grobu: 18')).toBeInTheDocument();
+    expect(screen.getByText('Jan Kowalski')).toBeInTheDocument();
+
+    // Open bulk assign panel inside Cmentarz Rakowicki and assign grave #101 from "Inne"
+    fireEvent.click(screen.getByTestId('open-bulk-assign-panel-button'));
     expect(
-      screen.getByText(/GEDCOM: Cmentarz Powązkowski, Warszawa/i)
+      screen.getByText(/Pochowano w: Cmentarz Powązkowski, Warszawa/i)
     ).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('bulk-checkbox-grave-101'));
+    fireEvent.click(screen.getByTestId('confirm-bulk-assign-button'));
+
+    await waitFor(() => {
+      expect(mockedApi.assignGravesToCemetery).toHaveBeenCalledWith(10, [101]);
+    });
   });
 
-  it('should render GraveDetailsPage with epitaph, grave coordinates and allow admin to toggle GEDCOM place preview', async () => {
+  it('should hide Zaznacz do przypisania checkbox in Inne when no custom cemetery exists', async () => {
+    const mockedApi = vi.mocked(burialApi);
+    mockedApi.getBurialsOverview.mockResolvedValue({
+      totalBurialsCount: 1,
+      totalGravesCount: 1,
+      cemeteryGroups: [mockOverview.cemeteryGroups[1]],
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/burials?cemetery=OTHER']}>
+        <AuthContext value={adminContext}>
+          <Routes>
+            <Route path="/burials" element={<BurialsPage />} />
+          </Routes>
+        </AuthContext>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Piotr Nowak')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('other-grave-checkbox-101')).not.toBeInTheDocument();
+  });
+
+  it('should allow admin to open and submit the create new grave form', async () => {
+    const mockedApi = vi.mocked(burialApi);
+    mockedApi.getBurialsOverview.mockResolvedValue(mockOverview);
+    mockedApi.createGrave.mockResolvedValue(mockGraveAssigned);
+    mockedApi.getGraveDetails.mockResolvedValue(mockGraveAssigned);
+
+    render(
+      <MemoryRouter initialEntries={['/burials']}>
+        <AuthContext value={adminContext}>
+          <Routes>
+            <Route path="/burials" element={<BurialsPage />} />
+            <Route path="/burials/graves/:graveId" element={<GraveDetailsPage />} />
+          </Routes>
+        </AuthContext>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('open-create-grave-button')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId('open-create-grave-button'));
+    expect(screen.getByTestId('create-grave-form-section')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId('new-grave-section-input'), {
+      target: { value: 'IV' },
+    });
+    fireEvent.click(screen.getByTestId('submit-create-grave-button'));
+
+    await waitFor(() => {
+      expect(mockedApi.createGrave).toHaveBeenCalledWith(
+        expect.objectContaining({ section: 'IV' })
+      );
+    });
+  });
+
+  it('should render GraveDetailsPage with person-based title (no DB ID), epitaph, and allow admin to toggle GEDCOM place preview', async () => {
     const mockedApi = vi.mocked(burialApi);
     mockedApi.getGraveDetails.mockResolvedValue(mockGraveAssigned);
     mockedApi.getBurialsOverview.mockResolvedValue(mockOverview);
@@ -198,12 +265,15 @@ describe('BurialsPage and GraveDetailsPage Components', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByTestId('grave-epitaph-box')).toHaveTextContent('Pokój ich duszom');
+      expect(
+        screen.getByRole('heading', {
+          name: /Grób: Jan Kowalski \(Cmentarz Rakowicki\)/i,
+        })
+      ).toBeInTheDocument();
     });
-    expect(screen.getByText('XII')).toBeInTheDocument();
-    expect(screen.getByText('Rodzinny')).toBeInTheDocument();
+    expect(screen.getByTestId('grave-epitaph-box')).toHaveTextContent('Pokój ich duszom');
 
-    // Because grave #100 is assigned to Cmentarz Rakowicki, GEDCOM placeDescription is hidden by default
+    // Hidden by default when assigned to a cemetery
     expect(
       screen.queryByText('Cmentarz Rakowicki, kw. XII, Kraków')
     ).not.toBeInTheDocument();

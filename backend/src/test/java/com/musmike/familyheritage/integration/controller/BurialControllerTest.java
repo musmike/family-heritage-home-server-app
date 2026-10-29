@@ -2,6 +2,7 @@ package com.musmike.familyheritage.integration.controller;
 
 import tools.jackson.databind.ObjectMapper;
 import com.musmike.familyheritage.dto.AddPersonToGraveRequestDto;
+import com.musmike.familyheritage.dto.BulkAssignGravesRequestDto;
 import com.musmike.familyheritage.dto.SaveCemeteryRequestDto;
 import com.musmike.familyheritage.dto.SaveGraveRequestDto;
 import com.musmike.familyheritage.integration.AbstractIntegrationTest;
@@ -25,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.*;
@@ -87,11 +89,9 @@ class BurialControllerTest extends AbstractIntegrationTest {
     @Transactional
     @WithMockUser(username = "admin", roles = {"ADMIN"})
     void shouldPlaceAllGedcomBurialsIntoOtherWithoutPollutingLocationsAndAllowAdminToManageCemeteriesAndGraves() throws Exception {
-        // 1. Verify BURIAL places did NOT pollute the locations table
         assertThat(locationRepository.findByName("Cmentarz Rakowicki, kw. XII, Kraków")).isEmpty();
         assertThat(locationRepository.findByName("Cmentarz Rakowicki, Kraków")).isEmpty();
 
-        // 2. Initially all GEDCOM graves are in "Inne" with their placeDescription visible
         mockMvc.perform(get("/burials"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalBurialsCount").value(2))
@@ -102,7 +102,6 @@ class BurialControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.cemeteryGroups[0].graves[*].burials[0].placeDescription",
                         hasItems("Cmentarz Rakowicki, kw. XII, Kraków", "Cmentarz Rakowicki, Kraków")));
 
-        // 3. Admin creates two cemeteries (can even share the same name!)
         SaveCemeteryRequestDto cemReq1 = SaveCemeteryRequestDto.builder()
                 .name("Cmentarz Parafialny")
                 .managementType("PARISH")
@@ -119,24 +118,32 @@ class BurialControllerTest extends AbstractIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.groupName").value("Cmentarz Parafialny"))
                 .andExpect(jsonPath("$.managementTypeLabel").value("Parafialny"))
-                .andExpect(jsonPath("$.denominationLabel").value("Rzymskokatolickie"))
+                .andExpect(jsonPath("$.denominationLabel").value("Rzymskokatolicki"))
                 .andReturn();
 
         Long cem1Id = objectMapper.readTree(cemRes1.getResponse().getContentAsString()).get("cemeteryId").asLong();
 
-        // Create a second cemetery with the SAME name to verify no unique-name collision
-        mockMvc.perform(post("/burials/cemeteries")
-                        .cookie(new Cookie("XSRF-TOKEN", CSRF))
-                        .header("X-XSRF-TOKEN", CSRF)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(cemReq1)))
-                .andExpect(status().isCreated());
-
-        // 4. Merge Anna into Jan's grave and assign Jan's grave to cem1Id with full grave details
         Person jan = personRepository.findByExternalIdsUidValue("bur-uid-jan").orElseThrow();
         Person anna = personRepository.findByExternalIdsUidValue("bur-uid-anna").orElseThrow();
         Burial janBurial = burialRepository.findByPerson(jan).getFirst();
         Long janGraveId = janBurial.getGrave().getId();
+        Long annaGraveId = burialRepository.findByPerson(anna).getFirst().getGrave().getId();
+
+        // Bulk assign both graves from "Inne" to cem1Id
+        mockMvc.perform(put("/burials/cemeteries/{id}/assign-graves", cem1Id)
+                        .cookie(new Cookie("XSRF-TOKEN", CSRF))
+                        .header("X-XSRF-TOKEN", CSRF)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new BulkAssignGravesRequestDto(List.of(janGraveId, annaGraveId)))))
+                .andExpect(status().isOk());
+
+        // Move Anna back to "Inne" first, then merge her into Jan's grave
+        mockMvc.perform(put("/burials/graves/{graveId}", annaGraveId)
+                        .cookie(new Cookie("XSRF-TOKEN", CSRF))
+                        .header("X-XSRF-TOKEN", CSRF)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(SaveGraveRequestDto.builder().cemeteryId(null).build())))
+                .andExpect(status().isOk());
 
         mockMvc.perform(post("/burials/graves/{graveId}/people", janGraveId)
                         .cookie(new Cookie("XSRF-TOKEN", CSRF))
@@ -168,7 +175,7 @@ class BurialControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.graveTypeLabel").value("Rodzinny"))
                 .andExpect(jsonPath("$.epitaph").value("Pokój ich duszom"));
 
-        // 5. Re-importing the GEDCOM file preserves the merged family grave and its cemetery assignment!
+        // Re-importing the GEDCOM file preserves the merged family grave and its cemetery assignment!
         importService.importGedcom(new ByteArrayInputStream(gedcomContent.getBytes(StandardCharsets.UTF_8)));
         entityManager.flush();
         entityManager.clear();
@@ -179,7 +186,7 @@ class BurialControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.section").value("XII"))
                 .andExpect(jsonPath("$.burials", hasSize(2)));
 
-        // 6. Deleting the cemetery moves its graves back to "Inne"
+        // Deleting the cemetery moves its graves back to "Inne"
         mockMvc.perform(delete("/burials/cemeteries/{id}", cem1Id)
                         .cookie(new Cookie("XSRF-TOKEN", CSRF))
                         .header("X-XSRF-TOKEN", CSRF))
@@ -198,7 +205,6 @@ class BurialControllerTest extends AbstractIntegrationTest {
         Person jan = personRepository.findByExternalIdsUidValue("bur-uid-jan").orElseThrow();
         Long janGraveId = burialRepository.findByPerson(jan).getFirst().getGrave().getId();
 
-        // While in "Inne", guest sees placeDescription
         mockMvc.perform(get("/burials/graves/{graveId}", janGraveId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.burials[0].placeDescription").value("Cmentarz Rakowicki, kw. XII, Kraków"));

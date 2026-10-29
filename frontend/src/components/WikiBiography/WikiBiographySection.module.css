@@ -1,0 +1,355 @@
+.wikiSectionCard {
+  background-color: #ffffff;
+  border: 1px solid #dee2e6;
+  border-radius: 10px;
+  padding: 1.5rem 2rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.topHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0.65rem;
+}
+
+.topActionsOnlyRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-bottom: -0.35rem;
+}
+
+.mainSectionTitle {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.placeholderBox {
+  background-color: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  padding: 2rem 1.5rem;
+  text-align: center;
+  color: #64748b;
+  font-size: 0.92rem;
+}
+
+/* ==========================================================================
+   BIOGRAPHY ARTICLE RENDERING (Consistent with App Design System)
+   ========================================================================== */
+.wikiArticleBody {
+  color: #334155;
+  font-size: 0.94rem;
+  line-height: 1.68;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.wikiSectionBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+/* H2 Section Heading */
+.wikiH2 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #0f172a;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0.45rem;
+  margin-top: 0.5rem;
+  margin-bottom: 0.2rem;
+  line-height: 1.35;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.wikiSectionBlock:first-child .wikiH2 {
+  margin-top: 0;
+}
+
+/* H3 Subsection Heading */
+.wikiH3 {
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin-top: 0.45rem;
+  margin-bottom: 0.1rem;
+  line-height: 1.35;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+/* Subtle App-Styled Section Edit Button */
+.wikiEditSectionBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.22rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #475569;
+  background-color: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.wikiEditSectionBtn:hover {
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  border-color: #93c5fd;
+}
+
+.wikiParagraph {
+  margin: 0.1rem 0;
+  color: #334155;
+  line-height: 1.68;
+  word-break: break-word;
+}
+
+/* Modern App-Styled Quote Box */
+.wikiQuoteBox {
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-left: 4px solid #3b82f6;
+  border-radius: 8px;
+  padding: 0.9rem 1.25rem;
+  margin: 0.4rem 0.75rem;
+  font-style: italic;
+  color: #1e293b;
+  line-height: 1.62;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+/* Bulleted List */
+.wikiList {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+  margin: 0.2rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.wikiListItem {
+  line-height: 1.6;
+  color: #334155;
+}
+
+/* Internal Person Link */
+.wikiPersonLink {
+  color: #2563eb;
+  font-weight: 600;
+  text-decoration: none;
+  transition: color 0.12s ease;
+}
+
+.wikiPersonLink:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+/* ==========================================================================
+   EDITOR & TOOLBAR
+   ========================================================================== */
+.editorContainer {
+  background-color: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.editorHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.editorTitle {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem;
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+}
+
+.toolBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #1e293b;
+  background-color: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.toolBtn:hover {
+  background-color: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+.toolBtnActive {
+  background-color: #eff6ff;
+  border-color: #2563eb;
+  color: #1d4ed8;
+}
+
+/* Person Link Picker Popover inside Editor */
+.linkPickerBox {
+  background-color: #ffffff;
+  border: 1px solid #93c5fd;
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.linkPickerRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.textInput {
+  height: 36px;
+  padding: 0 0.7rem;
+  font-size: 0.86rem;
+  color: #1e293b;
+  background-color: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  flex: 1 1 180px;
+}
+
+.editorTextarea {
+  width: 100%;
+  min-height: 150px;
+  padding: 0.8rem 0.95rem;
+  font-family: inherit;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: #0f172a;
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  overflow-y: hidden;
+  resize: none;
+  display: block;
+}
+
+.editorHint {
+  font-size: 0.76rem;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.previewBox {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 1rem 1.35rem;
+}
+
+.previewLabel {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-bottom: 0.5rem;
+  display: block;
+}
+
+.editorActions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.btnPrimary {
+  padding: 0.5rem 1.05rem;
+  background-color: #2563eb;
+  color: #ffffff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: 1px solid #1d4ed8;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.btnPrimary:hover:not(:disabled) {
+  background-color: #1d4ed8;
+}
+
+.btnPrimary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btnSecondary {
+  padding: 0.45rem 0.95rem;
+  background-color: #ffffff;
+  color: #334155;
+  font-size: 0.84rem;
+  font-weight: 600;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.btnSecondary:hover:not(:disabled) {
+  background-color: #f1f5f9;
+}
+
+@media (max-width: 767px) {
+  .wikiSectionCard {
+    padding: 1rem;
+  }
+
+  .wikiQuoteBox {
+    margin: 0.35rem 0;
+    padding: 0.75rem 0.95rem;
+  }
+}

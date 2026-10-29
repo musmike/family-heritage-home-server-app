@@ -43,6 +43,17 @@ export const biographyApi = {
     return response.data;
   },
 
+  updateBiographyContent: async (
+    personId: number,
+    biographyContent: string | null
+  ): Promise<PersonBiographyDto> => {
+    const response = await api.put<PersonBiographyDto>(
+      `/biographies/${String(personId)}/biography-content`,
+      { biographyContent }
+    );
+    return response.data;
+  },
+
   getAncestorTree: async (
     personId: number,
     generations = 3

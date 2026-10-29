@@ -11,6 +11,7 @@ vi.mock('../../api/biographyApi', () => ({
   biographyApi: {
     listPeople: vi.fn(),
     getBiography: vi.fn(),
+    updateBiographyContent: vi.fn(),
     getAncestorTree: vi.fn(),
   },
 }));
@@ -48,6 +49,15 @@ describe('Biographies Module (List and Biography Page)', () => {
     totalPages: 1,
   };
 
+  const sampleWikiText = [
+    '## Wnioski o kasację wyroku',
+    '### Wnioski PSL',
+    'W 2005 r. ożenił się z [Anną Nowak](person:3) i mieszkał w **Warszawie**.',
+    '> W stanie faktycznym sprawy, ustalonym przez sąd I instancji...',
+    '## *Dzieła Wybrane* Witosa',
+    '- Tom I: *Moje wspomnienia*, Warszawa 1988.',
+  ].join('\n');
+
   const mockBiography: PersonBiographyDto = {
     id: 1,
     givenName: 'Jan',
@@ -63,8 +73,10 @@ describe('Biographies Module (List and Biography Page)', () => {
     deathPlace: 'Kraków',
     causeOfDeath: 'Zawał serca',
     burialPlace: 'Cmentarz Rakowicki, Kraków',
+    burialGraveId: 100,
     age: 70,
     ageApproximate: false,
+    biographyContent: sampleWikiText,
     names: [
       {
         id: 10,
@@ -225,9 +237,13 @@ describe('Biographies Module (List and Biography Page)', () => {
     });
   });
 
-  it('should render unified Wikipedia-style infobox with biological and adoptive relatives and raw GEDCOM toggle', async () => {
+  it('should render Wikipedia-style biography with sections, quote box, bullet list, internal person links and section editing', async () => {
     const mockedApi = vi.mocked(biographyApi);
     mockedApi.getBiography.mockResolvedValue(mockBiography);
+    mockedApi.updateBiographyContent.mockResolvedValue({
+      ...mockBiography,
+      biographyContent: '## Nowa sekcja\nZaktualizowana treść.',
+    });
 
     render(
       <MemoryRouter initialEntries={['/biographies/1']}>
@@ -240,19 +256,30 @@ describe('Biographies Module (List and Biography Page)', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('Zawał serca')).toBeInTheDocument();
+      expect(screen.getByText('Wnioski o kasację wyroku')).toBeInTheDocument();
     });
-    expect(screen.getByText('Cmentarz Rakowicki, Kraków')).toBeInTheDocument();
-    expect(screen.getByText('Stanisław Kowalski')).toBeInTheDocument();
-    expect(screen.getByText('Helena Przybrana')).toBeInTheDocument();
-    expect(screen.getByText('Rodzice adopcyjni / przybrani')).toBeInTheDocument();
-    expect(screen.getByText('Anna Nowak')).toBeInTheDocument();
-    expect(screen.getByText('<Prywatne> Kowalski')).toBeInTheDocument();
-    expect(screen.getByText('Tomek Kowalski')).toBeInTheDocument();
 
-    // Toggle raw GEDCOM data panel
-    fireEvent.click(screen.getByTestId('toggle-raw-gedcom-button'));
-    expect(screen.getByTestId('raw-gedcom-panel')).toBeInTheDocument();
-    expect(screen.getByText(/MYHERITAGE: uid-jan-1/i)).toBeInTheDocument();
+    // Subheading, quote box, internal blue link, and bulleted list with italics
+    expect(screen.getByText('Wnioski PSL')).toBeInTheDocument();
+    expect(screen.getByTestId('wiki-quote-box')).toHaveTextContent(
+      'W stanie faktycznym sprawy, ustalonym przez sąd I instancji...'
+    );
+    expect(screen.getByRole('link', { name: 'Anną Nowak' })).toHaveAttribute(
+      'href',
+      '/biographies/3'
+    );
+    expect(screen.getByText('Moje wspomnienia')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('edit-section-btn-1'));
+    expect(screen.getByTestId('wiki-biography-editor')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId('wiki-biography-textarea'), {
+      target: { value: '### Wnioski PSL\nZmieniona treść sekcji.' },
+    });
+    fireEvent.click(screen.getByTestId('save-wiki-biography-button'));
+
+    await waitFor(() => {
+      expect(mockedApi.updateBiographyContent).toHaveBeenCalled();
+    });
   });
 });

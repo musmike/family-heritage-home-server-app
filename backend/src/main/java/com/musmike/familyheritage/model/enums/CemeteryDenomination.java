@@ -5,13 +5,13 @@ import lombok.Getter;
 @Getter
 public enum CemeteryDenomination {
     SECULAR("Świecki / Wielowyznaniowy"),
-    ROMAN_CATHOLIC("Rzymskokatolickie"),
-    GREEK_CATHOLIC("Greckokatolickie"),
-    ORTHODOX("Prawosławne"),
-    PROTESTANT("Ewangelickie"),
-    JEWISH("Żydowskie"),
-    MUSLIM("Muzułmańskie"),
-    OTHER("Inne");
+    ROMAN_CATHOLIC("Rzymskokatolicki"),
+    GREEK_CATHOLIC("Greckokatolicki"),
+    ORTHODOX("Prawosławny"),
+    PROTESTANT("Ewangelicki"),
+    JEWISH("Żydowski"),
+    MUSLIM("Muzułmański"),
+    OTHER("Inny");
 
     private final String label;
 

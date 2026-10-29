@@ -61,6 +61,16 @@ public class BurialController {
         return ResponseEntity.noContent().build();
     }
 
+    @PutMapping("/cemeteries/{cemeteryId}/assign-graves")
+    public ResponseEntity<Void> assignGravesToCemetery(
+            @PathVariable Long cemeteryId,
+            @RequestBody BulkAssignGravesRequestDto request
+    ) {
+        ensureAdmin();
+        burialService.assignGravesToCemetery(cemeteryId, request.getGraveIds());
+        return ResponseEntity.ok().build();
+    }
+
     @PostMapping("/graves")
     public ResponseEntity<GraveGroupDto> createGrave(@RequestBody SaveGraveRequestDto request) {
         ensureAdmin();

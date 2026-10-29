@@ -115,6 +115,7 @@ export interface PersonBiographyDto {
   burialGraveId?: number | null;
   age: number | null;
   ageApproximate: boolean;
+  biographyContent?: string | null;
   names: PersonNameDto[];
   originFamilies: OriginFamilyDto[];
   spouseFamilies: SpouseFamilyDto[];

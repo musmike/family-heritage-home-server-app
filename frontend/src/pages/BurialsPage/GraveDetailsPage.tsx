@@ -1,4 +1,4 @@
-import { useState, useEffect, use } from 'react';
+import { useState, useEffect, useRef, use } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { burialApi } from '../../api/burialApi';
 import { biographyApi } from '../../api/biographyApi';
@@ -26,6 +26,9 @@ const GRAVE_TYPE_OPTIONS = [
   { value: 'OTHER', label: 'Inny' },
 ];
 
+const formatPersonDisplayName = (p: { givenName: string | null; surname: string | null }): string =>
+  `${p.givenName ?? ''} ${p.surname ?? ''}`.trim() || '—';
+
 const formatPolishAge = (age: number | null, approximate: boolean): string | null => {
   if (age === null) return null;
   const prefix = approximate ? 'ok. ' : '';
@@ -52,6 +55,12 @@ const getBorderClass = (sex: PersonSex | null): string => {
   return styles.borderNeutral;
 };
 
+const adjustTextareaHeight = (el: HTMLTextAreaElement | null) => {
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = `${String(Math.max(44, el.scrollHeight))}px`;
+};
+
 export default function GraveDetailsPage() {
   const { graveId } = useParams<{ graveId: string }>();
   const navigate = useNavigate();
@@ -63,6 +72,7 @@ export default function GraveDetailsPage() {
   const [cemeteries, setCemeteries] = useState<CemeteryGroupDto[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isDescExpanded, setIsDescExpanded] = useState<boolean>(false);
 
   // Admin toggle for inspecting GEDCOM placeDescription when grave is assigned to a cemetery
   const [showAdminGedcomPlace, setShowAdminGedcomPlace] = useState<boolean>(false);
@@ -78,9 +88,40 @@ export default function GraveDetailsPage() {
   const [description, setDescription] = useState<string>('');
   const [epitaph, setEpitaph] = useState<string>('');
 
+  const descRef = useRef<HTMLTextAreaElement | null>(null);
+  const epitaphRef = useRef<HTMLTextAreaElement | null>(null);
+
   // Admin Add / Merge Person into Grave
   const [personSearchQuery, setPersonSearchQuery] = useState<string>('');
   const [personSearchResults, setPersonSearchResults] = useState<PersonListItemDto[]>([]);
+
+  useEffect(() => {
+    const syncTextareas = () => {
+      adjustTextareaHeight(descRef.current);
+      adjustTextareaHeight(epitaphRef.current);
+    };
+    if (isEditingGrave) {
+      syncTextareas();
+    }
+
+    window.addEventListener('resize', syncTextareas);
+    const observer =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => {
+            syncTextareas();
+          })
+        : null;
+
+    if (observer && isEditingGrave) {
+      if (descRef.current) observer.observe(descRef.current);
+      if (epitaphRef.current) observer.observe(epitaphRef.current);
+    }
+
+    return () => {
+      window.removeEventListener('resize', syncTextareas);
+      observer?.disconnect();
+    };
+  }, [isEditingGrave, description, epitaph]);
 
   const syncEditForm = (data: GraveGroupDto) => {
     setSelectedCemeteryId(data.cemeteryId);
@@ -228,12 +269,25 @@ export default function GraveDetailsPage() {
   const backCemeteryKey = grave.cemeteryId !== null ? String(grave.cemeteryId) : 'OTHER';
   const hasAnyGedcomPlace = grave.burials.some(b => Boolean(b.placeDescription));
 
+  const peopleInGraveNames = grave.burials
+    .map(b => formatPersonDisplayName(b))
+    .filter(n => n !== '—')
+    .join(', ');
+
+  const graveHeaderTitle = peopleInGraveNames
+    ? `Grób: ${peopleInGraveNames}`
+    : 'Szczegóły nagrobka';
+
+  const isLongGraveDescription =
+    (grave.description?.length ?? 0) > 220 ||
+    (grave.description?.split('\n').length ?? 0) > 3;
+
   return (
     <div className={styles.pageWrapper}>
       <div className={styles.pageHeader}>
         <div>
           <h1 className={styles.pageTitle}>
-            Nagrobek #{grave.graveId} ({grave.cemeteryName ?? 'Inne'})
+            {graveHeaderTitle} ({grave.cemeteryName ?? 'Inne'})
           </h1>
           <p className={styles.pageSubtitle}>
             Szczegółowe informacje o lokalizacji nagrobka, epitafium oraz spoczywających w nim osobach.
@@ -296,7 +350,7 @@ export default function GraveDetailsPage() {
         </div>
       )}
 
-      {/* Admin Edit Grave Form */}
+      {/* Admin Edit Grave Form (Using .formField so no extra empty vertical gap appears) */}
       {isAdmin && isEditingGrave && (
         <section className={styles.adminFormCard} data-testid="edit-grave-form">
           <h2 className={styles.cemeteryCardTitle}>
@@ -306,10 +360,10 @@ export default function GraveDetailsPage() {
             onSubmit={e => {
               void handleSaveGrave(e);
             }}
-            style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
+            style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}
           >
             <div className={styles.formGrid}>
-              <div className={styles.filterField}>
+              <div className={styles.formField}>
                 <label htmlFor="grave-cemetery-select" className={styles.filterLabel}>
                   Cmentarz
                 </label>
@@ -332,7 +386,7 @@ export default function GraveDetailsPage() {
                 </select>
               </div>
 
-              <div className={styles.filterField}>
+              <div className={styles.formField}>
                 <label htmlFor="grave-type-select" className={styles.filterLabel}>
                   Typ grobu
                 </label>
@@ -354,7 +408,7 @@ export default function GraveDetailsPage() {
                 </select>
               </div>
 
-              <div className={styles.filterField}>
+              <div className={styles.formField}>
                 <label htmlFor="grave-section-input" className={styles.filterLabel}>
                   Kwatera
                 </label>
@@ -370,7 +424,7 @@ export default function GraveDetailsPage() {
                 />
               </div>
 
-              <div className={styles.filterField}>
+              <div className={styles.formField}>
                 <label htmlFor="grave-sector-input" className={styles.filterLabel}>
                   Sektor
                 </label>
@@ -385,7 +439,7 @@ export default function GraveDetailsPage() {
                 />
               </div>
 
-              <div className={styles.filterField}>
+              <div className={styles.formField}>
                 <label htmlFor="grave-row-input" className={styles.filterLabel}>
                   Rząd
                 </label>
@@ -400,7 +454,7 @@ export default function GraveDetailsPage() {
                 />
               </div>
 
-              <div className={styles.filterField}>
+              <div className={styles.formField}>
                 <label htmlFor="grave-number-input" className={styles.filterLabel}>
                   Numer grobu
                 </label>
@@ -417,31 +471,35 @@ export default function GraveDetailsPage() {
               </div>
             </div>
 
-            <div className={styles.filterField}>
+            <div className={styles.formField}>
               <label htmlFor="grave-desc-input" className={styles.filterLabel}>
                 Opis lokalizacji / punkty orientacyjne (np. charakterystyczne drzewa, alejka)
               </label>
               <textarea
                 id="grave-desc-input"
+                ref={descRef}
                 data-testid="grave-desc-input"
                 value={description}
                 onChange={e => {
                   setDescription(e.target.value);
+                  adjustTextareaHeight(e.target);
                 }}
                 className={styles.textareaInput}
               />
             </div>
 
-            <div className={styles.filterField}>
+            <div className={styles.formField}>
               <label htmlFor="grave-epitaph-input" className={styles.filterLabel}>
                 Epitafium na nagrobku
               </label>
               <textarea
                 id="grave-epitaph-input"
+                ref={epitaphRef}
                 data-testid="grave-epitaph-input"
                 value={epitaph}
                 onChange={e => {
                   setEpitaph(e.target.value);
+                  adjustTextareaHeight(e.target);
                 }}
                 className={styles.textareaInput}
               />
@@ -469,8 +527,8 @@ export default function GraveDetailsPage() {
         </section>
       )}
 
-      {/* Grave Metadata & Epitaph Display */}
-      <section className={styles.adminFormCard}>
+      {/* Grave Metadata & Epitaph Display (Compact height boxes) */}
+      <section className={styles.detailsSectionCard}>
         <div className={styles.graveMetadataGrid}>
           <div className={styles.metaBox}>
             <span className={styles.metaBoxLabel}>Cmentarz</span>
@@ -510,7 +568,26 @@ export default function GraveDetailsPage() {
 
         {grave.description && (
           <div className={styles.cemeteryDescriptionBanner}>
-            <strong>🧭 Jak znaleźć ten grób:</strong> {grave.description}
+            <div
+              className={
+                isLongGraveDescription && !isDescExpanded
+                  ? styles.descriptionClamped
+                  : ''
+              }
+            >
+              <strong>🧭 Jak znaleźć ten grób:</strong> {grave.description}
+            </div>
+            {isLongGraveDescription && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsDescExpanded(prev => !prev);
+                }}
+                className={styles.expandTextBtn}
+              >
+                {isDescExpanded ? 'Zwiń opis ▴' : 'Rozwiń pełny opis ▾'}
+              </button>
+            )}
           </div>
         )}
 
@@ -522,14 +599,14 @@ export default function GraveDetailsPage() {
       </section>
 
       {/* Buried People List */}
-      <section className={styles.adminFormCard}>
+      <section className={styles.detailsSectionCard}>
         <h2 className={styles.cemeteryCardTitle}>
           Pochowane osoby w tym grobie ({grave.burials.length})
         </h2>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
           {grave.burials.map(b => {
-            const fullName = `${b.surname ?? ''} ${b.givenName ?? ''}`.trim() || '—';
+            const fullName = formatPersonDisplayName(b);
             const showGedcomPlace =
               Boolean(b.placeDescription) && (!isAssignedToCemetery || showAdminGedcomPlace);
 
@@ -560,7 +637,7 @@ export default function GraveDetailsPage() {
                 <div className={styles.detailsBox}>
                   {showGedcomPlace && (
                     <div className={styles.detailLine}>
-                      <span className={styles.detailLabel}>Opis z GEDCOM:</span>
+                      <span className={styles.detailLabel}>Pochowano w:</span>
                       <span className={styles.detailValue}>{b.placeDescription}</span>
                     </div>
                   )}
@@ -651,7 +728,7 @@ export default function GraveDetailsPage() {
               <input
                 type="text"
                 data-testid="merge-person-search-input"
-                placeholder="Wpisz nazwisko lub imię osoby..."
+                placeholder="Wpisz imię lub nazwisko osoby..."
                 value={personSearchQuery}
                 onChange={e => {
                   setPersonSearchQuery(e.target.value);
@@ -683,7 +760,7 @@ export default function GraveDetailsPage() {
                     }}
                     className={styles.btnSecondary}
                   >
-                    + Dodaj do tego grobu: {p.surname} {p.givenName} ({p.birthYear ?? '?'}–
+                    + Dodaj do tego grobu: {p.givenName} {p.surname} ({p.birthYear ?? '?'}–
                     {p.deathYear ?? '?'})
                   </button>
                 ))}

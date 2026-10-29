@@ -37,6 +37,9 @@ public class Person {
     @Column(name = "is_default_proband", nullable = false)
     private Boolean isDefaultProband = false;
 
+    @Column(name = "biography_content", columnDefinition = "TEXT")
+    private String biographyContent;
+
     @OneToOne(mappedBy = "person", cascade = CascadeType.ALL, orphanRemoval = true)
     private PersonGedcomData gedcomData;
 
@@ -65,5 +68,4 @@ public class Person {
             externalIds.add(new PersonExternalId(this, uidValue, normalizedSource));
         }
     }
-
 }

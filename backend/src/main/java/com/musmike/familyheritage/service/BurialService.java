@@ -207,7 +207,6 @@ public class BurialService {
 
         String cemName = cem.getName();
 
-        // Detach all graves so they return to "Inne"
         List<Grave> graves = graveRepository.findByCemetery(cem);
         for (Grave g : graves) {
             g.setCemetery(null);
@@ -228,6 +227,30 @@ public class BurialService {
     }
 
     @Transactional
+    public void assignGravesToCemetery(Long cemeteryId, List<Long> graveIds) {
+        Cemetery cem = cemeteryRepository.findById(cemeteryId)
+                .orElseThrow(() -> new IllegalArgumentException("Cemetery not found: " + cemeteryId));
+
+        if (graveIds == null || graveIds.isEmpty()) {
+            throw new IllegalArgumentException("graveIds list cannot be empty.");
+        }
+
+        List<Grave> graves = graveRepository.findAllById(graveIds);
+        for (Grave g : graves) {
+            g.setCemetery(cem);
+            graveRepository.save(g);
+        }
+        graveRepository.flush();
+
+        activityLogService.logActivity(
+                ActivityActionType.GRAVE_UPDATED,
+                "Przypisano groby (" + graves.size() + ") do cmentarza: " + cem.getName(),
+                "CEMETERY",
+                cem.getId()
+        );
+    }
+
+    @Transactional
     public GraveGroupDto createGrave(SaveGraveRequestDto req, boolean isAdmin) {
         Grave grave = new Grave();
         applyGraveFields(grave, req);
@@ -240,7 +263,7 @@ public class BurialService {
 
         activityLogService.logActivity(
                 ActivityActionType.GRAVE_CREATED,
-                "Utworzono nowy nagrobek #" + grave.getId(),
+                "Utworzono nowy nagrobek",
                 "BURIAL",
                 grave.getId()
         );
@@ -256,9 +279,10 @@ public class BurialService {
         applyGraveFields(grave, req);
         graveRepository.saveAndFlush(grave);
 
+        String targetLabel = grave.getCemetery() != null ? grave.getCemetery().getName() : "Inne";
         activityLogService.logActivity(
                 ActivityActionType.GRAVE_UPDATED,
-                "Zaktualizowano dane nagrobka #" + grave.getId(),
+                "Zaktualizowano dane nagrobka (" + targetLabel + ")",
                 "BURIAL",
                 grave.getId()
         );
@@ -288,7 +312,7 @@ public class BurialService {
 
         activityLogService.logActivity(
                 ActivityActionType.GRAVE_DELETED,
-                "Usunięto nagrobek #" + graveId,
+                "Usunięto nagrobek",
                 "BURIAL",
                 null
         );
@@ -313,7 +337,6 @@ public class BurialService {
             throw new IllegalArgumentException("Ta osoba jest już przypisana do tego nagrobka.");
         }
 
-        // Check if the person has a single uncustomized burial in "Inne" that should be merged into targetGrave
         List<Burial> personBurials = burialRepository.findByPerson(person);
         Burial mergeableBurial = personBurials.stream()
                 .filter(b -> b.getGrave() != null && !b.getGrave().getId().equals(targetGrave.getId()))
@@ -344,11 +367,11 @@ public class BurialService {
             burialRepository.saveAndFlush(newBurial);
         }
 
-        String fullName = ((person.getCachedSurname() != null ? person.getCachedSurname() : "") + " "
-                + (person.getCachedGivenName() != null ? person.getCachedGivenName() : "")).trim();
+        String fullName = ((person.getCachedGivenName() != null ? person.getCachedGivenName() : "") + " "
+                + (person.getCachedSurname() != null ? person.getCachedSurname() : "")).trim();
         activityLogService.logActivity(
                 ActivityActionType.GRAVE_UPDATED,
-                "Przypisano osobę " + fullName + " do nagrobka #" + targetGrave.getId(),
+                "Przypisano osobę " + fullName + " do wspólnego nagrobka",
                 "BURIAL",
                 targetGrave.getId()
         );

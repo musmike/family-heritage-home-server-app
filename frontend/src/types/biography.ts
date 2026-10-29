@@ -103,6 +103,7 @@ export interface PersonBiographyDto {
   sex: PersonSex | null;
   lifeState: LifeState | null;
   archived: boolean;
+  defaultProband?: boolean;
   birthYear: number | null;
   birthDateText: string | null;
   birthPlace: string | null;
@@ -111,6 +112,7 @@ export interface PersonBiographyDto {
   deathPlace: string | null;
   causeOfDeath: string | null;
   burialPlace: string | null;
+  burialGraveId?: number | null;
   age: number | null;
   ageApproximate: boolean;
   names: PersonNameDto[];
@@ -145,6 +147,7 @@ export interface AncestorTreeNodeDto {
   deathPlace: string | null;
   causeOfDeath: string | null;
   burialPlace: string | null;
+  burialGraveId?: number | null;
   weddingDateText: string | null;
   weddingPlace: string | null;
   age: number | null;

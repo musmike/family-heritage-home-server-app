@@ -13,8 +13,14 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class CemeteryGroupDto {
-    private Long cemeteryLocationId;
+    private Long cemeteryId;
     private String groupName;
+    private String managementType;
+    private String managementTypeLabel;
+    private String denomination;
+    private String denominationLabel;
+    private String locationName;
+    private String description;
     private boolean otherGroup;
     private int totalBurialsCount;
 

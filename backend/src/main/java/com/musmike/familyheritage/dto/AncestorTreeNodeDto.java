@@ -32,6 +32,7 @@ public class AncestorTreeNodeDto {
     private String deathPlace;
     private String causeOfDeath;
     private String burialPlace;
+    private Long burialGraveId;
 
     private String weddingDateText;
     private String weddingPlace;

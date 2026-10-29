@@ -361,7 +361,21 @@ export default function PersonBiographyPage() {
                   {renderInfoboxRow('Data śmierci', bio.deathDateText)}
                   {renderInfoboxRow('Miejsce śmierci', bio.deathPlace)}
                   {renderInfoboxRow('Przyczyna śmierci', bio.causeOfDeath)}
-                  {renderInfoboxRow('Miejsce pochówku', bio.burialPlace)}
+                  {renderInfoboxRow(
+                    'Miejsce pochówku',
+                    bio.burialPlace ? (
+                      bio.burialGraveId ? (
+                        <Link
+                          to={`/burials/graves/${String(bio.burialGraveId)}`}
+                          style={{ color: '#1d4ed8', fontWeight: 700, textDecoration: 'underline' }}
+                        >
+                          {bio.burialPlace}
+                        </Link>
+                      ) : (
+                        bio.burialPlace
+                      )
+                    ) : null
+                  )}
                 </>
               )}
             </tbody>

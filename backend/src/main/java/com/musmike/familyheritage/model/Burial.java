@@ -29,4 +29,7 @@ public class Burial {
 
     @Column(name = "is_current")
     private Boolean isCurrent = true;
+
+    @Column(name = "place_description", length = 500)
+    private String placeDescription;
 }

@@ -11,6 +11,7 @@ import BiographiesListPage from '../../pages/Biographies/BiographiesListPage';
 import PersonBiographyPage from '../../pages/Biographies/PersonBiographyPage';
 import FamilyTreePage from '../../pages/FamilyTreePage/FamilyTreePage';
 import BurialsPage from '../../pages/BurialsPage/BurialsPage';
+import GraveDetailsPage from '../../pages/BurialsPage/GraveDetailsPage';
 import EventsPage from '../../pages/EventsPage/EventsPage';
 import EventDetailsPage from '../../pages/EventsPage/EventDetailsPage';
 import UsersManagementPage from '../../pages/UsersManagementPage/UsersManagementPage';
@@ -38,6 +39,7 @@ export default function MainLayout() {
           <Route path="/events/:eventId" element={<EventDetailsPage />} />
           <Route path="/tree" element={<FamilyTreePage />} />
           <Route path="/burials" element={<BurialsPage />} />
+          <Route path="/burials/graves/:graveId" element={<GraveDetailsPage />} />
           <Route path="/gedcom-import" element={<GedcomImportPage />} />
           <Route path="/gedcom-import/history" element={<GedcomImportHistoryPage />} />
         </Routes>

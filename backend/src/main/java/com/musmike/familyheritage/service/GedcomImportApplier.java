@@ -30,6 +30,7 @@ public class GedcomImportApplier {
     private final AttributeDictionaryValueRepository attrDictValueRepository;
     private final EventAttributeValueRepository eventAttrValueRepository;
     private final EventLocationRepository eventLocationRepository;
+    private final CemeteryRepository cemeteryRepository;
     private final GraveRepository graveRepository;
     private final BurialRepository burialRepository;
     private final EventParticipantRepository eventParticipantRepository;
@@ -159,12 +160,10 @@ public class GedcomImportApplier {
             reasons.add("Person has manually edited death event details");
         }
 
-        Event burialEvent = burialRepository.findByPerson(person).stream()
-                .filter(b -> b.getBurialEvent() != null)
-                .map(Burial::getBurialEvent)
-                .findFirst()
-                .orElse(null);
-        if (isEventPlaceEdited(burialEvent, raw.getRawBurialPlace())) {
+        List<Burial> personBurials = burialRepository.findByPerson(person);
+        boolean burialEdited = personBurials.size() > 1
+                || personBurials.stream().anyMatch(b -> isBurialOrGraveEdited(b, raw.getRawBurialPlace()));
+        if (burialEdited) {
             reasons.add("Person has manually edited burial details");
         }
 
@@ -190,6 +189,19 @@ public class GedcomImportApplier {
         }
 
         return reasons;
+    }
+
+    private boolean isBurialOrGraveEdited(Burial burial, String oldRawBurialPlace) {
+        if (burial == null) {
+            return false;
+        }
+        if (burial.getGrave() != null && burial.getGrave().isCustomizedByAdmin()) {
+            return true;
+        }
+        if (!Objects.equals(burial.getPlaceDescription(), oldRawBurialPlace)) {
+            return true;
+        }
+        return isEventDateEdited(burial.getBurialEvent(), null);
     }
 
     private Person applyIndividual(
@@ -404,64 +416,103 @@ public class GedcomImportApplier {
             );
         }
 
-        // BURIAL EVENT (3-way merge)
-        Event existingBurialEvent = burialRepository.findByPerson(person).stream()
-                .filter(b -> b.getBurialEvent() != null)
-                .map(Burial::getBurialEvent)
-                .findFirst()
-                .orElse(null);
-        boolean burialPlaceEdited = isEventPlaceEdited(existingBurialEvent, previousBurialPlace);
+        // BURIAL & GRAVE (No location is added to BURIAL event; place_description is saved on Burial)
+        processBurialWithMerge(gedIndi.getBurialPlace(), previousBurialPlace, person, personFullName, burialRole);
 
-        if (gedIndi.getBurialPlace() != null || burialPlaceEdited) {
-            if (existingBurialEvent != null || gedIndi.getBurialPlace() != null) {
-                Event savedBurial = processPersonEventWithMerge(
-                        null,
-                        gedIndi.getBurialPlace(),
-                        null,
-                        true,
-                        burialPlaceEdited,
-                        false,
-                        person,
-                        burialRole,
-                        existingBurialEvent,
-                        null
+        return personRepository.save(person);
+    }
+
+    private void processBurialWithMerge(
+            String newBurialPlace,
+            String previousBurialPlace,
+            Person person,
+            String personFullName,
+            EventTypeParticipantRole burialRole
+    ) {
+        List<Burial> existingBurials = burialRepository.findByPerson(person);
+        Burial currentBurial = existingBurials.stream()
+                .filter(b -> Boolean.TRUE.equals(b.getIsCurrent()))
+                .findFirst()
+                .orElseGet(() -> existingBurials.isEmpty() ? null : existingBurials.getFirst());
+
+        if (newBurialPlace != null) {
+            Event existingBurialEvent = currentBurial != null ? currentBurial.getBurialEvent() : null;
+            // BURIAL event never receives a location in the locations table
+            Event savedBurialEvent = processPersonEventWithMerge(
+                    null,
+                    null,
+                    null,
+                    true,
+                    true,
+                    false,
+                    person,
+                    burialRole,
+                    existingBurialEvent,
+                    null
+            );
+
+            if (currentBurial == null) {
+                Grave grave = graveRepository.save(new Grave());
+                Burial burial = new Burial();
+                burial.setGrave(grave);
+                burial.setPerson(person);
+                burial.setBurialEvent(savedBurialEvent);
+                burial.setIsCurrent(true);
+                burial.setPlaceDescription(newBurialPlace);
+                burialRepository.save(burial);
+
+                activityLogService.logActivity(
+                        ActivityActionType.GRAVE_CREATED,
+                        "Dodano grób: " + newBurialPlace + " (" + personFullName + ")",
+                        "BURIAL",
+                        person.getId()
                 );
-                processGraveAndBurial(savedBurial, person, previousBurialPlace);
-                if (existingBurialEvent == null) {
-                    activityLogService.logActivity(
-                            ActivityActionType.GRAVE_CREATED,
-                            "Dodano grób: " + gedIndi.getBurialPlace() + " (" + personFullName + ")",
-                            "BURIAL",
-                            person.getId()
-                    );
-                } else if (!Objects.equals(gedIndi.getBurialPlace(), previousBurialPlace)) {
+            } else {
+                currentBurial.setBurialEvent(savedBurialEvent);
+                boolean placeDescEdited = previousBurialPlace != null
+                        && !Objects.equals(currentBurial.getPlaceDescription(), previousBurialPlace);
+                if (!placeDescEdited) {
+                    currentBurial.setPlaceDescription(newBurialPlace);
+                }
+                burialRepository.save(currentBurial);
+
+                if (!Objects.equals(newBurialPlace, previousBurialPlace)) {
                     activityLogService.logActivity(
                             ActivityActionType.GRAVE_UPDATED,
-                            "Zaktualizowano grób: " + gedIndi.getBurialPlace() + " (" + personFullName + ")",
+                            "Zaktualizowano grób: " + newBurialPlace + " (" + personFullName + ")",
                             "BURIAL",
                             person.getId()
                     );
                 }
             }
-        } else if (previousBurialPlace != null) {
-            burialRepository.findByPerson(person).forEach(b -> {
-                Event burEvt = b.getBurialEvent();
-                b.setBurialEvent(null);
-                burialRepository.delete(b);
+        } else if (currentBurial != null && previousBurialPlace != null) {
+            Grave grave = currentBurial.getGrave();
+            boolean sharedGrave = grave != null && burialRepository.findByGrave(grave).size() > 1;
+            boolean customized = isBurialOrGraveEdited(currentBurial, previousBurialPlace)
+                    || sharedGrave
+                    || existingBurials.size() > 1;
+
+            if (customized) {
+                if (Objects.equals(currentBurial.getPlaceDescription(), previousBurialPlace)) {
+                    currentBurial.setPlaceDescription(null);
+                    burialRepository.save(currentBurial);
+                }
+            } else {
+                Event burEvt = currentBurial.getBurialEvent();
+                currentBurial.setBurialEvent(null);
+                burialRepository.delete(currentBurial);
                 burialRepository.flush();
                 if (burEvt != null) {
                     eventRepository.delete(burEvt);
                 }
-            });
-            activityLogService.logActivity(
-                    ActivityActionType.GRAVE_DELETED,
-                    "Usunięto grób: " + previousBurialPlace + " (" + personFullName + ")",
-                    "BURIAL",
-                    null
-            );
+                activityLogService.logActivity(
+                        ActivityActionType.GRAVE_DELETED,
+                        "Usunięto grób: " + previousBurialPlace + " (" + personFullName + ")",
+                        "BURIAL",
+                        null
+                );
+            }
         }
-
-        return personRepository.save(person);
     }
 
     private Family applyFamily(
@@ -974,31 +1025,6 @@ public class GedcomImportApplier {
         personNameRepository.save(name);
     }
 
-    private void processGraveAndBurial(Event burialEvent, Person person, String previousBurialPlace) {
-        if (burialEvent.getMainLocation() != null) {
-            Burial burial = burialRepository.findByPerson(person).stream()
-                    .filter(b -> b.getBurialEvent() != null && b.getBurialEvent().getId().equals(burialEvent.getId()))
-                    .findFirst()
-                    .orElseGet(Burial::new);
-
-            if (burial.getGrave() == null || previousBurialPlace == null
-                    || !burialEvent.getMainLocation().getName().equals(previousBurialPlace)) {
-                Grave grave = new Grave();
-                grave.setCemeteryLocation(burialEvent.getMainLocation());
-                grave = graveRepository.save(grave);
-                burial.setGrave(grave);
-            } else {
-                burial.getGrave().setCemeteryLocation(burialEvent.getMainLocation());
-                graveRepository.save(burial.getGrave());
-            }
-
-            burial.setPerson(person);
-            burial.setBurialEvent(burialEvent);
-            burial.setIsCurrent(true);
-            burialRepository.save(burial);
-        }
-    }
-
     private void saveEventAttribute(Event event, AttributeDefinition definition, String value) {
         AttributeDictionaryValue dictValue = attrDictValueRepository
                 .findByAttributeDefinitionAndCode(definition, value)
@@ -1189,6 +1215,9 @@ public class GedcomImportApplier {
 
         graveRepository.deleteAll();
         graveRepository.flush();
+
+        cemeteryRepository.deleteAll();
+        cemeteryRepository.flush();
 
         personRepository.deleteAll();
         personRepository.flush();

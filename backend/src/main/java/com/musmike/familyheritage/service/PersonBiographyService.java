@@ -82,17 +82,7 @@ public class PersonBiographyService {
                         .findFirst()
                         .orElse(null);
 
-        String burialPlace = burialRepository.findByPerson(person).stream()
-                .map(b -> {
-                    if (b.getGrave() != null && b.getGrave().getCemeteryLocation() != null) {
-                        return b.getGrave().getCemeteryLocation().getName();
-                    }
-                    return extractLocationName(b.getBurialEvent());
-                })
-                .filter(Objects::nonNull)
-                .findFirst()
-                .orElse(null);
-
+        BurialSummaryInfo burialInfo = resolvePrimaryBurialInfo(person);
         AgeResult ageResult = calculateAge(person.getLifeState(), birthStart, deathStart);
 
         List<PersonNameDto> names = personNameRepository.findByPerson(person).stream()
@@ -173,14 +163,14 @@ public class PersonBiographyService {
                 .deathDateText(formatEventDates(deathStart, deathEnd))
                 .deathPlace(deathPlace)
                 .causeOfDeath(causeOfDeath)
-                .burialPlace(burialPlace)
+                .burialPlace(burialInfo.burialPlace())
+                .burialGraveId(burialInfo.graveId())
                 .age(ageResult.age())
                 .ageApproximate(ageResult.approximate())
                 .names(names)
                 .originFamilies(originFamilies)
                 .spouseFamilies(spouseFamilies)
                 .rawGedcomData(rawGedcomView)
-                .defaultProband(Boolean.TRUE.equals(person.getIsDefaultProband()))
                 .build();
     }
 
@@ -263,17 +253,7 @@ public class PersonBiographyService {
                         .findFirst()
                         .orElse(null);
 
-        String burialPlace = burialRepository.findByPerson(person).stream()
-                .map(b -> {
-                    if (b.getGrave() != null && b.getGrave().getCemeteryLocation() != null) {
-                        return b.getGrave().getCemeteryLocation().getName();
-                    }
-                    return extractLocationName(b.getBurialEvent());
-                })
-                .filter(Objects::nonNull)
-                .findFirst()
-                .orElse(null);
-
+        BurialSummaryInfo burialInfo = resolvePrimaryBurialInfo(person);
         AgeResult ageResult = calculateAge(person.getLifeState(), birthStart, deathStart);
 
         return AncestorTreeNodeDto.builder()
@@ -291,7 +271,8 @@ public class PersonBiographyService {
                 .deathDateText(formatEventDates(deathStart, deathEnd))
                 .deathPlace(extractLocationName(person.getDeathEvent()))
                 .causeOfDeath(causeOfDeath)
-                .burialPlace(burialPlace)
+                .burialPlace(burialInfo.burialPlace())
+                .burialGraveId(burialInfo.graveId())
                 .weddingDateText(weddingDateWithCoParent)
                 .weddingPlace(weddingPlaceWithCoParent)
                 .age(ageResult.age())
@@ -301,6 +282,27 @@ public class PersonBiographyService {
                 .mother(motherNode)
                 .children(biologicalChildren)
                 .build();
+    }
+
+    private record BurialSummaryInfo(String burialPlace, Long graveId) {}
+
+    private BurialSummaryInfo resolvePrimaryBurialInfo(Person person) {
+        List<Burial> burials = burialRepository.findByPerson(person);
+        Burial primary = burials.stream()
+                .filter(b -> Boolean.TRUE.equals(b.getIsCurrent()))
+                .findFirst()
+                .orElseGet(() -> burials.isEmpty() ? null : burials.getFirst());
+
+        if (primary == null) {
+            return new BurialSummaryInfo(null, null);
+        }
+
+        Grave grave = primary.getGrave();
+        Long graveId = grave != null ? grave.getId() : null;
+        if (grave != null && grave.getCemetery() != null) {
+            return new BurialSummaryInfo(grave.getCemetery().getName(), graveId);
+        }
+        return new BurialSummaryInfo(primary.getPlaceDescription(), graveId);
     }
 
     private List<RelatedPersonDto> findBiologicalChildrenForTree(Person parent) {

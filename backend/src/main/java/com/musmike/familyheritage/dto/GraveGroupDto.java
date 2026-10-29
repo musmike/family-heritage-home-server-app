@@ -14,8 +14,17 @@ import java.util.List;
 @AllArgsConstructor
 public class GraveGroupDto {
     private Long graveId;
-    private Long cemeteryLocationId;
+    private Long cemeteryId;
     private String cemeteryName;
+
+    private String section;
+    private String sector;
+    private String rowNumber;
+    private String graveNumber;
+    private String graveType;
+    private String graveTypeLabel;
+    private String description;
+    private String epitaph;
 
     @Builder.Default
     private List<BurialPersonItemDto> burials = new ArrayList<>();

@@ -124,8 +124,6 @@ class EventTimelineControllerTest extends AbstractIntegrationTest {
     @Transactional
     @WithMockUser(username = "admin", roles = {"ADMIN"})
     void shouldGroupEventsIntoDecadesAndYearsWithContextAndSupportCustomEventTypes() throws Exception {
-        // Default: undated burial is excluded, 7 dated events exist:
-        // 1920 (Jan birth), 1925 (Anna birth), 1948 (Wedding), 1952 (Marek birth), 1960 (Vacation), 1990 (Jan death), 2005 (Anna death)
         mockMvc.perform(get("/events"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalEvents").value(8))
@@ -150,13 +148,13 @@ class EventTimelineControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.totalEvents").value(2))
                 .andExpect(jsonPath("$.decades[*].years[*].events[*].typeLabel", hasItems("Ślub", "Wakacje w górach")));
 
-        // Include undated events -> undated burial at Cmentarz Rakowicki appears in undatedEvents
+        // Include undated events -> undated burial appears in undatedEvents without polluting locations
         mockMvc.perform(get("/events").param("includeUndated", "true"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalEvents").value(8))
                 .andExpect(jsonPath("$.undatedEvents", hasSize(1)))
                 .andExpect(jsonPath("$.undatedEvents[0].typeCode").value("BURIAL"))
-                .andExpect(jsonPath("$.undatedEvents[0].locationName").value("Cmentarz Rakowicki, Kraków"));
+                .andExpect(jsonPath("$.undatedEvents[0].locationName").value(nullValue()));
     }
 
     @Test

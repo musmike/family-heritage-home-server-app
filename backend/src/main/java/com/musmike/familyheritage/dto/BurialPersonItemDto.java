@@ -14,9 +14,10 @@ import lombok.NoArgsConstructor;
 public class BurialPersonItemDto {
     private Long burialId;
     private Long graveId;
-    private Long cemeteryLocationId;
+    private Long cemeteryId;
     private String cemeteryName;
     private boolean current;
+    private String placeDescription;
 
     private Integer burialYear;
     private String burialDateText;

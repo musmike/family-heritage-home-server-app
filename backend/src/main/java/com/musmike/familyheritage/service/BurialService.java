@@ -2,12 +2,8 @@ package com.musmike.familyheritage.service;
 
 import com.musmike.familyheritage.dto.*;
 import com.musmike.familyheritage.model.*;
-import com.musmike.familyheritage.model.enums.DateQualifier;
-import com.musmike.familyheritage.model.enums.DateType;
-import com.musmike.familyheritage.model.enums.LifeState;
-import com.musmike.familyheritage.model.enums.PersonSex;
-import com.musmike.familyheritage.repository.BurialRepository;
-import com.musmike.familyheritage.repository.EventAttributeValueRepository;
+import com.musmike.familyheritage.model.enums.*;
+import com.musmike.familyheritage.repository.*;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -21,7 +17,16 @@ import java.util.*;
 public class BurialService {
 
     private final BurialRepository burialRepository;
+    private final GraveRepository graveRepository;
+    private final CemeteryRepository cemeteryRepository;
+    private final LocationRepository locationRepository;
+    private final PersonRepository personRepository;
+    private final EventRepository eventRepository;
+    private final EventParticipantRepository eventParticipantRepository;
+    private final UserCodeRepository userCodeRepository;
+    private final EventTypeParticipantRoleRepository etprRepository;
     private final EventAttributeValueRepository eventAttrValueRepository;
+    private final ActivityLogService activityLogService;
 
     @Transactional
     public BurialsOverviewDto getBurialsOverview(
@@ -29,116 +34,490 @@ public class BurialService {
             PersonSex sex,
             boolean includeNonCurrent,
             boolean includeArchived,
-            String sortBy
+            String sortBy,
+            boolean isAdmin
     ) {
         String normSearch = search != null ? search.trim().toLowerCase() : "";
+        boolean hasActiveFilter = !normSearch.isEmpty() || sex != null;
 
-        // 1. Base scope (before sex/search filters) determines which cemeteries have >= 2 burials overall
-        List<Burial> baseBurials = burialRepository.findAll().stream()
-                .filter(b -> includeNonCurrent || Boolean.TRUE.equals(b.getIsCurrent()))
-                .filter(b -> b.getPerson() != null)
-                .filter(b -> includeArchived || !Boolean.TRUE.equals(b.getPerson().getIsArchived()))
-                .toList();
+        List<Cemetery> allCemeteries = cemeteryRepository.findAllByOrderByNameAscIdAsc();
+        List<Grave> allGraves = graveRepository.findAll();
+        List<Burial> allBurials = burialRepository.findAll();
 
-        Map<Long, Integer> totalCountPerCemetery = new HashMap<>();
-        for (Burial b : baseBurials) {
-            Grave g = b.getGrave();
-            Location loc = (g != null && g.getCemeteryLocation() != null)
-                    ? g.getCemeteryLocation()
-                    : (b.getBurialEvent() != null ? b.getBurialEvent().getMainLocation() : null);
-            if (loc != null && loc.getId() != null) {
-                totalCountPerCemetery.merge(loc.getId(), 1, Integer::sum);
+        Map<Long, List<Burial>> burialsByGraveId = new HashMap<>();
+        for (Burial b : allBurials) {
+            if (b.getGrave() != null && b.getGrave().getId() != null) {
+                burialsByGraveId.computeIfAbsent(b.getGrave().getId(), k -> new ArrayList<>()).add(b);
             }
         }
 
-        // 2. Apply sex and search filters
-        List<BurialPersonItemDto> filteredItems = baseBurials.stream()
-                .filter(b -> sex == null || b.getPerson().getSex() == sex)
-                .map(this::toBurialItemDto)
-                .filter(item -> matchesSearch(item, normSearch))
-                .sorted(buildComparator(sortBy))
-                .toList();
+        Comparator<BurialPersonItemDto> burialComparator = buildComparator(sortBy);
 
-        // 3. Group by cemeteryLocationId using the stable >= 2 threshold from totalCountPerCemetery
-        Map<Long, List<BurialPersonItemDto>> byLocationId = new LinkedHashMap<>();
-        List<BurialPersonItemDto> otherBucket = new ArrayList<>();
+        Map<Long, List<GraveGroupDto>> gravesByCemeteryId = new LinkedHashMap<>();
+        List<GraveGroupDto> otherGraves = new ArrayList<>();
 
-        for (BurialPersonItemDto item : filteredItems) {
-            Long locId = item.getCemeteryLocationId();
-            if (locId != null && totalCountPerCemetery.getOrDefault(locId, 0) >= 2) {
-                byLocationId.computeIfAbsent(locId, k -> new ArrayList<>()).add(item);
+        for (Grave grave : allGraves) {
+            Cemetery cem = grave.getCemetery();
+            boolean inOther = (cem == null);
+
+            List<Burial> rawBurialsInGrave = burialsByGraveId.getOrDefault(grave.getId(), List.of());
+
+            List<BurialPersonItemDto> matchingBurials = rawBurialsInGrave.stream()
+                    .filter(b -> includeNonCurrent || Boolean.TRUE.equals(b.getIsCurrent()))
+                    .filter(b -> b.getPerson() != null)
+                    .filter(b -> includeArchived || !Boolean.TRUE.equals(b.getPerson().getIsArchived()))
+                    .filter(b -> sex == null || b.getPerson().getSex() == sex)
+                    .map(b -> toBurialItemDto(b, inOther || isAdmin))
+                    .filter(item -> matchesSearch(item, grave, cem, normSearch))
+                    .sorted(burialComparator)
+                    .toList();
+
+            boolean keepEmptyCustomGrave = !hasActiveFilter
+                    && rawBurialsInGrave.isEmpty()
+                    && (!inOther || grave.isCustomizedByAdmin());
+
+            if (matchingBurials.isEmpty() && !keepEmptyCustomGrave) {
+                continue;
+            }
+
+            GraveGroupDto graveDto = toGraveGroupDto(grave, matchingBurials);
+            if (inOther) {
+                otherGraves.add(graveDto);
             } else {
-                otherBucket.add(item);
+                gravesByCemeteryId.computeIfAbsent(cem.getId(), k -> new ArrayList<>()).add(graveDto);
             }
         }
 
-        List<CemeteryGroupDto> mainCemeteryGroups = new ArrayList<>();
-        for (Map.Entry<Long, List<BurialPersonItemDto>> entry : byLocationId.entrySet()) {
-            List<BurialPersonItemDto> locItems = entry.getValue();
-            String cemeteryName = locItems.getFirst().getCemeteryName();
-            List<GraveGroupDto> graves = groupByGraveId(locItems);
-            mainCemeteryGroups.add(CemeteryGroupDto.builder()
-                    .cemeteryLocationId(entry.getKey())
-                    .groupName(cemeteryName != null ? cemeteryName : "Nieznany cmentarz")
-                    .otherGroup(false)
-                    .totalBurialsCount(locItems.size())
-                    .graves(graves)
-                    .build());
+        Comparator<GraveGroupDto> graveGroupComparator = buildGraveGroupComparator(burialComparator);
+        List<CemeteryGroupDto> cemeteryGroups = new ArrayList<>();
+
+        for (Cemetery cem : allCemeteries) {
+            List<GraveGroupDto> cemGraves = new ArrayList<>(
+                    gravesByCemeteryId.getOrDefault(cem.getId(), List.of())
+            );
+            cemGraves.sort(graveGroupComparator);
+
+            boolean cemeteryMatchesSearch = normSearch.isEmpty()
+                    || (cem.getName() != null && cem.getName().toLowerCase().contains(normSearch))
+                    || (cem.getLocation() != null && cem.getLocation().getName().toLowerCase().contains(normSearch));
+
+            if (hasActiveFilter && cemGraves.isEmpty() && (!cemeteryMatchesSearch || sex != null)) {
+                continue;
+            }
+
+            int burialsCount = cemGraves.stream()
+                    .mapToInt(g -> g.getBurials().size())
+                    .sum();
+
+            cemeteryGroups.add(toCemeteryGroupDto(cem, cemGraves, burialsCount));
         }
 
-        mainCemeteryGroups.sort(
-                Comparator.comparing(CemeteryGroupDto::getGroupName, String.CASE_INSENSITIVE_ORDER)
-        );
+        if (!otherGraves.isEmpty()) {
+            otherGraves.sort(graveGroupComparator);
+            int otherBurialsCount = otherGraves.stream()
+                    .mapToInt(g -> g.getBurials().size())
+                    .sum();
 
-        List<CemeteryGroupDto> allGroups = new ArrayList<>(mainCemeteryGroups);
-        if (!otherBucket.isEmpty()) {
-            otherBucket.sort(buildComparator(sortBy));
-            List<GraveGroupDto> otherGraves = groupByGraveId(otherBucket);
-            allGroups.add(CemeteryGroupDto.builder()
-                    .cemeteryLocationId(null)
+            cemeteryGroups.add(CemeteryGroupDto.builder()
+                    .cemeteryId(null)
                     .groupName("Inne")
+                    .description("Groby zaimportowane z pliku GEDCOM lub jeszcze nieprzypisane do konkretnego cmentarza.")
                     .otherGroup(true)
-                    .totalBurialsCount(otherBucket.size())
+                    .totalBurialsCount(otherBurialsCount)
                     .graves(otherGraves)
                     .build());
         }
 
-        int totalGraves = allGroups.stream()
+        int totalGraves = cemeteryGroups.stream()
                 .mapToInt(g -> g.getGraves().size())
+                .sum();
+        int totalBurials = cemeteryGroups.stream()
+                .mapToInt(CemeteryGroupDto::getTotalBurialsCount)
                 .sum();
 
         return BurialsOverviewDto.builder()
-                .totalBurialsCount(filteredItems.size())
+                .totalBurialsCount(totalBurials)
                 .totalGravesCount(totalGraves)
-                .cemeteryGroups(allGroups)
+                .cemeteryGroups(cemeteryGroups)
                 .build();
     }
 
-    private List<GraveGroupDto> groupByGraveId(List<BurialPersonItemDto> items) {
-        Map<Long, List<BurialPersonItemDto>> byGrave = new LinkedHashMap<>();
-        for (BurialPersonItemDto item : items) {
-            byGrave.computeIfAbsent(item.getGraveId(), k -> new ArrayList<>()).add(item);
-        }
+    @Transactional
+    public GraveGroupDto getGraveDetails(Long graveId, boolean isAdmin) {
+        Grave grave = graveRepository.findById(graveId)
+                .orElseThrow(() -> new IllegalArgumentException("Grave not found: " + graveId));
 
-        List<GraveGroupDto> result = new ArrayList<>();
-        for (Map.Entry<Long, List<BurialPersonItemDto>> entry : byGrave.entrySet()) {
-            BurialPersonItemDto first = entry.getValue().getFirst();
-            result.add(GraveGroupDto.builder()
-                    .graveId(entry.getKey())
-                    .cemeteryLocationId(first.getCemeteryLocationId())
-                    .cemeteryName(first.getCemeteryName())
-                    .burials(entry.getValue())
-                    .build());
-        }
-        return result;
+        boolean inOther = grave.getCemetery() == null;
+        List<BurialPersonItemDto> burials = burialRepository.findByGrave(grave).stream()
+                .filter(b -> b.getPerson() != null)
+                .map(b -> toBurialItemDto(b, inOther || isAdmin))
+                .sorted(buildComparator("SURNAME_ASC"))
+                .toList();
+
+        return toGraveGroupDto(grave, burials);
     }
 
-    private BurialPersonItemDto toBurialItemDto(Burial burial) {
+    @Transactional
+    public CemeteryGroupDto createCemetery(SaveCemeteryRequestDto req) {
+        if (req.getName() == null || req.getName().isBlank()) {
+            throw new IllegalArgumentException("Cemetery name cannot be blank.");
+        }
+
+        Cemetery cem = new Cemetery();
+        applyCemeteryFields(cem, req);
+        cem = cemeteryRepository.saveAndFlush(cem);
+
+        activityLogService.logActivity(
+                ActivityActionType.CEMETERY_CREATED,
+                "Dodano cmentarz: " + cem.getName(),
+                "CEMETERY",
+                cem.getId()
+        );
+
+        return toCemeteryGroupDto(cem, List.of(), 0);
+    }
+
+    @Transactional
+    public CemeteryGroupDto updateCemetery(Long cemeteryId, SaveCemeteryRequestDto req) {
+        Cemetery cem = cemeteryRepository.findById(cemeteryId)
+                .orElseThrow(() -> new IllegalArgumentException("Cemetery not found: " + cemeteryId));
+
+        if (req.getName() == null || req.getName().isBlank()) {
+            throw new IllegalArgumentException("Cemetery name cannot be blank.");
+        }
+
+        applyCemeteryFields(cem, req);
+        cem = cemeteryRepository.saveAndFlush(cem);
+        locationRepository.deleteOrphanLocations();
+
+        activityLogService.logActivity(
+                ActivityActionType.CEMETERY_UPDATED,
+                "Zaktualizowano cmentarz: " + cem.getName(),
+                "CEMETERY",
+                cem.getId()
+        );
+
+        return toCemeteryGroupDto(cem, List.of(), 0);
+    }
+
+    @Transactional
+    public void deleteCemetery(Long cemeteryId) {
+        Cemetery cem = cemeteryRepository.findById(cemeteryId)
+                .orElseThrow(() -> new IllegalArgumentException("Cemetery not found: " + cemeteryId));
+
+        String cemName = cem.getName();
+
+        // Detach all graves so they return to "Inne"
+        List<Grave> graves = graveRepository.findByCemetery(cem);
+        for (Grave g : graves) {
+            g.setCemetery(null);
+            graveRepository.save(g);
+        }
+        graveRepository.flush();
+
+        cemeteryRepository.delete(cem);
+        cemeteryRepository.flush();
+        locationRepository.deleteOrphanLocations();
+
+        activityLogService.logActivity(
+                ActivityActionType.CEMETERY_DELETED,
+                "Usunięto cmentarz: " + cemName + " (groby przeniesiono do kategorii Inne)",
+                "CEMETERY",
+                null
+        );
+    }
+
+    @Transactional
+    public GraveGroupDto createGrave(SaveGraveRequestDto req, boolean isAdmin) {
+        Grave grave = new Grave();
+        applyGraveFields(grave, req);
+        grave = graveRepository.saveAndFlush(grave);
+
+        if (req.getInitialPersonId() != null) {
+            AddPersonToGraveRequestDto addReq = new AddPersonToGraveRequestDto(req.getInitialPersonId(), true);
+            return addPersonToGrave(grave.getId(), addReq, isAdmin);
+        }
+
+        activityLogService.logActivity(
+                ActivityActionType.GRAVE_CREATED,
+                "Utworzono nowy nagrobek #" + grave.getId(),
+                "BURIAL",
+                grave.getId()
+        );
+
+        return getGraveDetails(grave.getId(), isAdmin);
+    }
+
+    @Transactional
+    public GraveGroupDto updateGrave(Long graveId, SaveGraveRequestDto req, boolean isAdmin) {
+        Grave grave = graveRepository.findById(graveId)
+                .orElseThrow(() -> new IllegalArgumentException("Grave not found: " + graveId));
+
+        applyGraveFields(grave, req);
+        graveRepository.saveAndFlush(grave);
+
+        activityLogService.logActivity(
+                ActivityActionType.GRAVE_UPDATED,
+                "Zaktualizowano dane nagrobka #" + grave.getId(),
+                "BURIAL",
+                grave.getId()
+        );
+
+        return getGraveDetails(grave.getId(), isAdmin);
+    }
+
+    @Transactional
+    public void deleteGrave(Long graveId) {
+        Grave grave = graveRepository.findById(graveId)
+                .orElseThrow(() -> new IllegalArgumentException("Grave not found: " + graveId));
+
+        List<Burial> burials = burialRepository.findByGrave(grave);
+        for (Burial b : burials) {
+            Event burEvt = b.getBurialEvent();
+            b.setBurialEvent(null);
+            burialRepository.delete(b);
+            burialRepository.flush();
+            if (burEvt != null) {
+                eventRepository.delete(burEvt);
+            }
+        }
+
+        graveRepository.delete(grave);
+        graveRepository.flush();
+        eventRepository.deleteOrphanEvents();
+
+        activityLogService.logActivity(
+                ActivityActionType.GRAVE_DELETED,
+                "Usunięto nagrobek #" + graveId,
+                "BURIAL",
+                null
+        );
+    }
+
+    @Transactional
+    public GraveGroupDto addPersonToGrave(Long graveId, AddPersonToGraveRequestDto req, boolean isAdmin) {
+        Grave targetGrave = graveRepository.findById(graveId)
+                .orElseThrow(() -> new IllegalArgumentException("Grave not found: " + graveId));
+
+        if (req.getPersonId() == null) {
+            throw new IllegalArgumentException("personId is required.");
+        }
+
+        Person person = personRepository.findById(req.getPersonId())
+                .orElseThrow(() -> new IllegalArgumentException("Person not found: " + req.getPersonId()));
+
+        List<Burial> existingInTarget = burialRepository.findByGrave(targetGrave);
+        boolean alreadyInTarget = existingInTarget.stream()
+                .anyMatch(b -> b.getPerson() != null && b.getPerson().getId().equals(person.getId()));
+        if (alreadyInTarget) {
+            throw new IllegalArgumentException("Ta osoba jest już przypisana do tego nagrobka.");
+        }
+
+        // Check if the person has a single uncustomized burial in "Inne" that should be merged into targetGrave
+        List<Burial> personBurials = burialRepository.findByPerson(person);
+        Burial mergeableBurial = personBurials.stream()
+                .filter(b -> b.getGrave() != null && !b.getGrave().getId().equals(targetGrave.getId()))
+                .filter(b -> {
+                    Grave oldG = b.getGrave();
+                    return oldG.getCemetery() == null
+                            && !oldG.isCustomizedByAdmin()
+                            && burialRepository.findByGrave(oldG).size() == 1;
+                })
+                .findFirst()
+                .orElse(null);
+
+        if (mergeableBurial != null) {
+            Grave oldGrave = mergeableBurial.getGrave();
+            mergeableBurial.setGrave(targetGrave);
+            mergeableBurial.setIsCurrent(req.isCurrent());
+            burialRepository.saveAndFlush(mergeableBurial);
+
+            graveRepository.delete(oldGrave);
+            graveRepository.flush();
+        } else {
+            Event burialEvent = createBareBurialEvent(person);
+            Burial newBurial = new Burial();
+            newBurial.setGrave(targetGrave);
+            newBurial.setPerson(person);
+            newBurial.setBurialEvent(burialEvent);
+            newBurial.setIsCurrent(req.isCurrent());
+            burialRepository.saveAndFlush(newBurial);
+        }
+
+        String fullName = ((person.getCachedSurname() != null ? person.getCachedSurname() : "") + " "
+                + (person.getCachedGivenName() != null ? person.getCachedGivenName() : "")).trim();
+        activityLogService.logActivity(
+                ActivityActionType.GRAVE_UPDATED,
+                "Przypisano osobę " + fullName + " do nagrobka #" + targetGrave.getId(),
+                "BURIAL",
+                targetGrave.getId()
+        );
+
+        return getGraveDetails(targetGrave.getId(), isAdmin);
+    }
+
+    @Transactional
+    public GraveGroupDto toggleBurialCurrent(Long burialId, boolean isAdmin) {
+        Burial burial = burialRepository.findById(burialId)
+                .orElseThrow(() -> new IllegalArgumentException("Burial not found: " + burialId));
+
+        burial.setIsCurrent(!Boolean.TRUE.equals(burial.getIsCurrent()));
+        burialRepository.saveAndFlush(burial);
+
+        return getGraveDetails(burial.getGrave().getId(), isAdmin);
+    }
+
+    @Transactional
+    public GraveGroupDto splitBurialToNewGrave(Long burialId, boolean isAdmin) {
+        Burial burial = burialRepository.findById(burialId)
+                .orElseThrow(() -> new IllegalArgumentException("Burial not found: " + burialId));
+
+        Grave currentGrave = burial.getGrave();
+        List<Burial> inGrave = burialRepository.findByGrave(currentGrave);
+        if (inGrave.size() <= 1) {
+            throw new IllegalArgumentException("Osoba znajduje się już w osobnym grobie.");
+        }
+
+        Grave separateGrave = new Grave();
+        separateGrave.setCemetery(currentGrave.getCemetery());
+        separateGrave = graveRepository.saveAndFlush(separateGrave);
+
+        burial.setGrave(separateGrave);
+        burialRepository.saveAndFlush(burial);
+
+        return getGraveDetails(currentGrave.getId(), isAdmin);
+    }
+
+    @Transactional
+    public void removeBurialFromGrave(Long burialId) {
+        Burial burial = burialRepository.findById(burialId)
+                .orElseThrow(() -> new IllegalArgumentException("Burial not found: " + burialId));
+
+        Event burEvt = burial.getBurialEvent();
+        burial.setBurialEvent(null);
+        burialRepository.delete(burial);
+        burialRepository.flush();
+
+        if (burEvt != null) {
+            eventRepository.delete(burEvt);
+            eventRepository.flush();
+        }
+    }
+
+    private Event createBareBurialEvent(Person person) {
+        UserCode rolePrincipal = userCodeRepository
+                .findByCategoryAndCode(CodeCategory.EVENT_PARTICIPANT_ROLE.name(), EventParticipantRole.PRINCIPAL.name())
+                .orElseThrow();
+        UserCode typeBurial = userCodeRepository
+                .findByCategoryAndCode(CodeCategory.EVENT_TYPE.name(), EventType.BURIAL.name())
+                .orElseThrow();
+        EventTypeParticipantRole burialRole = etprRepository
+                .findByEventTypeAndParticipantRole(typeBurial, rolePrincipal)
+                .orElseThrow();
+
+        Event event = new Event();
+        event.setEventType(typeBurial);
+        event = eventRepository.saveAndFlush(event);
+
+        EventParticipant participant = new EventParticipant(event, person, burialRole);
+        eventParticipantRepository.saveAndFlush(participant);
+        event.addParticipant(participant);
+        return event;
+    }
+
+    private void applyCemeteryFields(Cemetery cem, SaveCemeteryRequestDto req) {
+        cem.setName(req.getName().trim());
+        cem.setManagementType(parseEnumOrNull(CemeteryManagementType.class, req.getManagementType()));
+        cem.setDenomination(parseEnumOrNull(CemeteryDenomination.class, req.getDenomination()));
+        cem.setDescription(trimToNull(req.getDescription()));
+
+        String locName = trimToNull(req.getLocationName());
+        if (locName != null) {
+            Location loc = locationRepository.findByName(locName)
+                    .orElseGet(() -> locationRepository.saveAndFlush(new Location(locName)));
+            cem.setLocation(loc);
+        } else {
+            cem.setLocation(null);
+        }
+    }
+
+    private void applyGraveFields(Grave grave, SaveGraveRequestDto req) {
+        if (req.getCemeteryId() != null) {
+            Cemetery cem = cemeteryRepository.findById(req.getCemeteryId())
+                    .orElseThrow(() -> new IllegalArgumentException("Cemetery not found: " + req.getCemeteryId()));
+            grave.setCemetery(cem);
+        } else {
+            grave.setCemetery(null);
+        }
+
+        grave.setSection(trimToNull(req.getSection()));
+        grave.setSector(trimToNull(req.getSector()));
+        grave.setRowNumber(trimToNull(req.getRowNumber()));
+        grave.setGraveNumber(trimToNull(req.getGraveNumber()));
+        grave.setGraveType(parseEnumOrNull(GraveType.class, req.getGraveType()));
+        grave.setDescription(trimToNull(req.getDescription()));
+        grave.setEpitaph(trimToNull(req.getEpitaph()));
+    }
+
+    private <E extends Enum<E>> E parseEnumOrNull(Class<E> enumClass, String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        return Enum.valueOf(enumClass, raw.trim().toUpperCase());
+    }
+
+    private String trimToNull(String val) {
+        if (val == null || val.isBlank()) {
+            return null;
+        }
+        return val.trim();
+    }
+
+    private CemeteryGroupDto toCemeteryGroupDto(
+            Cemetery cem,
+            List<GraveGroupDto> graves,
+            int totalBurialsCount
+    ) {
+        CemeteryManagementType mgmt = cem.getManagementType();
+        CemeteryDenomination denom = cem.getDenomination();
+        return CemeteryGroupDto.builder()
+                .cemeteryId(cem.getId())
+                .groupName(cem.getName())
+                .managementType(mgmt != null ? mgmt.name() : null)
+                .managementTypeLabel(mgmt != null ? mgmt.getLabel() : null)
+                .denomination(denom != null ? denom.name() : null)
+                .denominationLabel(denom != null ? denom.getLabel() : null)
+                .locationName(cem.getLocation() != null ? cem.getLocation().getName() : null)
+                .description(cem.getDescription())
+                .otherGroup(false)
+                .totalBurialsCount(totalBurialsCount)
+                .graves(graves)
+                .build();
+    }
+
+    private GraveGroupDto toGraveGroupDto(Grave grave, List<BurialPersonItemDto> burials) {
+        Cemetery cem = grave.getCemetery();
+        GraveType gt = grave.getGraveType();
+        return GraveGroupDto.builder()
+                .graveId(grave.getId())
+                .cemeteryId(cem != null ? cem.getId() : null)
+                .cemeteryName(cem != null ? cem.getName() : "Inne")
+                .section(grave.getSection())
+                .sector(grave.getSector())
+                .rowNumber(grave.getRowNumber())
+                .graveNumber(grave.getGraveNumber())
+                .graveType(gt != null ? gt.name() : null)
+                .graveTypeLabel(gt != null ? gt.getLabel() : null)
+                .description(grave.getDescription())
+                .epitaph(grave.getEpitaph())
+                .burials(burials)
+                .build();
+    }
+
+    private BurialPersonItemDto toBurialItemDto(Burial burial, boolean includePlaceDescription) {
         Person person = burial.getPerson();
         Grave grave = burial.getGrave();
-        Location cemLoc = (grave != null && grave.getCemeteryLocation() != null)
-                ? grave.getCemeteryLocation()
-                : (burial.getBurialEvent() != null ? burial.getBurialEvent().getMainLocation() : null);
+        Cemetery cem = grave != null ? grave.getCemetery() : null;
 
         DateDescriptor burialStart = burial.getBurialEvent() != null ? burial.getBurialEvent().getStartDate() : null;
         DateDescriptor burialEnd = burial.getBurialEvent() != null ? burial.getBurialEvent().getEndDate() : null;
@@ -159,9 +538,10 @@ public class BurialService {
         return BurialPersonItemDto.builder()
                 .burialId(burial.getId())
                 .graveId(grave != null ? grave.getId() : burial.getId())
-                .cemeteryLocationId(cemLoc != null ? cemLoc.getId() : null)
-                .cemeteryName(cemLoc != null ? cemLoc.getName() : "Nieznany cmentarz")
+                .cemeteryId(cem != null ? cem.getId() : null)
+                .cemeteryName(cem != null ? cem.getName() : "Inne")
                 .current(Boolean.TRUE.equals(burial.getIsCurrent()))
+                .placeDescription(includePlaceDescription ? burial.getPlaceDescription() : null)
                 .burialYear(burialStart != null ? burialStart.getStartYear() : null)
                 .burialDateText(formatEventDates(burialStart, burialEnd))
                 .personId(person.getId())
@@ -182,17 +562,37 @@ public class BurialService {
                 .build();
     }
 
-    private boolean matchesSearch(BurialPersonItemDto item, String normSearch) {
+    private boolean matchesSearch(
+            BurialPersonItemDto item,
+            Grave grave,
+            Cemetery cem,
+            String normSearch
+    ) {
         if (normSearch.isEmpty()) {
             return true;
         }
         String combined = ((item.getGivenName() != null ? item.getGivenName() : "") + " "
                 + (item.getSurname() != null ? item.getSurname() : "") + " "
-                + (item.getCemeteryName() != null ? item.getCemeteryName() : "") + " "
+                + (item.getPlaceDescription() != null ? item.getPlaceDescription() : "") + " "
+                + (cem != null && cem.getName() != null ? cem.getName() : "") + " "
+                + (grave != null && grave.getSection() != null ? grave.getSection() : "") + " "
+                + (grave != null && grave.getGraveNumber() != null ? grave.getGraveNumber() : "") + " "
                 + (item.getBirthPlace() != null ? item.getBirthPlace() : "") + " "
                 + (item.getDeathPlace() != null ? item.getDeathPlace() : "") + " "
                 + (item.getCauseOfDeath() != null ? item.getCauseOfDeath() : "")).toLowerCase();
         return combined.contains(normSearch);
+    }
+
+    private Comparator<GraveGroupDto> buildGraveGroupComparator(Comparator<BurialPersonItemDto> burialComp) {
+        return (g1, g2) -> {
+            if (g1.getBurials().isEmpty() && g2.getBurials().isEmpty()) {
+                return Long.compare(g1.getGraveId(), g2.getGraveId());
+            }
+            if (g1.getBurials().isEmpty()) return 1;
+            if (g2.getBurials().isEmpty()) return -1;
+            int cmp = burialComp.compare(g1.getBurials().getFirst(), g2.getBurials().getFirst());
+            return cmp != 0 ? cmp : Long.compare(g1.getGraveId(), g2.getGraveId());
+        };
     }
 
     private Comparator<BurialPersonItemDto> buildComparator(String sortBy) {

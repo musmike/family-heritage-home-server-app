@@ -23,6 +23,10 @@ public enum ActivityActionType {
     EVENT_UPDATED("Aktualizacja wydarzenia", false),
     EVENT_DELETED("Usunięcie wydarzenia", false),
 
+    CEMETERY_CREATED("Dodanie cmentarza", false),
+    CEMETERY_UPDATED("Aktualizacja cmentarza", false),
+    CEMETERY_DELETED("Usunięcie cmentarza", false),
+
     GRAVE_CREATED("Dodanie grobu", false),
     GRAVE_UPDATED("Aktualizacja grobu", false),
     GRAVE_DELETED("Usunięcie grobu", false);

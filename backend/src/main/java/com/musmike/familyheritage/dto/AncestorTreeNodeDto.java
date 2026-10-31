@@ -33,6 +33,11 @@ public class AncestorTreeNodeDto {
     private String causeOfDeath;
     private String burialPlace;
     private Long burialGraveId;
+    private Long avatarMediaId;
+    private String avatarMediaType;
+    private Integer avatarCropX;
+    private Integer avatarCropY;
+    private Double avatarCropZoom;
 
     private String weddingDateText;
     private String weddingPlace;

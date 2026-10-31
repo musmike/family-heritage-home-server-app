@@ -6,6 +6,7 @@ import { AuthContext } from '../../context/AuthContext';
 import Loader from '../../components/Loader/Loader';
 import PersonAvatar from '../../components/PersonAvatar/PersonAvatar';
 import styles from './BurialsPage.module.css';
+import MediaGallerySection from '../../components/MediaSection/MediaGallerySection';
 import type {
   BurialPersonItemDto,
   CemeteryGroupDto,
@@ -617,7 +618,11 @@ export default function GraveDetailsPage() {
                 className={`${styles.buriedPersonRow} ${getBorderClass(b.sex)}`}
               >
                 <div className={styles.personIdentity}>
-                  <PersonAvatar sex={b.sex} size="md" />
+                  <PersonAvatar
+                    sex={b.sex}
+                    size="md"
+                    avatarMediaId={b.avatarMediaId}
+                  />
                   <div>
                     <div className={styles.personName}>{fullName}</div>
                     <div className={styles.personLifespan}>{formatLifespan(b)}</div>
@@ -769,6 +774,16 @@ export default function GraveDetailsPage() {
           </div>
         )}
       </section>
+    <MediaGallerySection
+        context="GRAVE"
+        graveId={grave.graveId}
+        primaryMediaId={grave.primaryMediaId}
+        isAdmin={isAdmin}
+        sectionTitle="Zdjęcia tego nagrobka"
+        onMediaChanged={() => {
+          void loadGraveAndCemeteries();
+        }}
+      />
     </div>
   );
 }

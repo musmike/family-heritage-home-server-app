@@ -1,0 +1,448 @@
+.pageWrapper {
+  max-width: 1240px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding-bottom: 3rem;
+}
+
+.pageHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  background-color: #ffffff;
+  padding: 1.5rem 2rem;
+  border: 1px solid #dee2e6;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.pageTitle {
+  font-size: 1.65rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.pageSubtitle {
+  font-size: 0.92rem;
+  color: #64748b;
+  margin-top: 0.25rem;
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.statsBadge {
+  background-color: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #334155;
+  padding: 0.45rem 0.95rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* Filter & Form Cards */
+.filterCard,
+.sectionCard {
+  background-color: #ffffff;
+  border: 1px solid #dee2e6;
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.filtersRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.85rem;
+}
+
+.filterField {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 1 1 170px;
+}
+
+.formField {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  width: 100%;
+}
+
+.filterLabel {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+}
+
+.textInput,
+.selectInput {
+  height: 38px;
+  padding: 0 0.75rem;
+  font-size: 0.88rem;
+  color: #1e293b;
+  background-color: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  width: 100%;
+}
+
+/* Custom Polish File Picker */
+.hiddenFileInput {
+  display: none;
+}
+
+.filePickerRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.filePickerLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  height: 38px;
+  padding: 0 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1e293b;
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.filePickerLabel:hover {
+  background-color: #f1f5f9;
+}
+
+.selectedFileBadge {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #475569;
+  background-color: #e2e8f0;
+  padding: 0.3rem 0.65rem;
+  border-radius: 6px;
+  word-break: break-all;
+}
+
+/* Multi-person filter chips */
+.personFilterRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid #f1f5f9;
+}
+
+.personChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #93c5fd;
+  border-radius: 999px;
+}
+
+.chipRemoveBtn {
+  background: none;
+  border: none;
+  color: #1d4ed8;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+/* Grouped Sections inside Selected Category */
+.groupsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.groupSection {
+  background-color: #ffffff;
+  border: 1px solid #dee2e6;
+  border-radius: 10px;
+  padding: 1.15rem 1.4rem;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.groupHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0.55rem;
+}
+
+.groupTitle {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+/* Media Grid (Clean Tiles without filenames) */
+.mediaGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(205px, 1fr));
+  gap: 1rem;
+}
+
+.mediaCard {
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+  transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease;
+}
+
+.mediaCard:hover {
+  transform: translateY(-2px);
+  border-color: #60a5fa;
+  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.12);
+}
+
+.thumbBox {
+  width: 100%;
+  height: 170px;
+  background-color: #0f172a;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.thumbImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.videoPlayOverlay {
+  position: absolute;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background-color: rgba(15, 23, 42, 0.75);
+  color: #ffffff;
+  border: 2px solid #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  pointer-events: none;
+}
+
+.yearBadge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background-color: rgba(15, 23, 42, 0.78);
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.16rem 0.5rem;
+  border-radius: 6px;
+}
+
+.cardBody {
+  padding: 0.65rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.cardTitle {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cardSub {
+  font-size: 0.76rem;
+  color: #475569;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.btnPrimary {
+  padding: 0.5rem 1.05rem;
+  background-color: #2563eb;
+  color: #ffffff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: 1px solid #1d4ed8;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.btnSecondary {
+  padding: 0.45rem 0.95rem;
+  background-color: #ffffff;
+  color: #334155;
+  font-size: 0.84rem;
+  font-weight: 600;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.btnDanger {
+  padding: 0.45rem 0.95rem;
+  background-color: #fef2f2;
+  color: #dc2626;
+  font-size: 0.84rem;
+  font-weight: 600;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.paginationBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  background-color: #ffffff;
+  border: 1px solid #dee2e6;
+  border-radius: 10px;
+  padding: 1rem 1.5rem;
+}
+
+/* Fullscreen Black Lightbox */
+.fullscreenOverlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(5, 8, 15, 0.96);
+  z-index: 1300;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  user-select: none;
+  overflow: hidden;
+}
+
+.fullscreenTopBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.75), transparent);
+  z-index: 20;
+  color: #ffffff;
+}
+
+.topBarButtons {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.viewerStage {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.navArrowBtn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  font-size: 1.65rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 25;
+}
+
+.navArrowLeft {
+  left: 12px;
+}
+
+.navArrowRight {
+  right: 12px;
+}
+
+.detailsDrawer {
+  background-color: #ffffff;
+  color: #0f172a;
+  border-top: 1px solid #cbd5e1;
+  padding: 1rem 1.25rem;
+  max-height: 44vh;
+  overflow-y: auto;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.breakableCode {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.78rem;
+  color: #475569;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .pageHeader,
+  .filterCard,
+  .sectionCard,
+  .groupSection {
+    padding: 1rem;
+  }
+}

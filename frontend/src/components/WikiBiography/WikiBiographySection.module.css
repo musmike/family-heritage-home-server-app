@@ -343,6 +343,32 @@
   background-color: #f1f5f9;
 }
 
+.wikiMediaFigure {
+  margin: 0.65rem auto;
+  max-width: 440px;
+  background-color: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.wikiMediaImg {
+  width: 100%;
+  max-height: 320px;
+  object-fit: contain;
+  background-color: #0f172a;
+}
+
+.wikiMediaCaption {
+  padding: 0.55rem 0.85rem;
+  font-size: 0.82rem;
+  color: #475569;
+  text-align: center;
+  border-top: 1px solid #e2e8f0;
+}
+
 @media (max-width: 767px) {
   .wikiSectionCard {
     padding: 1rem;

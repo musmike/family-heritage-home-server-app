@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { biographyApi } from '../../api/biographyApi';
 import styles from './WikiBiographySection.module.css';
 import type { PersonBiographyDto, PersonListItemDto } from '../../types/biography';
+import { mediaApi } from '../../api/mediaApi';
 
 interface WikiBiographySectionProps {
   personId: number;
@@ -102,6 +103,27 @@ const renderSectionBody = (lines: string[], sectionKey: string): ReactNode[] => 
     const trimmed = lines[i].trim();
 
     if (trimmed === '') {
+      i++;
+      continue;
+    }
+
+    // 0. Embedded Media Figure: ![Caption](media:123)
+    const mediaMatch = /^!\[([^\]]*)\]\(media:(\d+)\)$/.exec(trimmed);
+    if (mediaMatch) {
+      const caption = mediaMatch[1];
+      const mediaId = Number(mediaMatch[2]);
+      elements.push(
+        <figure key={`${sectionKey}-media-${String(i)}`} className={styles.wikiMediaFigure}>
+          <img
+            src={mediaApi.getFileUrl(mediaId)}
+            alt={caption}
+            className={styles.wikiMediaImg}
+          />
+          {caption && (
+            <figcaption className={styles.wikiMediaCaption}>{caption}</figcaption>
+          )}
+        </figure>
+      );
       i++;
       continue;
     }

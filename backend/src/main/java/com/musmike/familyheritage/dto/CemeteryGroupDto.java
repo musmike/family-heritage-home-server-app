@@ -23,6 +23,7 @@ public class CemeteryGroupDto {
     private String description;
     private boolean otherGroup;
     private int totalBurialsCount;
+    private Long previewMediaId;
 
     @Builder.Default
     private List<GraveGroupDto> graves = new ArrayList<>();

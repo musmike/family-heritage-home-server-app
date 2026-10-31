@@ -24,6 +24,11 @@ export interface BurialPersonItemDto {
   causeOfDeath: string | null;
   age: number | null;
   ageApproximate: boolean;
+  avatarMediaId?: number | null;
+  avatarMediaType?: 'IMAGE' | 'VIDEO' | null;
+  avatarCropX?: number | null;
+  avatarCropY?: number | null;
+  avatarCropZoom?: number | null;
 }
 
 export interface GraveGroupDto {
@@ -38,6 +43,7 @@ export interface GraveGroupDto {
   graveTypeLabel: string | null;
   description: string | null;
   epitaph: string | null;
+  primaryMediaId?: number | null;
   burials: BurialPersonItemDto[];
 }
 
@@ -52,6 +58,7 @@ export interface CemeteryGroupDto {
   description?: string | null;
   otherGroup: boolean;
   totalBurialsCount: number;
+  previewMediaId?: number | null;
   graves: GraveGroupDto[];
 }
 

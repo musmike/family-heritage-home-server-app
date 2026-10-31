@@ -428,8 +428,8 @@
 }
 
 .gravePhotoPlaceholder {
-  width: 155px;
-  min-height: 125px;
+  width: 215px;
+  min-height: 165px;
   flex-shrink: 0;
   background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
   border-right: 1px solid #cbd5e1;
@@ -437,6 +437,7 @@
   align-items: center;
   justify-content: center;
   color: #64748b;
+  overflow: hidden;
 }
 
 .graveContentColumn {

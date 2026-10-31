@@ -30,11 +30,22 @@ export interface TimelineEventDto {
   typeCode: string;
   typeLabel: string;
   systemType: boolean;
+  title?: string | null;
+  description?: string | null;
+  parentEventId?: number | null;
+  parentEventLabel?: string | null;
   year: number | null;
   dateText: string | null;
   locationName: string | null;
   participants: EventParticipantItemDto[];
   attributes: EventAttributeItemDto[];
+  subEvents?: TimelineEventDto[];
+}
+
+export interface UpdateEventDetailsRequestDto {
+  title?: string | null;
+  description?: string | null;
+  parentEventId?: number | null;
 }
 
 export interface TimelineYearGroupDto {

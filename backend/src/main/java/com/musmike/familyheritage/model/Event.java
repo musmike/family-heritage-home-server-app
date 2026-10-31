@@ -22,6 +22,15 @@ public class Event {
     @JoinColumn(name = "type_id", nullable = false)
     private UserCode eventType;
 
+    private String title;
+
+    @Column(columnDefinition = "TEXT")
+    private String description;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parent_event_id")
+    private Event parentEvent;
+
     private LocalDateTime cachedStartSortDateTime;
     private LocalDateTime cachedEndSortDateTime;
 

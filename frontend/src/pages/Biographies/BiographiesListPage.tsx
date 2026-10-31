@@ -218,7 +218,7 @@ export default function BiographiesListPage() {
                 className={`${styles.personRowCard} ${getCardAccentClass(person.sex)}`}
               >
                 <div className={styles.rowLeft}>
-                  <PersonAvatar sex={person.sex} size="lg" />
+                  <PersonAvatar sex={person.sex} size="lg" avatarMediaId={person.avatarMediaId} />
                   <div className={styles.cardTitleGroup}>
                     <div className={styles.personName}>
                       {`${person.surname ?? ''} ${person.givenName ?? ''}`.trim() || '—'}

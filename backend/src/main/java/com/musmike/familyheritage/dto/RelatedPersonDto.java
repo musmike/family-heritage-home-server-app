@@ -21,4 +21,9 @@ public class RelatedPersonDto {
     private Integer deathYear;
     private boolean archived;
     private boolean privateRecord;
+    private Long avatarMediaId;
+    private String avatarMediaType;
+    private Integer avatarCropX;
+    private Integer avatarCropY;
+    private Double avatarCropZoom;
 }

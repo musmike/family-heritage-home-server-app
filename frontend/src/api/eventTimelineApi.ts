@@ -3,6 +3,7 @@ import type {
   EventsTimelinePageDto,
   EventsTimelineQueryParams,
   TimelineEventDto,
+  UpdateEventDetailsRequestDto,
 } from '../types/eventTimeline';
 
 export const eventTimelineApi = {
@@ -43,9 +44,20 @@ export const eventTimelineApi = {
     });
     return response.data;
   },
-  
+
   getEventById: async (eventId: number): Promise<TimelineEventDto> => {
     const response = await api.get<TimelineEventDto>(`/events/${String(eventId)}`);
+    return response.data;
+  },
+
+  updateEventDetails: async (
+    eventId: number,
+    payload: UpdateEventDetailsRequestDto
+  ): Promise<TimelineEventDto> => {
+    const response = await api.put<TimelineEventDto>(
+      `/events/${String(eventId)}/details`,
+      payload
+    );
     return response.data;
   },
 };

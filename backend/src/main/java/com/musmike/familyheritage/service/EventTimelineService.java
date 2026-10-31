@@ -23,6 +23,7 @@ public class EventTimelineService {
     private final TranslationRepository translationRepository;
     private final FamilyChildRepository familyChildRepository;
     private final EventAttributeValueRepository eventAttrValueRepository;
+    private final ActivityLogService activityLogService;
 
     private static final Map<String, String> DEFAULT_EVENT_TYPE_LABELS = Map.of(
             "BIRTH", "Narodziny",
@@ -248,6 +249,15 @@ public class EventTimelineService {
                         .build())
                 .toList();
 
+        Event parent = evt.getParentEvent();
+        String parentLabel = null;
+        if (parent != null) {
+            String pTypeLabel = resolveEventTypeLabel(parent.getEventType(), userCodeTranslations);
+            parentLabel = (parent.getTitle() != null && !parent.getTitle().isBlank())
+                    ? parent.getTitle() + " (" + pTypeLabel + ")"
+                    : pTypeLabel;
+        }
+
         return TimelineEventDto.builder()
                 .eventId(evt.getId())
                 .typeCode(typeCode)
@@ -258,6 +268,10 @@ public class EventTimelineService {
                 .locationName(evt.getMainLocation() != null ? evt.getMainLocation().getName() : null)
                 .participants(participantDtos)
                 .attributes(attributes)
+                .title(evt.getTitle())
+                .description(evt.getDescription())
+                .parentEventId(parent != null ? parent.getId() : null)
+                .parentEventLabel(parentLabel)
                 .build();
     }
 
@@ -319,6 +333,7 @@ public class EventTimelineService {
         StringBuilder sb = new StringBuilder();
         if (dto.getTypeLabel() != null) sb.append(dto.getTypeLabel()).append(' ');
         if (dto.getLocationName() != null) sb.append(dto.getLocationName()).append(' ');
+        if (dto.getTitle() != null) sb.append(dto.getTitle()).append(' ');
         for (EventParticipantItemDto p : dto.getParticipants()) {
             if (p.getGivenName() != null) sb.append(p.getGivenName()).append(' ');
             if (p.getSurname() != null) sb.append(p.getSurname()).append(' ');
@@ -423,6 +438,54 @@ public class EventTimelineService {
         Map<Long, List<String>> parentNamesByChildId = buildParentNamesMap();
         Integer eventYear = extractEventYear(evt);
 
-        return toTimelineEventDto(evt, eventYear, userCodeTranslations, parentNamesByChildId);
+        TimelineEventDto dto = toTimelineEventDto(evt, eventYear, userCodeTranslations, parentNamesByChildId);
+
+        List<TimelineEventDto> subEvents = eventRepository
+                .findByParentEventIdOrderByCachedStartSortDateTimeAscIdAsc(eventId)
+                .stream()
+                .map(sub -> toTimelineEventDto(sub, extractEventYear(sub), userCodeTranslations, parentNamesByChildId))
+                .toList();
+        dto.setSubEvents(subEvents);
+        return dto;
+    }
+
+    @Transactional
+    public TimelineEventDto updateEventDetails(Long eventId, UpdateEventDetailsRequestDto req) {
+        Event evt = eventRepository.findById(eventId)
+                .orElseThrow(() -> new IllegalArgumentException("Event not found: " + eventId));
+
+        evt.setTitle(req.getTitle() != null && !req.getTitle().isBlank() ? req.getTitle().trim() : null);
+        evt.setDescription(req.getDescription() != null && !req.getDescription().isBlank() ? req.getDescription().trim() : null);
+
+        if (req.getParentEventId() != null) {
+            if (req.getParentEventId().equals(eventId)) {
+                throw new IllegalArgumentException("Event cannot be its own parent.");
+            }
+            Event parent = eventRepository.findById(req.getParentEventId())
+                    .orElseThrow(() -> new IllegalArgumentException("Parent event not found: " + req.getParentEventId()));
+
+            // Prevent cycles in event hierarchy
+            Event cursor = parent.getParentEvent();
+            while (cursor != null) {
+                if (cursor.getId().equals(eventId)) {
+                    throw new IllegalArgumentException("Circular event hierarchy is not allowed.");
+                }
+                cursor = cursor.getParentEvent();
+            }
+            evt.setParentEvent(parent);
+        } else {
+            evt.setParentEvent(null);
+        }
+
+        eventRepository.saveAndFlush(evt);
+
+        activityLogService.logActivity(
+                ActivityActionType.EVENT_UPDATED,
+                "Zaktualizowano szczegóły/hierarchię wydarzenia #" + eventId,
+                "EVENT",
+                eventId
+        );
+
+        return getEventById(eventId);
     }
 }

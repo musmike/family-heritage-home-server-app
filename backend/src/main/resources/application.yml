@@ -23,6 +23,8 @@ server:
   address: 0.0.0.0
 
 app:
+  media:
+    root-path: ${APP_MEDIA_ROOT_PATH:./local_media}
   cors:
     allowed-methods:
       - "GET"

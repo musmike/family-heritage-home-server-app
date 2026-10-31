@@ -172,6 +172,11 @@ public class PersonBiographyService {
                 .originFamilies(originFamilies)
                 .spouseFamilies(spouseFamilies)
                 .rawGedcomData(rawGedcomView)
+                .avatarMediaId(person.getAvatarMedia() != null ? person.getAvatarMedia().getId() : null)
+                .avatarMediaType(person.getAvatarMedia() != null ? person.getAvatarMedia().getMediaType().name() : null)
+                .avatarCropX(person.getAvatarCropX())
+                .avatarCropY(person.getAvatarCropY())
+                .avatarCropZoom(person.getAvatarCropZoom())
                 .build();
     }
 
@@ -306,6 +311,11 @@ public class PersonBiographyService {
                 .father(fatherNode)
                 .mother(motherNode)
                 .children(biologicalChildren)
+                .avatarMediaId(person.getAvatarMedia() != null ? person.getAvatarMedia().getId() : null)
+                .avatarMediaType(person.getAvatarMedia() != null ? person.getAvatarMedia().getMediaType().name() : null)
+                .avatarCropX(person.getAvatarCropX())
+                .avatarCropY(person.getAvatarCropY())
+                .avatarCropZoom(person.getAvatarCropZoom())
                 .build();
     }
 
@@ -376,6 +386,11 @@ public class PersonBiographyService {
                 .deathPlace(extractLocationName(person.getDeathEvent()))
                 .age(ageResult.age())
                 .ageApproximate(ageResult.approximate())
+                .avatarMediaId(person.getAvatarMedia() != null ? person.getAvatarMedia().getId() : null)
+                .avatarMediaType(person.getAvatarMedia() != null ? person.getAvatarMedia().getMediaType().name() : null)
+                .avatarCropX(person.getAvatarCropX())
+                .avatarCropY(person.getAvatarCropY())
+                .avatarCropZoom(person.getAvatarCropZoom())
                 .build();
     }
 
@@ -396,6 +411,11 @@ public class PersonBiographyService {
                 .deathYear(deathStart != null ? deathStart.getStartYear() : null)
                 .archived(Boolean.TRUE.equals(person.getIsArchived()))
                 .privateRecord(false)
+                .avatarMediaId(person.getAvatarMedia() != null ? person.getAvatarMedia().getId() : null)
+                .avatarMediaType(person.getAvatarMedia() != null ? person.getAvatarMedia().getMediaType().name() : null)
+                .avatarCropX(person.getAvatarCropX())
+                .avatarCropY(person.getAvatarCropY())
+                .avatarCropZoom(person.getAvatarCropZoom())
                 .build();
     }
 

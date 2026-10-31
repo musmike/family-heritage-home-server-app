@@ -503,6 +503,13 @@ public class BurialService {
     ) {
         CemeteryManagementType mgmt = cem.getManagementType();
         CemeteryDenomination denom = cem.getDenomination();
+
+        Long previewMediaId = graves.stream()
+                .map(GraveGroupDto::getPrimaryMediaId)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+
         return CemeteryGroupDto.builder()
                 .cemeteryId(cem.getId())
                 .groupName(cem.getName())
@@ -515,6 +522,7 @@ public class BurialService {
                 .otherGroup(false)
                 .totalBurialsCount(totalBurialsCount)
                 .graves(graves)
+                .previewMediaId(previewMediaId)
                 .build();
     }
 
@@ -534,6 +542,7 @@ public class BurialService {
                 .description(grave.getDescription())
                 .epitaph(grave.getEpitaph())
                 .burials(burials)
+                .primaryMediaId(grave.getPrimaryMedia() != null ? grave.getPrimaryMedia().getId() : null)
                 .build();
     }
 
@@ -582,6 +591,11 @@ public class BurialService {
                 .causeOfDeath(causeOfDeath)
                 .age(ageResult.age())
                 .ageApproximate(ageResult.approximate())
+                .avatarMediaId(person.getAvatarMedia() != null ? person.getAvatarMedia().getId() : null)
+                .avatarMediaType(person.getAvatarMedia() != null ? person.getAvatarMedia().getMediaType().name() : null)
+                .avatarCropX(person.getAvatarCropX())
+                .avatarCropY(person.getAvatarCropY())
+                .avatarCropZoom(person.getAvatarCropZoom())
                 .build();
     }
 

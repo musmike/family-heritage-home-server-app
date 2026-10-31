@@ -6,6 +6,7 @@ import { AuthContext } from '../../context/AuthContext';
 import Loader from '../../components/Loader/Loader';
 import PersonAvatar from '../../components/PersonAvatar/PersonAvatar';
 import styles from './BurialsPage.module.css';
+import { mediaApi } from '../../api/mediaApi';
 import type {
   BurialPersonItemDto,
   BurialsOverviewDto,
@@ -1248,20 +1249,28 @@ export default function BurialsPage() {
                   data-testid={`grave-card-${String(grave.graveId)}`}
                 >
                   <div className={styles.gravePhotoPlaceholder} aria-hidden="true">
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.75"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className={styles.placeholderSvg}
-                    >
-                      <path d="M6 20V10a6 6 0 0 1 12 0v10" />
-                      <path d="M4 20h16" />
-                      <path d="M12 7v6" />
-                      <path d="M9 10h6" />
-                    </svg>
+                    {grave.primaryMediaId ? (
+                      <img
+                        src={mediaApi.getThumbnailUrl(grave.primaryMediaId)}
+                        alt=""
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      />
+                    ) : (
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.75"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className={styles.placeholderSvg}
+                      >
+                        <path d="M6 20V10a6 6 0 0 1 12 0v10" />
+                        <path d="M4 20h16" />
+                        <path d="M12 7v6" />
+                        <path d="M9 10h6" />
+                      </svg>
+                    )}
                   </div>
 
                   <div className={styles.graveContentColumn}>
@@ -1329,7 +1338,7 @@ export default function BurialsPage() {
                             key={b.burialId}
                             className={`${styles.compactPersonTile} ${getBorderClass(b.sex)}`}
                           >
-                            <PersonAvatar sex={b.sex} size="sm" />
+                            <PersonAvatar sex={b.sex} size="sm" avatarMediaId={b.avatarMediaId} />
                             <div className={styles.compactPersonInfo}>
                               <span className={styles.compactPersonName}>{fullName}</span>
                               <span className={styles.compactPersonYears}>

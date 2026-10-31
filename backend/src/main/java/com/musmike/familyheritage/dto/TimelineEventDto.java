@@ -18,6 +18,11 @@ public class TimelineEventDto {
     private String typeLabel;
     private boolean systemType;
 
+    private String title;
+    private String description;
+    private Long parentEventId;
+    private String parentEventLabel;
+
     private Integer year;
     private String dateText;
     private String locationName;
@@ -27,4 +32,7 @@ public class TimelineEventDto {
 
     @Builder.Default
     private List<EventAttributeItemDto> attributes = new ArrayList<>();
+
+    @Builder.Default
+    private List<TimelineEventDto> subEvents = new ArrayList<>();
 }

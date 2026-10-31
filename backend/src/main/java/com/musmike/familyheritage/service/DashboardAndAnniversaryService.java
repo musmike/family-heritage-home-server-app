@@ -28,6 +28,7 @@ public class DashboardAndAnniversaryService {
     private final FamilyRepository familyRepository;
     private final EventRepository eventRepository;
     private final GraveRepository graveRepository;
+    private final MediaItemRepository mediaItemRepository;
 
     @Transactional
     public DashboardStatsDto getDashboardStats() {
@@ -55,7 +56,7 @@ public class DashboardAndAnniversaryService {
                 .eventsCount(eventsCount)
                 .gravesCount(gravesCount)
                 .documentsCount(0L)
-                .mediaCount(0L)
+                .mediaCount(mediaItemRepository.count())
                 .memoriesCount(0L)
                 .heirloomsCount(0L)
                 .placesCount(0L)

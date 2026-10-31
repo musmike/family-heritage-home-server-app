@@ -38,6 +38,8 @@ public class GedcomImportApplier {
     private final GedcomDateParser dateParser;
     private final ActivityLogService activityLogService;
     private final UserRepository userRepository;
+    private final MediaItemRepository mediaItemRepository;
+    private final MediaStorageService mediaStorageService;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -1228,6 +1230,10 @@ public class GedcomImportApplier {
 
         eventRepository.deleteAll();
         eventRepository.flush();
+
+        mediaItemRepository.deleteAll();
+        mediaItemRepository.flush();
+        mediaStorageService.deleteAllMediaFilesOnDisk();
 
         dateDescriptorRepository.deleteOrphanDateDescriptors();
         locationRepository.deleteOrphanLocations();

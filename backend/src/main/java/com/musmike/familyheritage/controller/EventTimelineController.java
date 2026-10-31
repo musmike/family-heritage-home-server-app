@@ -3,10 +3,15 @@ package com.musmike.familyheritage.controller;
 import com.musmike.familyheritage.dto.ErrorResponse;
 import com.musmike.familyheritage.dto.EventsTimelinePageDto;
 import com.musmike.familyheritage.dto.TimelineEventDto;
+import com.musmike.familyheritage.dto.UpdateEventDetailsRequestDto;
 import com.musmike.familyheritage.service.EventTimelineService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Arrays;
@@ -47,9 +52,36 @@ public class EventTimelineController {
         return ResponseEntity.ok(timelineService.getEventById(eventId));
     }
 
+    @PutMapping("/{eventId}/details")
+    public ResponseEntity<TimelineEventDto> updateEventDetails(
+            @PathVariable Long eventId,
+            @RequestBody UpdateEventDetailsRequestDto request
+    ) {
+        ensureAdmin();
+        return ResponseEntity.ok(timelineService.updateEventDetails(eventId, request));
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorResponse> handleNotFound(IllegalArgumentException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(new ErrorResponse("NOT_FOUND", ex.getMessage()));
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(new ErrorResponse("FORBIDDEN", ex.getMessage()));
+    }
+
+    private void ensureAdmin() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        boolean isAdmin = auth != null && auth.getAuthorities() != null &&
+                auth.getAuthorities().stream()
+                        .map(GrantedAuthority::getAuthority)
+                        .map(a -> a.replaceFirst("^ROLE_", "").toUpperCase())
+                        .anyMatch("ADMIN"::equals);
+        if (!isAdmin) {
+            throw new AccessDeniedException("Admin privileges required.");
+        }
     }
 }

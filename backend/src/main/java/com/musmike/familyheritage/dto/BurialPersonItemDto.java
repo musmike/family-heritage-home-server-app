@@ -28,6 +28,11 @@ public class BurialPersonItemDto {
     private PersonSex sex;
     private LifeState lifeState;
     private boolean archived;
+    private Long avatarMediaId;
+    private String avatarMediaType;
+    private Integer avatarCropX;
+    private Integer avatarCropY;
+    private Double avatarCropZoom;
 
     private Integer birthYear;
     private String birthDateText;

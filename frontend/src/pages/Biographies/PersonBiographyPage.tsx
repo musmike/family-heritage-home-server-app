@@ -7,6 +7,8 @@ import WikiBiographySection from '../../components/WikiBiography/WikiBiographySe
 import Loader from '../../components/Loader/Loader';
 import PersonAvatar from '../../components/PersonAvatar/PersonAvatar';
 import styles from './Biographies.module.css';
+import MediaGallerySection from '../../components/MediaSection/MediaGallerySection';
+import { mediaApi } from '../../api/mediaApi';
 import type {
   ChildInFamilyDto,
   FamilyChildRelationshipType,
@@ -121,7 +123,7 @@ const renderInlineRelative = (rel: RelatedPersonDto, note?: string) => {
 
   const inner = (
     <>
-      <PersonAvatar sex={rel.sex} size="sm" />
+      <PersonAvatar sex={rel.sex} size="sm" avatarMediaId={rel.avatarMediaId} />
       <div className={styles.infoboxRelativeText}>
         <span className={styles.infoboxRelativeName}>{fullName}</span>
         {subText && <span className={styles.infoboxRelativeSub}>{subText}</span>}
@@ -170,6 +172,8 @@ export default function PersonBiographyPage() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showRawGedcom, setShowRawGedcom] = useState<boolean>(false);
+  const [isPortraitFullscreen, setIsPortraitFullscreen] = useState<boolean>(false);
+  const [portraitZoom, setPortraitZoom] = useState<number>(1);
 
   useEffect(() => {
     const fetchBio = async () => {
@@ -331,7 +335,38 @@ export default function PersonBiographyPage() {
           <div className={styles.infoboxTitleBanner}>{fullName}</div>
 
           <div className={styles.infoboxAvatarArea}>
-            <PersonAvatar sex={bio.sex} size="xl" />
+            {bio.avatarMediaId ? (
+              <button
+                type="button"
+                data-testid="infobox-portrait-fullscreen-trigger"
+                title="Kliknij, aby otworzyć na pełnym ekranie i powiększyć"
+                onClick={() => {
+                  setPortraitZoom(1);
+                  setIsPortraitFullscreen(true);
+                }}
+                className={styles.infoboxPortraitButton}
+              >
+                {bio.avatarMediaType === 'VIDEO' ? (
+                  <video
+                    src={mediaApi.getFileUrl(bio.avatarMediaId)}
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                    disablePictureInPicture
+                    className={styles.infoboxPortraitMedia}
+                  />
+                ) : (
+                  <img
+                    src={mediaApi.getFileUrl(bio.avatarMediaId)}
+                    alt={fullName}
+                    className={styles.infoboxPortraitMedia}
+                  />
+                )}
+              </button>
+            ) : (
+              <PersonAvatar sex={bio.sex} size="xl" />
+            )}
             {bio.archived && <span className={styles.archivedBadge}>Osoba zarchiwizowana</span>}
           </div>
 
@@ -538,8 +573,127 @@ export default function PersonBiographyPage() {
               setBio(updated);
             }}
           />
+
+          <MediaGallerySection
+            context="PERSON"
+            personId={bio.id}
+            primaryMediaId={bio.avatarMediaId}
+            isAdmin={isAdmin}
+            sectionTitle="Zdjęcia i portrety tej osoby"
+            onMediaChanged={() => {
+              void biographyApi.getBiography(bio.id).then(updated => {
+                setBio(updated);
+              });
+            }}
+          />
         </div>
       </div>
+
+      {isPortraitFullscreen && bio.avatarMediaId && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(5, 8, 15, 0.96)',
+            zIndex: 1300,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+          onClick={() => {
+            setIsPortraitFullscreen(false);
+          }}
+          onWheel={e => {
+            e.preventDefault();
+            const delta = e.deltaY < 0 ? 0.25 : -0.25;
+            setPortraitZoom(prev => Math.min(5, Math.max(1, prev + delta)));
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              top: '1rem',
+              right: '1rem',
+              display: 'flex',
+              gap: '0.5rem',
+              zIndex: 10,
+            }}
+            onClick={e => {
+              e.stopPropagation();
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setPortraitZoom(prev => Math.max(1, prev - 0.5));
+              }}
+              className={styles.btnSecondary}
+            >
+              −
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPortraitZoom(1);
+              }}
+              className={styles.btnSecondary}
+            >
+              {Math.round(portraitZoom * 100)}%
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPortraitZoom(prev => Math.min(5, prev + 0.5));
+              }}
+              className={styles.btnSecondary}
+            >
+              +
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsPortraitFullscreen(false);
+              }}
+              className={styles.btnSecondary}
+            >
+              ✕ Zamknij
+            </button>
+          </div>
+
+          <div
+            onClick={e => {
+              e.stopPropagation();
+            }}
+            style={{
+              transform: `scale(${String(portraitZoom)})`,
+              transition: 'transform 0.1s ease-out',
+              maxWidth: '94vw',
+              maxHeight: '88vh',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            {bio.avatarMediaType === 'VIDEO' ? (
+              <video
+                src={mediaApi.getFileUrl(bio.avatarMediaId)}
+                autoPlay
+                loop
+                muted
+                playsInline
+                style={{ maxWidth: '94vw', maxHeight: '88vh', objectFit: 'contain' }}
+              />
+            ) : (
+              <img
+                src={mediaApi.getFileUrl(bio.avatarMediaId)}
+                alt={fullName}
+                style={{ maxWidth: '94vw', maxHeight: '88vh', objectFit: 'contain' }}
+              />
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

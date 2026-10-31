@@ -224,7 +224,6 @@ export default function HomePage() {
       title: 'Obejrzyj galerię zdjęć i wideo',
       description: 'Przeglądaj archiwalne fotografie oraz nagrania rodzinne.',
       path: '/gallery',
-      disabled: true,
       icon: (
         <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={styles.actionSvg}>
           <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
@@ -375,7 +374,7 @@ export default function HomePage() {
             <span className={styles.statLabel}>Dokumenty</span>
             <span className={styles.statValue}>{stats ? stats.documentsCount : 0}</span>
           </div>
-          <div className={`${styles.statTile} ${styles.statTileMuted}`}>
+          <div className={styles.statTile}>
             <span className={styles.statLabel}>Zdjęcia i wideo</span>
             <span className={styles.statValue}>{stats ? stats.mediaCount : 0}</span>
           </div>

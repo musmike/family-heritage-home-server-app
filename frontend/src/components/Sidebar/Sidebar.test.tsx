@@ -39,7 +39,7 @@ describe('Sidebar Component', () => {
     expect(screen.getByRole('link', { name: /Wspomnienia i powiedzenia/i })).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByRole('link', { name: /Dziennik/i })).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByRole('link', { name: /Statystyki/i })).toHaveAttribute('aria-disabled', 'true');
-    expect(screen.getByRole('link', { name: /Galeria/i })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('link', { name: /Galeria/i })).not.toHaveAttribute('aria-disabled');
     expect(screen.getByRole('link', { name: /Dokumenty/i })).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByRole('link', { name: /Miejsca/i })).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByRole('link', { name: /Pamiątki/i })).toHaveAttribute('aria-disabled', 'true');

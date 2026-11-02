@@ -25,7 +25,14 @@ public class MediaItemDto {
     private Long fileSize;
     private String title;
     private String description;
+
     private Integer year;
+    private Integer month;
+    private Integer day;
+    private Integer hour;
+    private Integer minute;
+    private String dateText;
+
     private Long collectionId;
     private String collectionName;
     private LocalDateTime createdAt;

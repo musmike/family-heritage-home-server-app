@@ -2,6 +2,8 @@ import api from './axiosInstance';
 import type {
   EventsTimelinePageDto,
   EventsTimelineQueryParams,
+  EventTypeOptionDto,
+  SaveEventRequestDto,
   TimelineEventDto,
   UpdateEventDetailsRequestDto,
 } from '../types/eventTimeline';
@@ -45,8 +47,29 @@ export const eventTimelineApi = {
     return response.data;
   },
 
+  getAvailableTypes: async (): Promise<EventTypeOptionDto[]> => {
+    const response = await api.get<EventTypeOptionDto[]>('/events/types');
+    return response.data;
+  },
+
   getEventById: async (eventId: number): Promise<TimelineEventDto> => {
     const response = await api.get<TimelineEventDto>(`/events/${String(eventId)}`);
+    return response.data;
+  },
+
+  createEvent: async (payload: SaveEventRequestDto): Promise<TimelineEventDto> => {
+    const response = await api.post<TimelineEventDto>('/events', payload);
+    return response.data;
+  },
+
+  updateEvent: async (
+    eventId: number,
+    payload: SaveEventRequestDto
+  ): Promise<TimelineEventDto> => {
+    const response = await api.put<TimelineEventDto>(
+      `/events/${String(eventId)}`,
+      payload
+    );
     return response.data;
   },
 
@@ -59,5 +82,9 @@ export const eventTimelineApi = {
       payload
     );
     return response.data;
+  },
+
+  deleteEvent: async (eventId: number): Promise<void> => {
+    await api.delete(`/events/${String(eventId)}`);
   },
 };

@@ -49,6 +49,30 @@
   font-weight: 600;
 }
 
+.btnPrimary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.48rem 1rem;
+  background-color: #2563eb;
+  color: #ffffff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: 1px solid #1d4ed8;
+  border-radius: 8px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btnPrimary:hover:not(:disabled) {
+  background-color: #1d4ed8;
+}
+
+.btnPrimary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .btnSecondary {
   display: inline-flex;
   align-items: center;
@@ -66,6 +90,20 @@
 
 .btnSecondary:hover {
   background-color: #f1f5f9;
+}
+
+.btnDanger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.9rem;
+  background-color: #fef2f2;
+  color: #dc2626;
+  font-size: 0.84rem;
+  font-weight: 600;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  cursor: pointer;
 }
 
 /* Filters Card */
@@ -86,6 +124,14 @@
   flex-direction: column;
   gap: 0.35rem;
   flex: 1 1 180px;
+  position: relative;
+}
+
+.formField {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  width: 100%;
   position: relative;
 }
 
@@ -130,7 +176,7 @@
   left: 0;
   right: 0;
   width: 100%;
-  min-width: 220px;
+  min-width: 240px;
   max-width: 100%;
   box-sizing: border-box;
   background-color: #ffffff;
@@ -221,7 +267,7 @@
 }
 
 .popoverTypesList {
-  max-height: 210px;
+  max-height: 220px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -333,7 +379,6 @@
   gap: 0.6rem;
 }
 
-/* Collapsible Year inside Decade */
 .yearAccordion {
   background-color: #ffffff;
   border: 1px solid #cbd5e1;
@@ -378,11 +423,18 @@
   background-color: #f8fafc;
   border-top: 1px solid #f1f5f9;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
-  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 0.85rem;
+  align-items: start;
 }
 
-/* Compact Event Tile (Clickable -> navigates to /events/:eventId) */
+.eventWithSubsWrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+/* Compact Event Tile */
 .compactEventTile {
   background-color: #ffffff;
   border: 1px solid #cbd5e1;
@@ -402,6 +454,35 @@
   transform: translateY(-1px);
   box-shadow: 0 4px 10px rgba(37, 99, 235, 0.12);
   border-color: #60a5fa;
+}
+
+/* Indented Sub-Event Tile under Parent Event */
+.subEventTile {
+  margin-left: 1.15rem;
+  background-color: #f8fafc;
+  border: 1px dashed #94a3b8;
+  border-left: 3px solid #2563eb;
+  border-radius: 7px;
+  padding: 0.48rem 0.75rem;
+  text-decoration: none;
+  color: #1e293b;
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+  font-size: 0.82rem;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.subEventTile:hover {
+  background-color: #eff6ff;
+  border-color: #2563eb;
+}
+
+.subEventMarker {
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: #1d4ed8;
+  text-transform: uppercase;
 }
 
 .typeBirth {
@@ -428,11 +509,18 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.4rem;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.tileTypesGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
 }
 
 .tileTypeBadge {
-  font-size: 0.7rem;
+  font-size: 0.69rem;
   font-weight: 800;
   text-transform: uppercase;
   color: #334155;
@@ -464,50 +552,52 @@
 }
 
 /* ==========================================================================
-   EVENT DETAILS PAGE (/events/:eventId)
+   EVENT DETAILS & CREATE/EDIT FORM
    ========================================================================== */
 .detailsCard {
   background-color: #ffffff;
   border: 1px solid #dee2e6;
   border-radius: 12px;
-  padding: 1.75rem 2rem;
+  padding: 1.5rem 1.75rem;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1.25rem;
 }
 
 .detailsGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(195px, 1fr));
+  gap: 0.85rem;
+  align-items: stretch;
 }
 
 .infoBox {
   background-color: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
-  padding: 0.9rem 1.1rem;
+  padding: 0.75rem 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.2rem;
 }
 
 .infoLabel {
-  font-size: 0.76rem;
+  font-size: 0.74rem;
   font-weight: 700;
   text-transform: uppercase;
   color: #64748b;
 }
 
 .infoValue {
-  font-size: 1rem;
+  font-size: 0.96rem;
   font-weight: 700;
   color: #0f172a;
+  word-break: break-word;
 }
 
 .sectionSubtitle {
-  font-size: 1.1rem;
+  font-size: 1.08rem;
   font-weight: 700;
   color: #0f172a;
   border-bottom: 1px solid #e2e8f0;
@@ -517,7 +607,7 @@
 .participantsList {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.7rem;
 }
 
 .participantRow {
@@ -529,7 +619,7 @@
   background-color: #f8fafc;
   border: 1px solid #cbd5e1;
   border-radius: 8px;
-  padding: 0.85rem 1.1rem;
+  padding: 0.8rem 1.05rem;
 }
 
 .participantIdentity {
@@ -540,31 +630,33 @@
 }
 
 .participantName {
-  font-size: 1rem;
+  font-size: 0.98rem;
   font-weight: 700;
   color: #0f172a;
 }
 
 .participantContext {
-  font-size: 0.82rem;
+  font-size: 0.81rem;
   color: #475569;
   margin-top: 0.15rem;
 }
 
 .participantActions {
   display: flex;
-  gap: 0.5rem;
+  flex-wrap: wrap;
+  gap: 0.45rem;
 }
 
 .actionLink {
   padding: 0.35rem 0.75rem;
-  font-size: 0.8rem;
+  font-size: 0.79rem;
   font-weight: 600;
   color: #334155;
   background-color: #ffffff;
   border: 1px solid #cbd5e1;
   border-radius: 6px;
   text-decoration: none;
+  cursor: pointer;
 }
 
 .actionLink:hover {
@@ -580,4 +672,12 @@
   color: #991b1b;
   font-size: 0.92rem;
   font-weight: 500;
+}
+
+@media (max-width: 640px) {
+  .pageHeader,
+  .filterCard,
+  .detailsCard {
+    padding: 1rem;
+  }
 }

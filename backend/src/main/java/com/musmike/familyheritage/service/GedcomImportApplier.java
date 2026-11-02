@@ -35,11 +35,12 @@ public class GedcomImportApplier {
     private final BurialRepository burialRepository;
     private final EventParticipantRepository eventParticipantRepository;
     private final PersonNameRepository personNameRepository;
+    private final MediaItemRepository mediaItemRepository;
+    private final MediaCollectionRepository mediaCollectionRepository;
+    private final MediaStorageService mediaStorageService;
     private final GedcomDateParser dateParser;
     private final ActivityLogService activityLogService;
     private final UserRepository userRepository;
-    private final MediaItemRepository mediaItemRepository;
-    private final MediaStorageService mediaStorageService;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -183,7 +184,8 @@ public class GedcomImportApplier {
                     EventType.BIRTH.name(),
                     EventType.DEATH.name(),
                     EventType.BURIAL.name(),
-                    EventType.WEDDING.name()
+                    EventType.WEDDING.name(),
+                    EventType.WEDDING_CEREMONY.name()
             ).contains(typeCode);
         });
         if (hasCustomEvents) {
@@ -422,7 +424,7 @@ public class GedcomImportApplier {
             );
         }
 
-        // BURIAL & GRAVE (No location is added to BURIAL event; place_description is saved on Burial)
+        // BURIAL & GRAVE (Creates only BURIAL event, without FUNERAL parent)
         processBurialWithMerge(gedIndi.getBurialPlace(), previousBurialPlace, person, personFullName, burialRole);
 
         return personRepository.save(person);
@@ -443,7 +445,6 @@ public class GedcomImportApplier {
 
         if (newBurialPlace != null) {
             Event existingBurialEvent = currentBurial != null ? currentBurial.getBurialEvent() : null;
-            // BURIAL event never receives a location in the locations table
             Event savedBurialEvent = processPersonEventWithMerge(
                     null,
                     null,
@@ -718,7 +719,11 @@ public class GedcomImportApplier {
                 } else {
                     if (f.getPrimaryWedding() != null) {
                         f.getPrimaryWedding().getParticipants()
-                                .removeIf(ep -> absentIds.contains(ep.getPerson().getId()));
+                                .removeIf(ep -> ep.getPerson() != null && absentIds.contains(ep.getPerson().getId()));
+                        for (Event sub : f.getPrimaryWedding().getSubEvents()) {
+                            sub.getParticipants()
+                                    .removeIf(ep -> ep.getPerson() != null && absentIds.contains(ep.getPerson().getId()));
+                        }
                     }
                     familyRepository.save(f);
                 }
@@ -800,6 +805,7 @@ public class GedcomImportApplier {
     ) {
         Event event = existingEvent != null ? existingEvent : new Event();
         event.setEventType(role.getEventType());
+        event.getAssignedTypes().add(role.getEventType());
 
         if (!dateEdited) {
             event.setStartDate(null);
@@ -880,6 +886,7 @@ public class GedcomImportApplier {
     ) {
         Event event = family.getPrimaryWedding() != null ? family.getPrimaryWedding() : new Event();
         event.setEventType(role.getEventType());
+        event.getAssignedTypes().add(role.getEventType());
 
         if (!dateEdited) {
             event.setStartDate(null);
@@ -932,6 +939,7 @@ public class GedcomImportApplier {
         }
 
         event.getParticipants().removeIf(ep -> {
+            if (ep.getPerson() == null) return false;
             Long pid = ep.getPerson().getId();
             boolean isHusb = family.getHusband() != null && family.getHusband().getId().equals(pid);
             boolean isWife = family.getWife() != null && family.getWife().getId().equals(pid);
@@ -944,6 +952,56 @@ public class GedcomImportApplier {
         if (family.getWife() != null) {
             addParticipantIfNotExists(event, family.getWife(), role);
         }
+
+        event = eventRepository.save(event);
+
+        // Ensure child event WEDDING_CEREMONY is linked under parent WEDDING event
+        UserCode ceremonyType = findSystemCode(CodeCategory.EVENT_TYPE.name(), EventType.WEDDING_CEREMONY.name());
+        EventTypeParticipantRole ceremonyRole = getEtprOrThrow(ceremonyType, role.getParticipantRole());
+
+        Event finalParentWedding = event;
+        Event ceremonySubEvent = event.getSubEvents().stream()
+                .filter(sub -> EventType.WEDDING_CEREMONY.name().equals(sub.getEventType().getCode()))
+                .findFirst()
+                .orElseGet(() -> {
+                    Event sub = new Event();
+                    sub.setEventType(ceremonyType);
+                    sub.getAssignedTypes().add(ceremonyType);
+                    sub.setParentEvent(finalParentWedding);
+                    finalParentWedding.getSubEvents().add(sub);
+                    return sub;
+                });
+
+        if (!dateEdited) {
+            ceremonySubEvent.setStartDate(null);
+            ceremonySubEvent.setEndDate(null);
+            ceremonySubEvent.setCachedStartSortDateTime(event.getCachedStartSortDateTime());
+            ceremonySubEvent.setCachedEndSortDateTime(event.getCachedEndSortDateTime());
+            if (newRawDate != null) {
+                var parsedCeremonyDate = dateParser.parse(newRawDate);
+                ceremonySubEvent.setStartDate(parsedCeremonyDate.getStartDate());
+                ceremonySubEvent.setEndDate(parsedCeremonyDate.getEndDate());
+            }
+        }
+        if (!placeEdited) {
+            ceremonySubEvent.setMainLocation(event.getMainLocation());
+        }
+        ceremonySubEvent = eventRepository.save(ceremonySubEvent);
+
+        ceremonySubEvent.getParticipants().removeIf(ep -> {
+            if (ep.getPerson() == null) return false;
+            Long pid = ep.getPerson().getId();
+            boolean isHusb = family.getHusband() != null && family.getHusband().getId().equals(pid);
+            boolean isWife = family.getWife() != null && family.getWife().getId().equals(pid);
+            return !isHusb && !isWife;
+        });
+        if (family.getHusband() != null) {
+            addParticipantIfNotExists(ceremonySubEvent, family.getHusband(), ceremonyRole);
+        }
+        if (family.getWife() != null) {
+            addParticipantIfNotExists(ceremonySubEvent, family.getWife(), ceremonyRole);
+        }
+        eventRepository.save(ceremonySubEvent);
 
         return eventRepository.save(event);
     }
@@ -989,10 +1047,16 @@ public class GedcomImportApplier {
                 && Objects.equals(d1.getStartYear(), d2.getStartYear())
                 && Objects.equals(d1.getStartMonth(), d2.getStartMonth())
                 && Objects.equals(d1.getStartDay(), d2.getStartDay())
+                && d1.getStartTimeQualifier() == d2.getStartTimeQualifier()
+                && Objects.equals(d1.getStartHour(), d2.getStartHour())
+                && Objects.equals(d1.getStartMinute(), d2.getStartMinute())
                 && d1.getEndQualifier() == d2.getEndQualifier()
                 && Objects.equals(d1.getEndYear(), d2.getEndYear())
                 && Objects.equals(d1.getEndMonth(), d2.getEndMonth())
-                && Objects.equals(d1.getEndDay(), d2.getEndDay());
+                && Objects.equals(d1.getEndDay(), d2.getEndDay())
+                && d1.getEndTimeQualifier() == d2.getEndTimeQualifier()
+                && Objects.equals(d1.getEndHour(), d2.getEndHour())
+                && Objects.equals(d1.getEndMinute(), d2.getEndMinute());
     }
 
     private PersonGedcomData copyPersonGedcomData(PersonGedcomData source) {
@@ -1014,7 +1078,7 @@ public class GedcomImportApplier {
 
     private void addParticipantIfNotExists(Event event, Person person, EventTypeParticipantRole role) {
         boolean exists = event.getParticipants().stream()
-                .anyMatch(p -> p.getPerson().getId().equals(person.getId()));
+                .anyMatch(p -> p.getPerson() != null && p.getPerson().getId().equals(person.getId()));
         if (!exists) {
             EventParticipant part = new EventParticipant(event, person, role);
             eventParticipantRepository.save(part);
@@ -1049,6 +1113,7 @@ public class GedcomImportApplier {
     }
 
     private void cleanUpOrphans() {
+        eventRepository.deleteOrphanChildEvents();
         eventRepository.deleteOrphanEvents();
         dateDescriptorRepository.deleteOrphanDateDescriptors();
         graveRepository.deleteOrphanGraves();
@@ -1213,6 +1278,30 @@ public class GedcomImportApplier {
         }
         userRepository.flush();
 
+        for (Person p : personRepository.findAll()) {
+            if (p.getAvatarMedia() != null) {
+                p.setAvatarMedia(null);
+                personRepository.save(p);
+            }
+        }
+        personRepository.flush();
+
+        for (Grave g : graveRepository.findAll()) {
+            if (g.getPrimaryMedia() != null) {
+                g.setPrimaryMedia(null);
+                graveRepository.save(g);
+            }
+        }
+        graveRepository.flush();
+
+        mediaItemRepository.deleteAll();
+        mediaItemRepository.flush();
+
+        mediaCollectionRepository.deleteAll();
+        mediaCollectionRepository.flush();
+
+        mediaStorageService.deleteAllMediaFilesOnDisk();
+
         familyRepository.deleteAll();
         familyRepository.flush();
 
@@ -1230,10 +1319,6 @@ public class GedcomImportApplier {
 
         eventRepository.deleteAll();
         eventRepository.flush();
-
-        mediaItemRepository.deleteAll();
-        mediaItemRepository.flush();
-        mediaStorageService.deleteAllMediaFilesOnDisk();
 
         dateDescriptorRepository.deleteOrphanDateDescriptors();
         locationRepository.deleteOrphanLocations();

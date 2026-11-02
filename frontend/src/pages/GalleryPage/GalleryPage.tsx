@@ -28,7 +28,6 @@ export default function GalleryPage() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Compact Filters
   const [search, setSearch] = useState<string>('');
   const [primaryContext, setPrimaryContext] = useState<string>('ALL');
   const [selectedCollectionId, setSelectedCollectionId] = useState<number | null>(null);
@@ -49,12 +48,16 @@ export default function GalleryPage() {
   const [colSlug, setColSlug] = useState<string>('');
   const [colDesc, setColDesc] = useState<string>('');
 
-  // Admin Direct Upload Form
+  // Admin Direct Upload Form (With Full Date & Time)
   const [showUploadForm, setShowUploadForm] = useState<boolean>(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadContext, setUploadContext] = useState<MediaPrimaryContext>('COLLECTION');
   const [uploadCollectionId, setUploadCollectionId] = useState<number | null>(null);
   const [uploadYear, setUploadYear] = useState<string>('');
+  const [uploadMonth, setUploadMonth] = useState<string>('');
+  const [uploadDay, setUploadDay] = useState<string>('');
+  const [uploadHour, setUploadHour] = useState<string>('');
+  const [uploadMinute, setUploadMinute] = useState<string>('');
   const [uploadCustomName, setUploadCustomName] = useState<string>('');
   const [uploadTitle, setUploadTitle] = useState<string>('');
 
@@ -84,9 +87,9 @@ export default function GalleryPage() {
         personIds: selectedPersons.map(p => p.id),
         matchAllPersons,
         datedMode,
-        sortBy,
+        sortBy: primaryContext === 'TIMELINE' ? 'YEAR_ASC' : sortBy,
         page,
-        size: 48,
+        size: primaryContext === 'ALL' ? 48 : 500,
       });
       setPageData(data);
     } catch {
@@ -110,13 +113,14 @@ export default function GalleryPage() {
     page,
   ]);
 
-  // Group media automatically when a specific thematic category is selected
   const groupedSections = useMemo<MediaGroupBucket[] | null>(() => {
     if (!pageData || pageData.content.length === 0 || primaryContext === 'ALL') {
       return null;
     }
 
     const map = new Map<string, MediaGroupBucket>();
+    const undatedBucket: MediaItemDto[] = [];
+
     const addToBucket = (key: string, title: string, item: MediaItemDto, colId?: number) => {
       const existing = map.get(key);
       if (existing) {
@@ -127,7 +131,19 @@ export default function GalleryPage() {
     };
 
     for (const item of pageData.content) {
-      if (primaryContext === 'PERSON') {
+      if (primaryContext === 'TIMELINE' || primaryContext === 'EVENT') {
+        if (item.year !== undefined && item.year !== null) {
+          const decade = Math.floor(item.year / 10) * 10;
+          const key = `DEC_${String(decade)}_${String(item.year)}`;
+          addToBucket(
+            key,
+            `📅 Lata ${String(decade)}–${String(decade + 9)} • Rok ${String(item.year)}`,
+            item
+          );
+        } else {
+          undatedBucket.push(item);
+        }
+      } else if (primaryContext === 'PERSON') {
         const names = item.personNames ?? [];
         if (names.length === 0) {
           addToBucket('UNASSIGNED_PERSON', 'Osoby nieprzypisane', item);
@@ -145,18 +161,6 @@ export default function GalleryPage() {
             addToBucket(`CEM_${cemName}`, `🪦 ${cemName}`, item);
           }
         }
-      } else if (primaryContext === 'EVENT') {
-        if (item.year !== undefined && item.year !== null) {
-          const decade = Math.floor(item.year / 10) * 10;
-          const key = `DEC_${String(decade)}_${String(item.year)}`;
-          addToBucket(
-            key,
-            `📅 Lata ${String(decade)}–${String(decade + 9)} • Rok ${String(item.year)}`,
-            item
-          );
-        } else {
-          addToBucket('EVT_UNDATED', '📅 Wydarzenia bez ustalonego roku', item);
-        }
       } else if (primaryContext === 'COLLECTION') {
         if (item.collectionName && item.collectionId) {
           addToBucket(
@@ -173,7 +177,15 @@ export default function GalleryPage() {
       }
     }
 
-    return Array.from(map.values());
+    const result = Array.from(map.values());
+    if (undatedBucket.length > 0) {
+      result.push({
+        key: 'UNDATED_MEDIA_BOTTOM',
+        title: '🖼️ Zdjęcia i filmy bez ustalonej daty rocznej (undated)',
+        items: undatedBucket,
+      });
+    }
+    return result;
   }, [pageData, primaryContext]);
 
   const handleSearchPersonFilter = async () => {
@@ -239,6 +251,10 @@ export default function GalleryPage() {
         primaryContext: uploadContext,
         collectionId: uploadCollectionId ?? undefined,
         customYear: uploadYear.trim() !== '' ? Number(uploadYear) : undefined,
+        customMonth: uploadMonth.trim() !== '' ? Number(uploadMonth) : undefined,
+        customDay: uploadDay.trim() !== '' ? Number(uploadDay) : undefined,
+        customHour: uploadHour.trim() !== '' ? Number(uploadHour) : undefined,
+        customMinute: uploadMinute.trim() !== '' ? Number(uploadMinute) : undefined,
         customFileName: uploadCustomName.trim() || undefined,
         title: uploadTitle.trim() || undefined,
         personIds: selectedPersons.map(p => p.id),
@@ -300,7 +316,9 @@ export default function GalleryPage() {
             <span className={styles.videoPlayOverlay}>▶</span>
           </>
         )}
-        {item.year && <span className={styles.yearBadge}>{item.year}</span>}
+        {(item.dateText ?? item.year) && (
+          <span className={styles.yearBadge}>{item.dateText ?? item.year}</span>
+        )}
       </div>
 
       {(item.title ??
@@ -325,7 +343,7 @@ export default function GalleryPage() {
         <div>
           <h1 className={styles.pageTitle}>Galeria zdjęć i filmów</h1>
           <p className={styles.pageSubtitle}>
-            Przeglądaj fotografie oraz nagrania rodzinne według kategorii tematycznych, kolekcji archiwalnych, osi czasu oraz występujących na nich osób.
+            Przeglądaj fotografie oraz nagrania rodzinne według osi czasu (dekad i lat), kategorii tematycznych, kolekcji archiwalnych oraz występujących na nich osób.
           </p>
         </div>
 
@@ -364,7 +382,6 @@ export default function GalleryPage() {
         </div>
       </div>
 
-      {/* Admin Create Archive Collection Form */}
       {isAdmin && showCreateCollection && (
         <section className={styles.sectionCard} data-testid="create-collection-form">
           <h2 className={styles.groupTitle}>
@@ -448,7 +465,6 @@ export default function GalleryPage() {
         </section>
       )}
 
-      {/* Admin Direct Upload Form (With Polish File Picker) */}
       {isAdmin && showUploadForm && (
         <section className={styles.sectionCard} data-testid="gallery-upload-form">
           <h2 className={styles.groupTitle}>Wgraj nowe zdjęcie lub film do archiwum</h2>
@@ -493,7 +509,7 @@ export default function GalleryPage() {
                   className={styles.selectInput}
                 >
                   <option value="COLLECTION">Kolekcja archiwalna (undated/collections/)</option>
-                  <option value="OTHER">Zdjęcie z rokiem (dated/) lub ogólne (undated/)</option>
+                  <option value="OTHER">Zdjęcie z datą (dated/) lub ogólne (undated/)</option>
                   <option value="HEIRLOOM">Pamiątka rodzinna (undated/heirlooms/)</option>
                   <option value="LOCATION">Miejsce / budynek (undated/locations/)</option>
                 </select>
@@ -522,22 +538,6 @@ export default function GalleryPage() {
                   </select>
                 </div>
               )}
-
-              <div className={styles.filterField}>
-                <label htmlFor="gal-upload-year" className={styles.filterLabel}>
-                  Rok wykonania (opcjonalnie, dla dated/)
-                </label>
-                <input
-                  id="gal-upload-year"
-                  type="number"
-                  placeholder="np. 2002"
-                  value={uploadYear}
-                  onChange={e => {
-                    setUploadYear(e.target.value);
-                  }}
-                  className={styles.textInput}
-                />
-              </div>
 
               <div className={styles.filterField}>
                 <label htmlFor="gal-upload-name" className={styles.filterLabel}>
@@ -571,6 +571,86 @@ export default function GalleryPage() {
               </div>
             </div>
 
+            <div className={styles.filtersRow}>
+              <div className={styles.filterField}>
+                <label htmlFor="gal-upload-year" className={styles.filterLabel}>
+                  Rok (dla dated/)
+                </label>
+                <input
+                  id="gal-upload-year"
+                  type="number"
+                  placeholder="np. 2002"
+                  value={uploadYear}
+                  onChange={e => {
+                    setUploadYear(e.target.value);
+                  }}
+                  className={styles.textInput}
+                />
+              </div>
+
+              <div className={styles.filterField}>
+                <label htmlFor="gal-upload-month" className={styles.filterLabel}>
+                  Miesiąc (1–12)
+                </label>
+                <input
+                  id="gal-upload-month"
+                  type="number"
+                  min={1}
+                  max={12}
+                  value={uploadMonth}
+                  onChange={e => {
+                    setUploadMonth(e.target.value);
+                  }}
+                  className={styles.textInput}
+                />
+              </div>
+
+              <div className={styles.filterField}>
+                <label htmlFor="gal-upload-day" className={styles.filterLabel}>
+                  Dzień (1–31)
+                </label>
+                <input
+                  id="gal-upload-day"
+                  type="number"
+                  min={1}
+                  max={31}
+                  value={uploadDay}
+                  onChange={e => {
+                    setUploadDay(e.target.value);
+                  }}
+                  className={styles.textInput}
+                />
+              </div>
+
+              <div className={styles.filterField}>
+                <span className={styles.filterLabel}>Godzina (GG:MM)</span>
+                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                  <input
+                    type="number"
+                    min={0}
+                    max={23}
+                    placeholder="GG"
+                    value={uploadHour}
+                    onChange={e => {
+                      setUploadHour(e.target.value);
+                    }}
+                    className={styles.textInput}
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    max={59}
+                    placeholder="MM"
+                    value={uploadMinute}
+                    onChange={e => {
+                      setUploadMinute(e.target.value);
+                    }}
+                    className={styles.textInput}
+                  />
+                </div>
+              </div>
+            </div>
+
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
               <button
                 type="button"
@@ -593,7 +673,7 @@ export default function GalleryPage() {
         </section>
       )}
 
-      {/* Compact Filters Bar (Category & Collection as compact selects!) */}
+      {/* Compact Filters Bar */}
       <section className={styles.filterCard}>
         <div className={styles.filtersRow}>
           <div className={styles.filterField}>
@@ -616,7 +696,7 @@ export default function GalleryPage() {
 
           <div className={styles.filterField}>
             <label htmlFor="gal-category-select" className={styles.filterLabel}>
-              Kategoria tematyczna (i grupowanie)
+              Widok / Kategoria tematyczna
             </label>
             <select
               id="gal-category-select"
@@ -628,7 +708,10 @@ export default function GalleryPage() {
               }}
               className={styles.selectInput}
             >
-              <option value="ALL">Wszystkie kategorie</option>
+              <option value="ALL">Wszystkie media (siatka)</option>
+              <option value="TIMELINE">
+                Wszystkie – po dekadach i latach (oraz bez daty na dole)
+              </option>
               <option value="EVENT">Wydarzenia rodzinne (wg dekad i lat)</option>
               <option value="PERSON">Portrety i osoby (wg osób)</option>
               <option value="GRAVE">Nagrobki (wg cmentarzy)</option>
@@ -796,7 +879,7 @@ export default function GalleryPage() {
         </div>
       )}
 
-      {/* Gallery Media Display (Grouped when Category is selected, or Flat Grid) */}
+      {/* Gallery Media Display */}
       {isLoading ? (
         <Loader size={42} />
       ) : !pageData || pageData.content.length === 0 ? (
@@ -870,7 +953,7 @@ export default function GalleryPage() {
         </>
       )}
 
-      {/* Fullscreen Black-Background Lightbox with Zoom, Pan & Prev/Next */}
+      {/* Fullscreen Black-Background Lightbox */}
       {activeItem && (
         <div
           className={styles.fullscreenOverlay}
@@ -1075,6 +1158,9 @@ export default function GalleryPage() {
               }}
             >
               {activeItem.title && <strong>{activeItem.title}</strong>}
+              {activeItem.dateText && (
+                <div className={styles.cardSub}>Data: {activeItem.dateText}</div>
+              )}
               <div className={styles.breakableCode}>
                 Nazwa pliku: {activeItem.fileName}
               </div>

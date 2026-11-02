@@ -182,6 +182,10 @@ public class MediaService {
             Long eventId,
             Long collectionId,
             Integer customYear,
+            Integer customMonth,
+            Integer customDay,
+            Integer customHour,
+            Integer customMinute,
             List<Long> personIds,
             boolean setAsPersonAvatar,
             boolean setAsGravePrimary
@@ -223,6 +227,14 @@ public class MediaService {
             dd.setDateType(DateType.SINGLE);
             dd.setStartQualifier(DateQualifier.EXACT);
             dd.setStartYear(customYear);
+            dd.setStartMonth(customMonth);
+            dd.setStartDay(customDay);
+            if (customHour != null) {
+                dd.setStartTimeQualifier(DateQualifier.EXACT);
+                dd.setStartHour(customHour);
+                dd.setStartMinute(customMinute);
+            }
+            dd.recalculateSortDates();
             item.setDateDescriptor(dd);
         }
 
@@ -258,7 +270,6 @@ public class MediaService {
                 mediaType == MediaType.IMAGE && !isGif
         );
 
-        // Allow both IMAGE (including GIF) and VIDEO as person avatar ("living portraits")
         if (primaryPersonId != null) {
             Person person = personRepository.findById(primaryPersonId).orElse(null);
             if (person != null && (setAsPersonAvatar || (primaryContext == MediaPrimaryContext.PERSON && person.getAvatarMedia() == null))) {
@@ -323,6 +334,10 @@ public class MediaService {
                     eventId,
                     collectionId,
                     cYear,
+                    null,
+                    null,
+                    null,
+                    null,
                     commonPersonIds,
                     false,
                     false
@@ -351,6 +366,26 @@ public class MediaService {
         }
         if (req.getDescription() != null) {
             item.setDescription(trimToNull(req.getDescription()));
+        }
+
+        if (req.getYear() != null) {
+            DateDescriptor dd = item.getDateDescriptor() != null ? item.getDateDescriptor() : new DateDescriptor();
+            dd.setDateType(DateType.SINGLE);
+            dd.setStartQualifier(DateQualifier.EXACT);
+            dd.setStartYear(req.getYear());
+            dd.setStartMonth(req.getMonth());
+            dd.setStartDay(req.getDay());
+            if (req.getHour() != null) {
+                dd.setStartTimeQualifier(DateQualifier.EXACT);
+                dd.setStartHour(req.getHour());
+                dd.setStartMinute(req.getMinute());
+            } else {
+                dd.setStartTimeQualifier(null);
+                dd.setStartHour(null);
+                dd.setStartMinute(null);
+            }
+            dd.recalculateSortDates();
+            item.setDateDescriptor(dd);
         }
 
         if (req.getPersonIds() != null) {
@@ -740,6 +775,7 @@ public class MediaService {
                 : storageService.toSnakeCase(evt.getEventType().getCode());
 
         List<String> participantSurnames = evt.getParticipants().stream()
+                .filter(ep -> ep.getPerson() != null)
                 .map(ep -> ep.getPerson().getCachedSurname())
                 .filter(Objects::nonNull)
                 .filter(s -> !s.isBlank())
@@ -768,7 +804,6 @@ public class MediaService {
     private String findAvailableFileName(String directoryPath, String rawBaseName, String ext) {
         String cleanSelect = storageService.sanitizeFileName(rawBaseName, ext);
         String stem = cleanSelect.substring(0, cleanSelect.length() - ext.length() - 1);
-        // Strip existing trailing counter (e.g. "_01") so we never produce "_01_01.jpg"
         String normalizedStem = stem.replaceFirst("_\\d{1,3}$", "");
         if (normalizedStem.isBlank()) {
             normalizedStem = stem;
@@ -826,6 +861,8 @@ public class MediaService {
                 .distinct()
                 .toList();
 
+        DateDescriptor dd = item.getDateDescriptor();
+
         return MediaItemDto.builder()
                 .id(item.getId())
                 .mediaType(item.getMediaType())
@@ -837,6 +874,11 @@ public class MediaService {
                 .title(item.getTitle())
                 .description(item.getDescription())
                 .year(resolveMediaItemYear(item))
+                .month(dd != null ? dd.getStartMonth() : null)
+                .day(dd != null ? dd.getStartDay() : null)
+                .hour(dd != null ? dd.getStartHour() : null)
+                .minute(dd != null ? dd.getStartMinute() : null)
+                .dateText(dd != null ? EventTimelineService.formatEventDates(dd, null) : null)
                 .collectionId(item.getCollection() != null ? item.getCollection().getId() : null)
                 .collectionName(item.getCollection() != null ? item.getCollection().getName() : null)
                 .createdAt(item.getCreatedAt())

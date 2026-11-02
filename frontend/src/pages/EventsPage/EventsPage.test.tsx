@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import EventsPage from './EventsPage';
 import EventDetailsPage from './EventDetailsPage';
+import { AuthContext } from '../../context/AuthContext';
 import { eventTimelineApi } from '../../api/eventTimelineApi';
 import type { EventsTimelinePageDto } from '../../types/eventTimeline';
 
@@ -10,10 +11,30 @@ vi.mock('../../api/eventTimelineApi', () => ({
   eventTimelineApi: {
     getEventsTimeline: vi.fn(),
     getEventById: vi.fn(),
+    getAvailableTypes: vi.fn(),
+    createEvent: vi.fn(),
+    updateEvent: vi.fn(),
+    updateEventDetails: vi.fn(),
+    deleteEvent: vi.fn(),
+  },
+}));
+
+vi.mock('../../api/mediaApi', () => ({
+  mediaApi: {
+    getMediaByEvent: vi.fn().mockResolvedValue({ directMedia: [], subEventGroups: [] }),
+    getThumbnailUrl: (id: number) => `http://mock/media/${String(id)}/thumbnail`,
+    getFileUrl: (id: number) => `http://mock/media/${String(id)}/file`,
   },
 }));
 
 describe('EventsPage and EventDetailsPage Components', () => {
+  const adminContext = {
+    user: { username: 'admin', roles: ['ROLE_ADMIN'] },
+    isLoading: false,
+    login: vi.fn(),
+    logout: vi.fn(),
+  };
+
   const mockTimeline: EventsTimelinePageDto = {
     page: 0,
     size: 5000,
@@ -21,7 +42,7 @@ describe('EventsPage and EventDetailsPage Components', () => {
     totalPages: 1,
     availableTypes: [
       { code: 'BIRTH', label: 'Narodziny', system: true },
-      { code: 'WEDDING', label: 'Ślub', system: true },
+      { code: 'WEDDING', label: 'Ślub i wesele', system: true },
       { code: 'VACATION', label: 'Wakacje w górach', system: false },
     ],
     decades: [
@@ -36,10 +57,12 @@ describe('EventsPage and EventDetailsPage Components', () => {
               {
                 eventId: 100,
                 typeCode: 'WEDDING',
-                typeLabel: 'Ślub',
+                typeLabel: 'Ślub i wesele',
+                assignedTypeCodes: ['WEDDING'],
+                assignedTypeLabels: ['Ślub i wesele'],
                 systemType: true,
                 year: 1948,
-                dateText: '10.06.1948',
+                dateText: '10.06.1948, godz. 14:00',
                 locationName: 'Warszawa',
                 participants: [
                   {
@@ -51,12 +74,26 @@ describe('EventsPage and EventDetailsPage Components', () => {
                     archived: false,
                     privateRecord: false,
                     roleCode: 'PRINCIPAL',
+                    roleLabel: 'Główny uczestnik',
                     ageAtEvent: 28,
                     ageApproximate: false,
                     parentNames: [],
                   },
                 ],
                 attributes: [],
+                subEvents: [
+                  {
+                    eventId: 101,
+                    typeCode: 'WEDDING_CEREMONY',
+                    typeLabel: 'Ceremonia ślubu',
+                    systemType: true,
+                    year: 1948,
+                    dateText: '10.06.1948, godz. 14:00',
+                    locationName: 'Warszawa',
+                    participants: [],
+                    attributes: [],
+                  },
+                ],
               },
             ],
           },
@@ -70,16 +107,18 @@ describe('EventsPage and EventDetailsPage Components', () => {
     vi.clearAllMocks();
   });
 
-  it('should render collapsed decades by default, expand decade and year on click, and filter by type', async () => {
+  it('should render collapsed decades, expand decade and year, show sub-events with marker and filter by type', async () => {
     const mockedApi = vi.mocked(eventTimelineApi);
     mockedApi.getEventsTimeline.mockResolvedValue(mockTimeline);
 
     render(
       <MemoryRouter initialEntries={['/events']}>
-        <Routes>
-          <Route path="/events" element={<EventsPage />} />
-          <Route path="/events/:eventId" element={<EventDetailsPage />} />
-        </Routes>
+        <AuthContext value={adminContext}>
+          <Routes>
+            <Route path="/events" element={<EventsPage />} />
+            <Route path="/events/:eventId" element={<EventDetailsPage />} />
+          </Routes>
+        </AuthContext>
       </MemoryRouter>
     );
 
@@ -87,19 +126,17 @@ describe('EventsPage and EventDetailsPage Components', () => {
       expect(screen.getByTestId('decade-section-1940')).toBeInTheDocument();
     });
 
-    // Collapsed by default -> year 1948 is not visible yet
     expect(screen.queryByTestId('year-toggle-1948')).not.toBeInTheDocument();
 
-    // Expand decade 1940 -> year 1948 button appears
     fireEvent.click(screen.getByTestId('decade-toggle-1940'));
     expect(screen.getByTestId('year-toggle-1948')).toBeInTheDocument();
 
-    // Expand year 1948 -> compact event tile appears
     fireEvent.click(screen.getByTestId('year-toggle-1948'));
     expect(screen.getByTestId('timeline-event-100')).toBeInTheDocument();
+    expect(screen.getByTestId('timeline-subevent-101')).toBeInTheDocument();
+    expect(screen.getByText(/↳ Podwydarzenie: Ceremonia ślubu/i)).toBeInTheDocument();
     expect(screen.getByText('Kowalski Jan')).toBeInTheDocument();
 
-    // Filter by custom VACATION type
     fireEvent.click(screen.getByTestId('events-types-dropdown-trigger'));
     fireEvent.click(screen.getByTestId('event-type-checkbox-VACATION'));
     await waitFor(() => {
@@ -115,9 +152,11 @@ describe('EventsPage and EventDetailsPage Components', () => {
 
     render(
       <MemoryRouter initialEntries={['/events/100']}>
-        <Routes>
-          <Route path="/events/:eventId" element={<EventDetailsPage />} />
-        </Routes>
+        <AuthContext value={adminContext}>
+          <Routes>
+            <Route path="/events/:eventId" element={<EventDetailsPage />} />
+          </Routes>
+        </AuthContext>
       </MemoryRouter>
     );
 
@@ -125,5 +164,6 @@ describe('EventsPage and EventDetailsPage Components', () => {
       expect(screen.getByText(/Kowalski Jan \(28 lat\)/i)).toBeInTheDocument();
     });
     expect(screen.getByText('Warszawa')).toBeInTheDocument();
+    expect(screen.getByText('10.06.1948, godz. 14:00')).toBeInTheDocument();
   });
 });

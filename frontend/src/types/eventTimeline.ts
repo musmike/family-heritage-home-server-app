@@ -4,10 +4,13 @@ export interface EventTypeOptionDto {
   code: string;
   label: string;
   system: boolean;
+  allowedRoleCodes?: string[];
 }
 
 export interface EventParticipantItemDto {
+  participantId?: number | null;
   personId: number | null;
+  participantText?: string | null;
   givenName: string | null;
   surname: string | null;
   sex: PersonSex | null;
@@ -15,8 +18,14 @@ export interface EventParticipantItemDto {
   archived: boolean;
   privateRecord: boolean;
   roleCode: string;
+  roleLabel?: string | null;
   ageAtEvent: number | null;
   ageApproximate: boolean;
+  avatarMediaId?: number | null;
+  avatarMediaType?: 'IMAGE' | 'VIDEO' | null;
+  avatarCropX?: number | null;
+  avatarCropY?: number | null;
+  avatarCropZoom?: number | null;
   parentNames: string[];
 }
 
@@ -30,6 +39,8 @@ export interface TimelineEventDto {
   typeCode: string;
   typeLabel: string;
   systemType: boolean;
+  assignedTypeCodes?: string[];
+  assignedTypeLabels?: string[];
   title?: string | null;
   description?: string | null;
   parentEventId?: number | null;
@@ -37,9 +48,56 @@ export interface TimelineEventDto {
   year: number | null;
   dateText: string | null;
   locationName: string | null;
+
+  startDateType?: string | null;
+  startQualifier?: string | null;
+  startYear?: number | null;
+  startMonth?: number | null;
+  startDay?: number | null;
+  startTimeQualifier?: string | null;
+  startHour?: number | null;
+  startMinute?: number | null;
+
+  endYear?: number | null;
+  endMonth?: number | null;
+  endDay?: number | null;
+  endTimeQualifier?: string | null;
+  endHour?: number | null;
+  endMinute?: number | null;
+
   participants: EventParticipantItemDto[];
   attributes: EventAttributeItemDto[];
   subEvents?: TimelineEventDto[];
+}
+
+export interface SaveEventParticipantRequestDto {
+  personId?: number | null;
+  participantText?: string | null;
+  participantSex?: PersonSex | null;
+  roleCode: string;
+}
+
+export interface SaveEventRequestDto {
+  typeCodes: string[];
+  title?: string | null;
+  description?: string | null;
+  parentEventId?: number | null;
+  locationName?: string | null;
+  startQualifier?: string | null;
+  startYear?: number | null;
+  startMonth?: number | null;
+  startDay?: number | null;
+  startTimeQualifier?: string | null;
+  startHour?: number | null;
+  startMinute?: number | null;
+  isRange?: boolean;
+  endYear?: number | null;
+  endMonth?: number | null;
+  endDay?: number | null;
+  endTimeQualifier?: string | null;
+  endHour?: number | null;
+  endMinute?: number | null;
+  participants: SaveEventParticipantRequestDto[];
 }
 
 export interface UpdateEventDetailsRequestDto {

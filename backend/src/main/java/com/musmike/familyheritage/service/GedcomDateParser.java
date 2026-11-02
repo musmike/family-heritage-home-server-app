@@ -156,32 +156,7 @@ public class GedcomDateParser {
     }
 
     private void calculateSortDates(DateDescriptor dd) {
-        Integer y = dd.getStartYear();
-        Integer m = dd.getStartMonth();
-        Integer d = dd.getStartDay();
-
-        if (y == null) return;
-
-        LocalDateTime min;
-        LocalDateTime max;
-
-        if (m != null && d != null) {
-            // Full Date
-            min = LocalDateTime.of(y, m, d, 0, 0);
-            max = LocalDateTime.of(y, m, d, 23, 59);
-        } else if (m != null) {
-            // Month Year
-            min = LocalDateTime.of(y, m, 1, 0, 0);
-            int lastDay = YearMonth.of(y, m).lengthOfMonth();
-            max = LocalDateTime.of(y, m, lastDay, 23, 59);
-        } else {
-            // Year Only
-            min = LocalDateTime.of(y, 1, 1, 0, 0);
-            max = LocalDateTime.of(y, 12, 31, 23, 59);
-        }
-
-        dd.setSortDateTimeMin(min);
-        dd.setSortDateTimeMax(max);
+        dd.recalculateSortDates();
     }
 
     public static class DateParseResult {

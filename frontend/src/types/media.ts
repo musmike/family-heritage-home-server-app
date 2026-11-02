@@ -20,6 +20,11 @@ export interface MediaItemDto {
   title: string | null;
   description: string | null;
   year?: number | null;
+  month?: number | null;
+  day?: number | null;
+  hour?: number | null;
+  minute?: number | null;
+  dateText?: string | null;
   collectionId?: number | null;
   collectionName?: string | null;
   createdAt: string;
@@ -95,6 +100,11 @@ export interface UpdateMediaItemRequestDto {
   fileName?: string | null;
   title?: string | null;
   description?: string | null;
+  year?: number | null;
+  month?: number | null;
+  day?: number | null;
+  hour?: number | null;
+  minute?: number | null;
   personIds?: number[];
   setAsAvatarForPersonId?: number | null;
   avatarCropX?: number | null;

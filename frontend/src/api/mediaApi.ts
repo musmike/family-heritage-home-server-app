@@ -35,7 +35,11 @@ export const mediaApi = {
     if (params.mediaType && params.mediaType !== 'ALL') {
       cleanParams.mediaType = params.mediaType;
     }
-    if (params.primaryContext && params.primaryContext !== 'ALL') {
+    if (
+      params.primaryContext &&
+      params.primaryContext !== 'ALL' &&
+      params.primaryContext !== 'TIMELINE'
+    ) {
       cleanParams.primaryContext = params.primaryContext;
     }
     if (params.collectionId !== undefined && params.collectionId !== null) {
@@ -109,6 +113,10 @@ export const mediaApi = {
     eventId?: number;
     collectionId?: number;
     customYear?: number;
+    customMonth?: number;
+    customDay?: number;
+    customHour?: number;
+    customMinute?: number;
     personIds?: number[];
     setAsPersonAvatar?: boolean;
     setAsGravePrimary?: boolean;
@@ -136,6 +144,18 @@ export const mediaApi = {
     }
     if (params.customYear !== undefined) {
       formData.append('customYear', String(params.customYear));
+    }
+    if (params.customMonth !== undefined) {
+      formData.append('customMonth', String(params.customMonth));
+    }
+    if (params.customDay !== undefined) {
+      formData.append('customDay', String(params.customDay));
+    }
+    if (params.customHour !== undefined) {
+      formData.append('customHour', String(params.customHour));
+    }
+    if (params.customMinute !== undefined) {
+      formData.append('customMinute', String(params.customMinute));
     }
     if (params.personIds && params.personIds.length > 0) {
       formData.append('personIds', params.personIds.join(','));

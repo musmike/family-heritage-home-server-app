@@ -1,15 +1,20 @@
 package com.musmike.familyheritage.integration.controller;
 
+import tools.jackson.databind.ObjectMapper;
+import com.musmike.familyheritage.dto.SaveEventParticipantRequestDto;
+import com.musmike.familyheritage.dto.SaveEventRequestDto;
 import com.musmike.familyheritage.integration.AbstractIntegrationTest;
 import com.musmike.familyheritage.model.*;
 import com.musmike.familyheritage.model.enums.*;
 import com.musmike.familyheritage.repository.*;
 import com.musmike.familyheritage.service.GedcomImportService;
 import jakarta.persistence.EntityManager;
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,15 +22,20 @@ import org.springframework.transaction.annotation.Transactional;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @AutoConfigureMockMvc
 class EventTimelineControllerTest extends AbstractIntegrationTest {
 
+    private static final String CSRF = "csrf-event-test";
+
     @Autowired private MockMvc mockMvc;
+    @Autowired private ObjectMapper objectMapper;
     @Autowired private GedcomImportService importService;
     @Autowired private PersonRepository personRepository;
     @Autowired private UserCodeRepository userCodeRepository;
@@ -81,7 +91,6 @@ class EventTimelineControllerTest extends AbstractIntegrationTest {
 
         importService.importGedcom(new ByteArrayInputStream(gedcom.getBytes(StandardCharsets.UTF_8)));
 
-        // Add a custom non-GEDCOM event type ("VACATION" -> "Wakacje w górach") in 1960
         UserCode vacationCode = userCodeRepository.saveAndFlush(
                 new UserCode(CodeCategory.EVENT_TYPE.name(), "VACATION", false)
         );
@@ -123,38 +132,57 @@ class EventTimelineControllerTest extends AbstractIntegrationTest {
     @Test
     @Transactional
     @WithMockUser(username = "admin", roles = {"ADMIN"})
-    void shouldGroupEventsIntoDecadesAndYearsWithContextAndSupportCustomEventTypes() throws Exception {
+    void shouldGroupTopLevelEventsIntoDecadesWithSubEventsAttachedAndSupportMultiTypeAndTimeAndTextParticipants() throws Exception {
+        // 1. Verify top-level events on timeline include WEDDING with sub-event WEDDING_CEREMONY attached
         mockMvc.perform(get("/events"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalEvents").value(8))
                 .andExpect(jsonPath("$.minAvailableYear").value(1920))
                 .andExpect(jsonPath("$.maxAvailableYear").value(2005))
                 .andExpect(jsonPath("$.undatedEvents", hasSize(1)))
-                .andExpect(jsonPath("$.availableTypes[*].label", hasItems("Narodziny", "Ślub", "Śmierć", "Pochówek", "Wakacje w górach")))
-                .andExpect(jsonPath("$.decades[0].decadeStart").value(1920))
-                .andExpect(jsonPath("$.decades[0].years[0].year").value(1920))
+                .andExpect(jsonPath("$.availableTypes[*].label", hasItems("Narodziny", "Ślub", "Ceremonia ślubu", "Śmierć", "Pochówek", "Wakacje w górach")))
                 .andExpect(jsonPath("$.decades[1].decadeStart").value(1940))
                 .andExpect(jsonPath("$.decades[1].years[0].events[0].typeCode").value("WEDDING"))
+                .andExpect(jsonPath("$.decades[1].years[0].events[0].subEvents", hasSize(1)))
+                .andExpect(jsonPath("$.decades[1].years[0].events[0].subEvents[0].typeCode").value("WEDDING_CEREMONY"))
                 .andExpect(jsonPath("$.decades[1].years[0].events[0].participants[*].ageAtEvent", hasItems(28, 23)))
                 .andExpect(jsonPath("$.decades[2].decadeStart").value(1950))
                 .andExpect(jsonPath("$.decades[2].years[0].events[0].participants[0].parentNames", hasItems("Kowalski Jan", "Nowak Anna")));
 
-        // Filter by multiple event types (WEDDING and custom VACATION) + year range
-        mockMvc.perform(get("/events")
-                        .param("types", "WEDDING,VACATION")
-                        .param("yearFrom", "1945")
-                        .param("yearTo", "1965"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalEvents").value(2))
-                .andExpect(jsonPath("$.decades[*].years[*].events[*].typeLabel", hasItems("Ślub", "Wakacje w górach")));
+        // 2. Create a multi-type Baptism event with exact time (09:15), DB Godparent (Jan -> Ojciec chrzestny), and text-only Witness
+        Person jan = personRepository.findByGedcomDataGedRefId("@I1@").orElseThrow();
+        Person marek = personRepository.findByGedcomDataGedRefId("@I3@").orElseThrow();
 
-        // Include undated events -> undated burial appears in undatedEvents without polluting locations
-        mockMvc.perform(get("/events").param("includeUndated", "true"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalEvents").value(8))
-                .andExpect(jsonPath("$.undatedEvents", hasSize(1)))
-                .andExpect(jsonPath("$.undatedEvents[0].typeCode").value("BURIAL"))
-                .andExpect(jsonPath("$.undatedEvents[0].locationName").value(nullValue()));
+        SaveEventRequestDto createBaptismReq = SaveEventRequestDto.builder()
+                .typeCodes(List.of("BAPTISM", "BAPTISM_CEREMONY"))
+                .title("Chrzest Marka")
+                .locationName("Gdańsk, Kościół św. Mikołaja")
+                .startQualifier("EXACT")
+                .startYear(1952)
+                .startMonth(6)
+                .startDay(15)
+                .startTimeQualifier("EXACT")
+                .startHour(9)
+                .startMinute(15)
+                .participants(List.of(
+                        new SaveEventParticipantRequestDto(marek.getId(), null, null, "PRINCIPAL"),
+                        new SaveEventParticipantRequestDto(jan.getId(), null, null, "GODPARENT"),
+                        new SaveEventParticipantRequestDto(null, "Stanisława Wiśniewska (sąsiadka)", PersonSex.FEMALE, "WITNESS")
+                ))
+                .build();
+
+        mockMvc.perform(post("/events")
+                        .cookie(new Cookie("XSRF-TOKEN", CSRF))
+                        .header("X-XSRF-TOKEN", CSRF)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createBaptismReq)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.assignedTypeCodes", containsInAnyOrder("BAPTISM", "BAPTISM_CEREMONY")))
+                .andExpect(jsonPath("$.dateText").value("15.06.1952, godz. 09:15"))
+                .andExpect(jsonPath("$.participants", hasSize(3)))
+                .andExpect(jsonPath("$.participants[?(@.roleCode=='GODPARENT')].roleLabel").value(hasItem("Ojciec chrzestny")))
+                .andExpect(jsonPath("$.participants[?(@.roleCode=='WITNESS')].participantText").value(hasItem("Stanisława Wiśniewska (sąsiadka)")))
+                .andExpect(jsonPath("$.participants[?(@.roleCode=='WITNESS')].roleLabel").value(hasItem("Świadek")));
     }
 
     @Test

@@ -1,9 +1,6 @@
 package com.musmike.familyheritage.controller;
 
-import com.musmike.familyheritage.dto.ErrorResponse;
-import com.musmike.familyheritage.dto.EventsTimelinePageDto;
-import com.musmike.familyheritage.dto.TimelineEventDto;
-import com.musmike.familyheritage.dto.UpdateEventDetailsRequestDto;
+import com.musmike.familyheritage.dto.*;
 import com.musmike.familyheritage.service.EventTimelineService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -47,9 +44,29 @@ public class EventTimelineController {
         );
     }
 
+    @GetMapping("/types")
+    public ResponseEntity<List<EventTypeOptionDto>> getAvailableEventTypes() {
+        return ResponseEntity.ok(timelineService.getAvailableEventTypes());
+    }
+
     @GetMapping("/{eventId}")
     public ResponseEntity<TimelineEventDto> getEventById(@PathVariable Long eventId) {
         return ResponseEntity.ok(timelineService.getEventById(eventId));
+    }
+
+    @PostMapping
+    public ResponseEntity<TimelineEventDto> createEvent(@RequestBody SaveEventRequestDto request) {
+        ensureAdmin();
+        return ResponseEntity.status(HttpStatus.CREATED).body(timelineService.createEvent(request));
+    }
+
+    @PutMapping("/{eventId}")
+    public ResponseEntity<TimelineEventDto> updateEvent(
+            @PathVariable Long eventId,
+            @RequestBody SaveEventRequestDto request
+    ) {
+        ensureAdmin();
+        return ResponseEntity.ok(timelineService.updateEvent(eventId, request));
     }
 
     @PutMapping("/{eventId}/details")
@@ -59,6 +76,13 @@ public class EventTimelineController {
     ) {
         ensureAdmin();
         return ResponseEntity.ok(timelineService.updateEventDetails(eventId, request));
+    }
+
+    @DeleteMapping("/{eventId}")
+    public ResponseEntity<Void> deleteEvent(@PathVariable Long eventId) {
+        ensureAdmin();
+        timelineService.deleteEvent(eventId);
+        return ResponseEntity.noContent().build();
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

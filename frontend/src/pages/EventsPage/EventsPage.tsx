@@ -1,37 +1,68 @@
-import { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect, useRef, useMemo, use } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { eventTimelineApi } from '../../api/eventTimelineApi';
+import { biographyApi } from '../../api/biographyApi';
+import { AuthContext } from '../../context/AuthContext';
 import Loader from '../../components/Loader/Loader';
 import styles from './EventsPage.module.css';
 import type {
   EventsTimelinePageDto,
+  SaveEventParticipantRequestDto,
   TimelineEventDto,
 } from '../../types/eventTimeline';
+import type { PersonListItemDto, PersonSex } from '../../types/biography';
+
+export const QUALIFIER_OPTIONS = [
+  { value: 'EXACT', label: 'Dokładnie' },
+  { value: 'ABOUT', label: 'Około (ok.)' },
+  { value: 'BEFORE', label: 'Przed' },
+  { value: 'AFTER', label: 'Po' },
+  { value: 'ESTIMATED', label: 'Szacunkowo' },
+];
+
+export const ROLE_LABELS: Record<string, string | undefined> = {
+  PRINCIPAL: 'Główny uczestnik',
+  GODPARENT: 'Rodzic chrzestny (Ojciec / Matka chrzestna)',
+  WITNESS: 'Świadek',
+  HOST: 'Gospodarz / Odwiedzany',
+  VISITOR: 'Odwiedzający',
+  GUEST: 'Gość',
+  PARTICIPANT: 'Uczestnik',
+};
 
 const getEventTypeAccentClass = (typeCode: string): string => {
-  switch (typeCode) {
-    case 'BIRTH':
-      return styles.typeBirth;
-    case 'WEDDING':
-      return styles.typeWedding;
-    case 'DEATH':
-      return styles.typeDeath;
-    case 'BURIAL':
-      return styles.typeBurial;
-    default:
-      return styles.typeCustom;
+  if (typeCode === 'BIRTH' || typeCode.startsWith('BAPTISM')) {
+    return styles.typeBirth;
   }
+  if (typeCode.startsWith('WEDDING')) {
+    return styles.typeWedding;
+  }
+  if (typeCode === 'DEATH') {
+    return styles.typeDeath;
+  }
+  if (typeCode === 'BURIAL' || typeCode.startsWith('FUNERAL') || typeCode === 'CREMATION') {
+    return styles.typeBurial;
+  }
+  return styles.typeCustom;
 };
 
 const formatParticipantsSummary = (evt: TimelineEventDto): string => {
   if (evt.participants.length === 0) return 'Brak przypisanych osób';
   return evt.participants
-    .map(p => `${p.surname ?? ''} ${p.givenName ?? ''}`.trim())
+    .map(p => {
+      if (p.participantText) return p.participantText;
+      return `${p.surname ?? ''} ${p.givenName ?? ''}`.trim();
+    })
     .filter(Boolean)
     .join(' & ');
 };
 
 export default function EventsPage() {
+  const navigate = useNavigate();
+  const auth = use(AuthContext);
+  const isAdmin =
+    auth?.user?.roles.some(r => r.replace(/^ROLE_/, '').toUpperCase() === 'ADMIN') ?? false;
+
   const [timelineData, setTimelineData] = useState<EventsTimelinePageDto | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -54,7 +85,31 @@ export default function EventsPage() {
   const [includeArchived, setIncludeArchived] = useState<boolean>(false);
   const [sortOrder, setSortOrder] = useState<string>('ASC');
 
-  // Close Event Types popover when clicking outside
+  // Admin Create Event Form State
+  const [showCreateForm, setShowCreateForm] = useState<boolean>(false);
+  const [formTypeCodes, setFormTypeCodes] = useState<string[]>(['FAMILY_GATHERING']);
+  const [formTitle, setFormTitle] = useState<string>('');
+  const [formDesc, setFormDesc] = useState<string>('');
+  const [formLocation, setFormLocation] = useState<string>('');
+  const [formParentEventId, setFormParentEventId] = useState<string>('');
+
+  const [formStartQual, setFormStartQual] = useState<string>('EXACT');
+  const [formStartYear, setFormStartYear] = useState<string>('');
+  const [formStartMonth, setFormStartMonth] = useState<string>('');
+  const [formStartDay, setFormStartDay] = useState<string>('');
+  const [formStartTimeQual, setFormStartTimeQual] = useState<string>('EXACT');
+  const [formStartHour, setFormStartHour] = useState<string>('');
+  const [formStartMinute, setFormStartMinute] = useState<string>('');
+
+  const [formParticipants, setFormParticipants] = useState<
+    (SaveEventParticipantRequestDto & { displayLabel: string })[]
+  >([]);
+  const [partRoleCode, setPartRoleCode] = useState<string>('PRINCIPAL');
+  const [partPersonQuery, setPartPersonQuery] = useState<string>('');
+  const [partPersonResults, setPartPersonResults] = useState<PersonListItemDto[]>([]);
+  const [partTextInput, setPartTextInput] = useState<string>('');
+  const [partTextSex, setPartTextSex] = useState<PersonSex>('UNKNOWN');
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -70,45 +125,74 @@ export default function EventsPage() {
     };
   }, []);
 
-  useEffect(() => {
-    const fetchEvents = async () => {
-      setIsLoading(true);
-      setErrorMessage(null);
-      try {
-        const data = await eventTimelineApi.getEventsTimeline({
-          search,
-          types: selectedTypes,
-          yearFrom,
-          yearTo,
-          includeUndated: true,
-          includeArchived,
-          sortOrder,
-          page: 0,
-          size: 5000,
-        });
-        setTimelineData(data);
+  const fetchEvents = async () => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    try {
+      const data = await eventTimelineApi.getEventsTimeline({
+        search,
+        types: selectedTypes,
+        yearFrom,
+        yearTo,
+        includeUndated: true,
+        includeArchived,
+        sortOrder,
+        page: 0,
+        size: 5000,
+      });
+      setTimelineData(data);
 
-        if (
-          !boundsInitialized &&
-          data.minAvailableYear !== undefined &&
-          data.minAvailableYear !== null &&
-          data.maxAvailableYear !== undefined &&
-          data.maxAvailableYear !== null
-        ) {
-          setMinBound(data.minAvailableYear);
-          setMaxBound(data.maxAvailableYear);
-          setYearFrom(data.minAvailableYear);
-          setYearTo(data.maxAvailableYear);
-          setBoundsInitialized(true);
-        }
-      } catch {
-        setErrorMessage('Nie udało się pobrać osi czasu wydarzeń.');
-      } finally {
-        setIsLoading(false);
+      if (
+        !boundsInitialized &&
+        data.minAvailableYear !== undefined &&
+        data.minAvailableYear !== null &&
+        data.maxAvailableYear !== undefined &&
+        data.maxAvailableYear !== null
+      ) {
+        setMinBound(data.minAvailableYear);
+        setMaxBound(data.maxAvailableYear);
+        setYearFrom(data.minAvailableYear);
+        setYearTo(data.maxAvailableYear);
+        setBoundsInitialized(true);
       }
-    };
+    } catch {
+      setErrorMessage('Nie udało się pobrać osi czasu wydarzeń.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
     void fetchEvents();
   }, [search, selectedTypes, yearFrom, yearTo, includeArchived, sortOrder, boundsInitialized]);
+
+  const availableTypes = timelineData?.availableTypes ?? [];
+
+  const allowedRolesForSelectedTypes = useMemo<string[]>(() => {
+    const set = new Set<string>(['PRINCIPAL', 'PARTICIPANT', 'GUEST']);
+    for (const code of formTypeCodes) {
+      const found = availableTypes.find(t => t.code === code);
+      if (found?.allowedRoleCodes) {
+        for (const r of found.allowedRoleCodes) {
+          set.add(r);
+        }
+      }
+    }
+    return Array.from(set);
+  }, [formTypeCodes, availableTypes]);
+
+  const flatParentCandidateEvents = useMemo<TimelineEventDto[]>(() => {
+    if (!timelineData) return [];
+    const list: TimelineEventDto[] = [];
+    for (const dec of timelineData.decades) {
+      for (const yr of dec.years) {
+        for (const ev of yr.events) {
+          list.push(ev);
+        }
+      }
+    }
+    return list;
+  }, [timelineData]);
 
   const handleYearFromChange = (rawVal: number) => {
     if (Number.isNaN(rawVal)) return;
@@ -164,25 +248,147 @@ export default function EventsPage() {
     );
   };
 
-  const renderCompactEventTile = (evt: TimelineEventDto) => (
-    <Link
-      key={evt.eventId}
-      to={`/events/${String(evt.eventId)}`}
-      data-testid={`timeline-event-${String(evt.eventId)}`}
-      className={`${styles.compactEventTile} ${getEventTypeAccentClass(evt.typeCode)}`}
-    >
-      <div className={styles.tileTopRow}>
-        <span className={styles.tileTypeBadge}>{evt.typeLabel}</span>
-        {evt.dateText && <span className={styles.tileDate}>{evt.dateText}</span>}
-      </div>
-      <div className={styles.tileParticipants}>{formatParticipantsSummary(evt)}</div>
-      {evt.locationName && (
-        <div className={styles.tileLocation}>📍 {evt.locationName}</div>
-      )}
-    </Link>
-  );
+  const toggleFormEventType = (code: string) => {
+    setFormTypeCodes(prev => {
+      if (prev.includes(code)) {
+        return prev.length > 1 ? prev.filter(c => c !== code) : prev;
+      }
+      return [...prev, code];
+    });
+  };
 
-  const availableTypes = timelineData?.availableTypes ?? [];
+  const handleSearchPersonForEvent = async () => {
+    try {
+      const res = await biographyApi.listPeople({
+        search: partPersonQuery,
+        includeArchived: true,
+        page: 0,
+        size: 6,
+      });
+      setPartPersonResults(res.content);
+    } catch {
+      setErrorMessage('Nie udało się wyszukać osób.');
+    }
+  };
+
+  const handleAddDbPersonParticipant = (p: PersonListItemDto) => {
+    const label = `${p.surname ?? ''} ${p.givenName ?? ''}`.trim();
+    setFormParticipants(prev => [
+      ...prev,
+      {
+        personId: p.id,
+        roleCode: partRoleCode,
+        displayLabel: `${label} (${ROLE_LABELS[partRoleCode] ?? partRoleCode})`,
+      },
+    ]);
+    setPartPersonResults([]);
+    setPartPersonQuery('');
+  };
+
+  const handleAddTextParticipant = () => {
+    if (partTextInput.trim() === '') return;
+    const text = partTextInput.trim();
+    setFormParticipants(prev => [
+      ...prev,
+      {
+        participantText: text,
+        participantSex: partTextSex,
+        roleCode: partRoleCode,
+        displayLabel: `${text} [spoza drzewa] (${ROLE_LABELS[partRoleCode] ?? partRoleCode})`,
+      },
+    ]);
+    setPartTextInput('');
+  };
+
+  const handleCreateEventSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setErrorMessage(null);
+    try {
+      const created = await eventTimelineApi.createEvent({
+        typeCodes: formTypeCodes,
+        title: formTitle.trim() || null,
+        description: formDesc.trim() || null,
+        locationName: formLocation.trim() || null,
+        parentEventId: formParentEventId !== '' ? Number(formParentEventId) : null,
+        startQualifier: formStartQual,
+        startYear: formStartYear !== '' ? Number(formStartYear) : null,
+        startMonth: formStartMonth !== '' ? Number(formStartMonth) : null,
+        startDay: formStartDay !== '' ? Number(formStartDay) : null,
+        startTimeQualifier: formStartTimeQual,
+        startHour: formStartHour !== '' ? Number(formStartHour) : null,
+        startMinute: formStartMinute !== '' ? Number(formStartMinute) : null,
+        participants: formParticipants.map(fp => ({
+          personId: fp.personId,
+          participantText: fp.participantText,
+          participantSex: fp.participantSex,
+          roleCode: fp.roleCode,
+        })),
+      });
+      setShowCreateForm(false);
+      void navigate(`/events/${String(created.eventId)}`);
+    } catch {
+      setErrorMessage('Nie udało się utworzyć nowego wydarzenia.');
+    }
+  };
+
+  const renderEventWithSubEvents = (evt: TimelineEventDto) => {
+    const typeLabels =
+      evt.assignedTypeLabels && evt.assignedTypeLabels.length > 0
+        ? evt.assignedTypeLabels
+        : [evt.typeLabel];
+    const subEvents = evt.subEvents ?? [];
+
+    return (
+      <div key={evt.eventId} className={styles.eventWithSubsWrapper}>
+        <Link
+          to={`/events/${String(evt.eventId)}`}
+          data-testid={`timeline-event-${String(evt.eventId)}`}
+          className={`${styles.compactEventTile} ${getEventTypeAccentClass(evt.typeCode)}`}
+        >
+          <div className={styles.tileTopRow}>
+            <div className={styles.tileTypesGroup}>
+              {typeLabels.map(lbl => (
+                <span key={lbl} className={styles.tileTypeBadge}>
+                  {lbl}
+                </span>
+              ))}
+            </div>
+            {evt.dateText && <span className={styles.tileDate}>{evt.dateText}</span>}
+          </div>
+          {evt.title && (
+            <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#1d4ed8' }}>
+              {evt.title}
+            </div>
+          )}
+          <div className={styles.tileParticipants}>{formatParticipantsSummary(evt)}</div>
+          {evt.locationName && (
+            <div className={styles.tileLocation}>📍 {evt.locationName}</div>
+          )}
+        </Link>
+
+        {subEvents.map(sub => (
+          <Link
+            key={sub.eventId}
+            to={`/events/${String(sub.eventId)}`}
+            data-testid={`timeline-subevent-${String(sub.eventId)}`}
+            className={styles.subEventTile}
+          >
+            <div className={styles.tileTopRow}>
+              <span className={styles.subEventMarker}>
+                ↳ Podwydarzenie: {sub.title ?? sub.typeLabel}
+              </span>
+              {sub.dateText && <span className={styles.tileDate}>{sub.dateText}</span>}
+            </div>
+            <div style={{ fontWeight: 600 }}>{formatParticipantsSummary(sub)}</div>
+            {sub.locationName && (
+              <div className={styles.tileLocation}>📍 {sub.locationName}</div>
+            )}
+          </Link>
+        ))}
+      </div>
+    );
+  };
+
   const filteredTypeOptions = availableTypes.filter(t =>
     t.label.toLowerCase().includes(typeSearchQuery.trim().toLowerCase())
   );
@@ -196,11 +402,23 @@ export default function EventsPage() {
         <div>
           <h1 className={styles.pageTitle}>Wydarzenia (kronika rodzinna)</h1>
           <p className={styles.pageSubtitle}>
-            Rozwiń interesującą Cię dekadę i rok, a następnie kliknij w wydarzenie, aby zobaczyć jego pełne szczegóły.
+            Rozwiń interesującą Cię dekadę i rok, a następnie kliknij w wydarzenie, aby zobaczyć jego pełne szczegóły, uczestników oraz zdjęcia.
           </p>
         </div>
 
         <div className={styles.headerRight}>
+          {isAdmin && (
+            <button
+              type="button"
+              data-testid="open-create-event-button"
+              onClick={() => {
+                setShowCreateForm(prev => !prev);
+              }}
+              className={styles.btnPrimary}
+            >
+              {showCreateForm ? 'Zamknij formularz' : '+ Dodaj wydarzenie'}
+            </button>
+          )}
           <button
             type="button"
             data-testid="expand-all-events-button"
@@ -218,11 +436,411 @@ export default function EventsPage() {
           </button>
           {timelineData && (
             <div className={styles.statsBadge}>
-              Wydarzenia: <strong>{timelineData.totalEvents}</strong>
+              Wydarzenia główne: <strong>{timelineData.totalEvents}</strong>
             </div>
           )}
         </div>
       </div>
+
+      {/* Admin Create Event Form */}
+      {isAdmin && showCreateForm && (
+        <section className={styles.detailsCard} data-testid="create-event-form-section">
+          <h2 className={styles.sectionSubtitle}>Dodaj nowe wydarzenie rodzinne</h2>
+          <form
+            onSubmit={e => {
+              void handleCreateEventSubmit(e);
+            }}
+            style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
+          >
+            <div className={styles.formField}>
+              <span className={styles.filterLabel}>
+                Wybierz jeden lub kilka typów wydarzenia (np. zakończenie roku + zakończenie szkoły):
+              </span>
+              <div
+                style={{
+                  maxHeight: '145px',
+                  overflowY: 'auto',
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+                  gap: '0.35rem',
+                  padding: '0.6rem',
+                  backgroundColor: '#f8fafc',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '8px',
+                }}
+              >
+                {availableTypes.map(opt => (
+                  <label key={opt.code} className={styles.typeCheckboxItem}>
+                    <input
+                      type="checkbox"
+                      checked={formTypeCodes.includes(opt.code)}
+                      onChange={() => {
+                        toggleFormEventType(opt.code);
+                      }}
+                    />
+                    <span>{opt.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className={styles.detailsGrid}>
+              <div className={styles.formField}>
+                <label htmlFor="new-evt-title" className={styles.filterLabel}>
+                  Własny tytuł wydarzenia (opcjonalnie)
+                </label>
+                <input
+                  id="new-evt-title"
+                  type="text"
+                  placeholder="np. Wyjazd do Gdańska"
+                  value={formTitle}
+                  onChange={e => {
+                    setFormTitle(e.target.value);
+                  }}
+                  className={styles.textInput}
+                />
+              </div>
+
+              <div className={styles.formField}>
+                <label htmlFor="new-evt-loc" className={styles.filterLabel}>
+                  Miejsce / miejscowość
+                </label>
+                <input
+                  id="new-evt-loc"
+                  type="text"
+                  placeholder="np. Gdańsk"
+                  value={formLocation}
+                  onChange={e => {
+                    setFormLocation(e.target.value);
+                  }}
+                  className={styles.textInput}
+                />
+              </div>
+
+              <div className={styles.formField}>
+                <label htmlFor="new-evt-parent" className={styles.filterLabel}>
+                  Wydarzenie nadrzędne (opcjonalnie)
+                </label>
+                <select
+                  id="new-evt-parent"
+                  value={formParentEventId}
+                  onChange={e => {
+                    setFormParentEventId(e.target.value);
+                  }}
+                  className={styles.selectInput}
+                >
+                  <option value="">— Brak (wydarzenie główne) —</option>
+                  {flatParentCandidateEvents.map(cand => (
+                    <option key={cand.eventId} value={String(cand.eventId)}>
+                      {cand.dateText ?? cand.year ?? 'Bez daty'} –{' '}
+                      {cand.title ?? cand.typeLabel}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className={styles.formField}>
+              <label htmlFor="new-evt-desc" className={styles.filterLabel}>
+                Opis wydarzenia (opcjonalnie)
+              </label>
+              <input
+                id="new-evt-desc"
+                type="text"
+                placeholder="Dodatkowe informacje o przebiegu wydarzenia..."
+                value={formDesc}
+                onChange={e => {
+                  setFormDesc(e.target.value);
+                }}
+                className={styles.textInput}
+              />
+            </div>
+
+            {/* Date & Time Fields */}
+            <div className={styles.detailsGrid}>
+              <div className={styles.formField}>
+                <label htmlFor="new-evt-date-qual" className={styles.filterLabel}>
+                  Kwalifikator daty
+                </label>
+                <select
+                  id="new-evt-date-qual"
+                  value={formStartQual}
+                  onChange={e => {
+                    setFormStartQual(e.target.value);
+                  }}
+                  className={styles.selectInput}
+                >
+                  {QUALIFIER_OPTIONS.map(q => (
+                    <option key={q.value} value={q.value}>
+                      {q.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className={styles.formField}>
+                <label htmlFor="new-evt-year" className={styles.filterLabel}>
+                  Rok
+                </label>
+                <input
+                  id="new-evt-year"
+                  type="number"
+                  placeholder="np. 1995"
+                  value={formStartYear}
+                  onChange={e => {
+                    setFormStartYear(e.target.value);
+                  }}
+                  className={styles.textInput}
+                />
+              </div>
+
+              <div className={styles.formField}>
+                <label htmlFor="new-evt-month" className={styles.filterLabel}>
+                  Miesiąc (1–12)
+                </label>
+                <input
+                  id="new-evt-month"
+                  type="number"
+                  min={1}
+                  max={12}
+                  value={formStartMonth}
+                  onChange={e => {
+                    setFormStartMonth(e.target.value);
+                  }}
+                  className={styles.textInput}
+                />
+              </div>
+
+              <div className={styles.formField}>
+                <label htmlFor="new-evt-day" className={styles.filterLabel}>
+                  Dzień (1–31)
+                </label>
+                <input
+                  id="new-evt-day"
+                  type="number"
+                  min={1}
+                  max={31}
+                  value={formStartDay}
+                  onChange={e => {
+                    setFormStartDay(e.target.value);
+                  }}
+                  className={styles.textInput}
+                />
+              </div>
+
+              <div className={styles.formField}>
+                <label htmlFor="new-evt-time-qual" className={styles.filterLabel}>
+                  Kwalifikator czasu
+                </label>
+                <select
+                  id="new-evt-time-qual"
+                  value={formStartTimeQual}
+                  onChange={e => {
+                    setFormStartTimeQual(e.target.value);
+                  }}
+                  className={styles.selectInput}
+                >
+                  {QUALIFIER_OPTIONS.map(q => (
+                    <option key={q.value} value={q.value}>
+                      {q.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className={styles.formField}>
+                <label htmlFor="new-evt-hour" className={styles.filterLabel}>
+                  Godzina (0–23) i Minuta (0–59)
+                </label>
+                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                  <input
+                    id="new-evt-hour"
+                    type="number"
+                    min={0}
+                    max={23}
+                    placeholder="GG"
+                    value={formStartHour}
+                    onChange={e => {
+                      setFormStartHour(e.target.value);
+                    }}
+                    className={styles.textInput}
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    max={59}
+                    placeholder="MM"
+                    value={formStartMinute}
+                    onChange={e => {
+                      setFormStartMinute(e.target.value);
+                    }}
+                    className={styles.textInput}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Participants Builder */}
+            <div
+              style={{
+                backgroundColor: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '8px',
+                padding: '0.95rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.75rem',
+              }}
+            >
+              <span className={styles.filterLabel}>
+                Uczestnicy wydarzenia (z drzewa genealogicznego lub wpis tekstowy spoza bazy):
+              </span>
+
+              <div className={styles.detailsGrid}>
+                <div className={styles.formField}>
+                  <label htmlFor="part-role-select" className={styles.filterLabel}>
+                    Rola uczestnika
+                  </label>
+                  <select
+                    id="part-role-select"
+                    value={partRoleCode}
+                    onChange={e => {
+                      setPartRoleCode(e.target.value);
+                    }}
+                    className={styles.selectInput}
+                  >
+                    {allowedRolesForSelectedTypes.map(r => (
+                      <option key={r} value={r}>
+                        {ROLE_LABELS[r] ?? r}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className={styles.formField}>
+                  <span className={styles.filterLabel}>Dodaj osobę z drzewa</span>
+                  <div style={{ display: 'flex', gap: '0.4rem' }}>
+                    <input
+                      type="text"
+                      placeholder="Szukaj w drzewie..."
+                      value={partPersonQuery}
+                      onChange={e => {
+                        setPartPersonQuery(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleSearchPersonForEvent();
+                      }}
+                      className={styles.btnSecondary}
+                    >
+                      Szukaj
+                    </button>
+                  </div>
+                </div>
+
+                <div className={styles.formField}>
+                  <span className={styles.filterLabel}>
+                    Lub dodaj osobę tekstowo spoza bazy
+                  </span>
+                  <div style={{ display: 'flex', gap: '0.4rem' }}>
+                    <input
+                      type="text"
+                      placeholder="np. Stanisław Nowak (świadek)"
+                      value={partTextInput}
+                      onChange={e => {
+                        setPartTextInput(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                    <select
+                      value={partTextSex}
+                      onChange={e => {
+                        setPartTextSex(e.target.value as PersonSex);
+                      }}
+                      className={styles.selectInput}
+                      style={{ width: '95px' }}
+                    >
+                      <option value="MALE">M</option>
+                      <option value="FEMALE">K</option>
+                      <option value="UNKNOWN">?</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={handleAddTextParticipant}
+                      className={styles.btnSecondary}
+                    >
+                      + Dodaj
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {partPersonResults.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                  {partPersonResults.map(p => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => {
+                        handleAddDbPersonParticipant(p);
+                      }}
+                      className={styles.btnSecondary}
+                    >
+                      + Wybierz: {p.surname} {p.givenName} ({p.birthYear ?? '?'})
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {formParticipants.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.45rem' }}>
+                  {formParticipants.map((fp, idx) => (
+                    <span
+                      key={`${fp.displayLabel}-${String(idx)}`}
+                      className={styles.decadeCountPill}
+                    >
+                      👤 {fp.displayLabel}{' '}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormParticipants(prev => prev.filter((_, i) => i !== idx));
+                        }}
+                        style={{
+                          marginLeft: '0.35rem',
+                          border: 'none',
+                          background: 'none',
+                          cursor: 'pointer',
+                          fontWeight: 800,
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCreateForm(false);
+                }}
+                className={styles.btnSecondary}
+              >
+                Anuluj
+              </button>
+              <button type="submit" className={styles.btnPrimary}>
+                ✓ Utwórz wydarzenie
+              </button>
+            </div>
+          </form>
+        </section>
+      )}
 
       {/* Filters Bar */}
       <section className={styles.filterCard}>
@@ -234,7 +852,7 @@ export default function EventsPage() {
             id="events-search-input"
             type="text"
             data-testid="events-search-input"
-            placeholder="Nazwisko, imię, miejscowość..."
+            placeholder="Nazwisko, imię, tytuł, miejscowość..."
             value={search}
             onChange={e => {
               setSearch(e.target.value);
@@ -243,7 +861,6 @@ export default function EventsPage() {
           />
         </div>
 
-        {/* Multi-Select Dropdown for Event Types (Closes on Outside Click) */}
         <div className={styles.filterField} ref={typesDropdownRef}>
           <span className={styles.filterLabel}>Typy wydarzeń</span>
           <button
@@ -312,7 +929,6 @@ export default function EventsPage() {
           )}
         </div>
 
-        {/* Year Range Filter (Editable Inputs + Single Dual-Thumb Slider) */}
         {boundsInitialized && (
           <div className={styles.filterField} style={{ flex: '1.4 1 240px' }}>
             <span className={styles.filterLabel}>
@@ -479,7 +1095,7 @@ export default function EventsPage() {
 
                           {isYearOpen && (
                             <div className={styles.yearEventsGrid}>
-                              {yearGroup.events.map(evt => renderCompactEventTile(evt))}
+                              {yearGroup.events.map(evt => renderEventWithSubEvents(evt))}
                             </div>
                           )}
                         </div>
@@ -491,7 +1107,6 @@ export default function EventsPage() {
             );
           })}
 
-          {/* UNDATED EVENTS ACCORDION (Visible by default when undated events exist) */}
           {timelineData.undatedEvents.length > 0 && (
             <div className={styles.decadeAccordion} data-testid="undated-events-section">
               <button
@@ -516,7 +1131,7 @@ export default function EventsPage() {
 
               {expandedDecades.UNDATED && (
                 <div className={styles.yearEventsGrid}>
-                  {timelineData.undatedEvents.map(evt => renderCompactEventTile(evt))}
+                  {timelineData.undatedEvents.map(evt => renderEventWithSubEvents(evt))}
                 </div>
               )}
             </div>

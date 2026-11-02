@@ -99,6 +99,10 @@ public class MediaController {
             @RequestParam(name = "eventId", required = false) Long eventId,
             @RequestParam(name = "collectionId", required = false) Long collectionId,
             @RequestParam(name = "customYear", required = false) Integer customYear,
+            @RequestParam(name = "customMonth", required = false) Integer customMonth,
+            @RequestParam(name = "customDay", required = false) Integer customDay,
+            @RequestParam(name = "customHour", required = false) Integer customHour,
+            @RequestParam(name = "customMinute", required = false) Integer customMinute,
             @RequestParam(name = "personIds", required = false) String personIdsParam,
             @RequestParam(name = "setAsPersonAvatar", defaultValue = "false") boolean setAsPersonAvatar,
             @RequestParam(name = "setAsGravePrimary", defaultValue = "false") boolean setAsGravePrimary
@@ -116,6 +120,10 @@ public class MediaController {
                 eventId,
                 collectionId,
                 customYear,
+                customMonth,
+                customDay,
+                customHour,
+                customMinute,
                 personIds,
                 setAsPersonAvatar,
                 setAsGravePrimary

@@ -20,6 +20,7 @@ import java.util.stream.Collectors;
 public class EventTimelineService {
 
     private final EventRepository eventRepository;
+    private final EventParentLinkRepository eventParentLinkRepository;
     private final UserCodeRepository userCodeRepository;
     private final TranslationRepository translationRepository;
     private final FamilyChildRepository familyChildRepository;
@@ -28,11 +29,13 @@ public class EventTimelineService {
     private final LocationRepository locationRepository;
     private final EventLocationRepository eventLocationRepository;
     private final PersonRepository personRepository;
+    private final MediaStorageService storageService;
+    private final MediaService mediaService;
     private final ActivityLogService activityLogService;
 
     private static final Map<String, String> DEFAULT_EVENT_TYPE_LABELS = Map.of(
             "BIRTH", "Narodziny",
-            "WEDDING", "Ślub i wesele",
+            "WEDDING", "Ślub",
             "WEDDING_CEREMONY", "Ceremonia ślubu",
             "DEATH", "Śmierć",
             "BURIAL", "Pochówek"
@@ -62,27 +65,29 @@ public class EventTimelineService {
                 .collect(Collectors.toSet());
 
         String normSearch = search != null ? search.trim().toLowerCase(Locale.ROOT) : "";
-        boolean descending = "DESC".equalsIgnoreCase(sortOrder);
+        boolean descending = !"ASC".equalsIgnoreCase(sortOrder);
 
         Map<Long, List<String>> parentNamesByChildId = buildParentNamesMap();
         Map<Long, List<EventAttributeItemDto>> attrsByEventId = loadAllAttributesByEventId();
 
-        // Single JOIN FETCH query eliminating N+1 queries
         List<Event> allEvents = eventRepository.findAllWithFullTimelineDetails();
 
         Map<Long, List<Event>> subEventsByParentId = new HashMap<>();
         for (Event e : allEvents) {
-            if (e.getParentEvent() != null && e.getParentEvent().getId() != null) {
-                subEventsByParentId
-                        .computeIfAbsent(e.getParentEvent().getId(), k -> new ArrayList<>())
-                        .add(e);
+            for (Event parent : e.getOrderedParentEvents()) {
+                if (parent.getId() != null) {
+                    List<Event> list = subEventsByParentId.computeIfAbsent(parent.getId(), k -> new ArrayList<>());
+                    if (list.stream().noneMatch(existing -> Objects.equals(existing.getId(), e.getId()))) {
+                        list.add(e);
+                    }
+                }
             }
         }
 
         Integer minAvailableYear = null;
         Integer maxAvailableYear = null;
         for (Event e : allEvents) {
-            if (e.getParentEvent() != null) {
+            if (e.hasAnyParentEvent()) {
                 continue;
             }
             Integer y = extractEventYear(e);
@@ -95,8 +100,7 @@ public class EventTimelineService {
         List<ScoredTimelineEvent> matchingEvents = new ArrayList<>();
 
         for (Event evt : allEvents) {
-            // Show only top-level events on the main timeline; sub-events are attached to their parent
-            if (evt.getParentEvent() != null) {
+            if (evt.hasAnyParentEvent()) {
                 continue;
             }
 
@@ -148,9 +152,10 @@ public class EventTimelineService {
         Comparator<LocalDateTime> dateTimeOrder = Comparator.nullsLast(
                 descending ? baseOrder.reversed() : baseOrder
         );
+        Comparator<Long> idOrder = descending ? Comparator.reverseOrder() : Comparator.naturalOrder();
         Comparator<ScoredTimelineEvent> datedComp = Comparator
                 .comparing(ScoredTimelineEvent::sortDateTime, dateTimeOrder)
-                .thenComparing(se -> se.dto().getEventId());
+                .thenComparing(se -> se.dto().getEventId(), idOrder);
 
         matchingEvents.sort((a, b) -> {
             boolean aDated = a.dto().getYear() != null;
@@ -233,8 +238,7 @@ public class EventTimelineService {
         Map<Long, List<String>> parentNamesByChildId = buildParentNamesMap();
         Map<Long, List<EventAttributeItemDto>> attrsByEventId = loadAllAttributesByEventId();
 
-        List<Event> subEvents = eventRepository
-                .findByParentEventIdOrderByCachedStartSortDateTimeAscIdAsc(eventId);
+        List<Event> subEvents = findAllSubEventsForParent(eventId);
 
         return toTimelineEventDto(
                 evt,
@@ -252,7 +256,11 @@ public class EventTimelineService {
         applyEventSaveRequest(evt, req);
         evt = eventRepository.saveAndFlush(evt);
 
-        String label = evt.getTitle() != null ? evt.getTitle() : evt.getEventType().getCode();
+        Map<Long, String> userCodeTranslations = loadUserCodeTranslations();
+        String label = evt.getTitle() != null
+                ? evt.getTitle()
+                : resolveEventTypeLabel(evt.getEventType(), userCodeTranslations);
+
         activityLogService.logActivity(
                 ActivityActionType.EVENT_CREATED,
                 "Dodano wydarzenie: " + label,
@@ -271,9 +279,13 @@ public class EventTimelineService {
         applyEventSaveRequest(evt, req);
         evt = eventRepository.saveAndFlush(evt);
         locationRepository.deleteOrphanLocations();
-        dateDescriptorRepositoryCleanup();
+        mediaService.syncEventMediaPathsOnEventChange(evt);
 
-        String label = evt.getTitle() != null ? evt.getTitle() : evt.getEventType().getCode();
+        Map<Long, String> userCodeTranslations = loadUserCodeTranslations();
+        String label = evt.getTitle() != null
+                ? evt.getTitle()
+                : resolveEventTypeLabel(evt.getEventType(), userCodeTranslations);
+
         activityLogService.logActivity(
                 ActivityActionType.EVENT_UPDATED,
                 "Zaktualizowano wydarzenie: " + label,
@@ -289,15 +301,36 @@ public class EventTimelineService {
         Event evt = eventRepository.findById(eventId)
                 .orElseThrow(() -> new IllegalArgumentException("Event not found: " + eventId));
 
-        evt.setTitle(req.getTitle() != null && !req.getTitle().isBlank() ? req.getTitle().trim() : null);
-        evt.setDescription(req.getDescription() != null && !req.getDescription().isBlank() ? req.getDescription().trim() : null);
-        applyParentEvent(evt, req.getParentEventId());
+        if (req.getTitle() != null) {
+            String trimmedTitle = req.getTitle().trim();
+            if (trimmedTitle.isEmpty() && evt.getParticipants().size() > 3) {
+                throw new IllegalArgumentException(
+                        "Gdy w wydarzeniu uczestniczą więcej niż 3 osoby, podanie własnego tytułu wydarzenia jest wymagane."
+                );
+            }
+            evt.setTitle(trimmedTitle.isEmpty() ? null : trimmedTitle);
+        }
 
-        eventRepository.saveAndFlush(evt);
+        if (req.getDescription() != null) {
+            evt.setDescription(!req.getDescription().isBlank() ? req.getDescription().trim() : null);
+        }
+
+        if (req.getFolderSlug() != null) {
+            evt.setFolderSlug(!req.getFolderSlug().isBlank() ? storageService.toSnakeCase(req.getFolderSlug()) : null);
+        }
+
+        if (req.getParentEventIds() != null) {
+            applyParentEvents(evt, req.getParentEventIds());
+        } else if (req.getParentEventId() != null) {
+            applyParentEvents(evt, List.of(req.getParentEventId()));
+        }
+
+        evt = eventRepository.saveAndFlush(evt);
+        mediaService.syncEventMediaPathsOnEventChange(evt);
 
         activityLogService.logActivity(
                 ActivityActionType.EVENT_UPDATED,
-                "Zaktualizowano szczegóły/hierarchię wydarzenia",
+                "Zaktualizowano szczegóły wydarzenia",
                 "EVENT",
                 eventId
         );
@@ -322,6 +355,28 @@ public class EventTimelineService {
         );
     }
 
+    private List<Event> findAllSubEventsForParent(Long parentEventId) {
+        List<Event> directSubs = eventRepository
+                .findByParentEventIdOrderByCachedStartSortDateTimeAscIdAsc(parentEventId);
+        List<EventParentLink> linkedSubs = eventParentLinkRepository
+                .findByParentEventIdOrderBySortOrderAscIdAsc(parentEventId);
+
+        List<Event> merged = new ArrayList<>();
+        Set<Long> seenIds = new HashSet<>();
+        for (Event e : directSubs) {
+            if (seenIds.add(e.getId())) {
+                merged.add(e);
+            }
+        }
+        for (EventParentLink link : linkedSubs) {
+            Event child = link.getChildEvent();
+            if (child != null && seenIds.add(child.getId())) {
+                merged.add(child);
+            }
+        }
+        return merged;
+    }
+
     private void applyEventSaveRequest(Event evt, SaveEventRequestDto req) {
         List<String> codes = req.getTypeCodes() == null ? List.of() :
                 req.getTypeCodes().stream()
@@ -332,7 +387,7 @@ public class EventTimelineService {
                         .toList();
 
         if (codes.isEmpty() && evt.getEventType() == null) {
-            throw new IllegalArgumentException("At least one event type is required.");
+            throw new IllegalArgumentException("Należy wybrać przynajmniej jeden typ wydarzenia.");
         }
 
         if (!codes.isEmpty()) {
@@ -340,7 +395,7 @@ public class EventTimelineService {
             for (String code : codes) {
                 UserCode uc = userCodeRepository
                         .findByCategoryAndCode(CodeCategory.EVENT_TYPE.name(), code.toUpperCase(Locale.ROOT))
-                        .orElseThrow(() -> new IllegalArgumentException("Unknown event type: " + code));
+                        .orElseThrow(() -> new IllegalArgumentException("Nieznany typ wydarzenia: " + code));
                 resolvedCodes.add(uc);
             }
             evt.setEventType(resolvedCodes.getFirst());
@@ -348,10 +403,34 @@ public class EventTimelineService {
             evt.getAssignedTypes().addAll(resolvedCodes);
         }
 
-        evt.setTitle(req.getTitle() != null && !req.getTitle().isBlank() ? req.getTitle().trim() : null);
-        evt.setDescription(req.getDescription() != null && !req.getDescription().isBlank() ? req.getDescription().trim() : null);
+        int incomingParticipantsCount = req.getParticipants() != null
+                ? req.getParticipants().size()
+                : evt.getParticipants().size();
+        String trimmedTitle = (req.getTitle() != null && !req.getTitle().isBlank())
+                ? req.getTitle().trim()
+                : null;
 
-        applyParentEvent(evt, req.getParentEventId());
+        if (incomingParticipantsCount > 3 && trimmedTitle == null) {
+            throw new IllegalArgumentException(
+                    "Gdy w wydarzeniu uczestniczą więcej niż 3 osoby, podanie własnego tytułu wydarzenia jest wymagane."
+            );
+        }
+
+        evt.setTitle(trimmedTitle);
+        evt.setDescription(req.getDescription() != null && !req.getDescription().isBlank()
+                ? req.getDescription().trim()
+                : null);
+        evt.setFolderSlug(req.getFolderSlug() != null && !req.getFolderSlug().isBlank()
+                ? storageService.toSnakeCase(req.getFolderSlug())
+                : null);
+
+        List<Long> requestedParentIds = new ArrayList<>();
+        if (req.getParentEventIds() != null && !req.getParentEventIds().isEmpty()) {
+            requestedParentIds.addAll(req.getParentEventIds());
+        } else if (req.getParentEventId() != null) {
+            requestedParentIds.add(req.getParentEventId());
+        }
+        applyParentEvents(evt, requestedParentIds);
 
         // Location (never attach location to BURIAL)
         if (!EventType.BURIAL.name().equals(evt.getEventType().getCode())) {
@@ -367,46 +446,8 @@ public class EventTimelineService {
             }
         }
 
-        // Date & Time Descriptors
-        if (req.getStartYear() != null) {
-            DateDescriptor startDd = evt.getStartDate() != null ? evt.getStartDate() : new DateDescriptor();
-            boolean isRange = Boolean.TRUE.equals(req.getIsRange()) && req.getEndYear() != null;
-            startDd.setDateType(isRange ? DateType.RANGE : DateType.SINGLE);
-            startDd.setStartQualifier(parseQualifier(req.getStartQualifier()));
-            startDd.setStartYear(req.getStartYear());
-            startDd.setStartMonth(req.getStartMonth());
-            startDd.setStartDay(req.getStartDay());
-            startDd.setStartTimeQualifier(req.getStartHour() != null ? parseQualifier(req.getStartTimeQualifier()) : null);
-            startDd.setStartHour(req.getStartHour());
-            startDd.setStartMinute(req.getStartMinute());
-
-            if (isRange) {
-                startDd.setEndQualifier(DateQualifier.EXACT);
-                startDd.setEndYear(req.getEndYear());
-                startDd.setEndMonth(req.getEndMonth());
-                startDd.setEndDay(req.getEndDay());
-                startDd.setEndTimeQualifier(req.getEndHour() != null ? parseQualifier(req.getEndTimeQualifier()) : null);
-                startDd.setEndHour(req.getEndHour());
-                startDd.setEndMinute(req.getEndMinute());
-            } else {
-                startDd.setEndQualifier(null);
-                startDd.setEndYear(null);
-                startDd.setEndMonth(null);
-                startDd.setEndDay(null);
-                startDd.setEndTimeQualifier(null);
-                startDd.setEndHour(null);
-                startDd.setEndMinute(null);
-            }
-
-            startDd.recalculateSortDates();
-            evt.setStartDate(startDd);
-            evt.setEndDate(null);
-            evt.setCachedStartSortDateTime(calculateAverageDate(startDd));
-        } else if (req.getStartQualifier() != null) {
-            evt.setStartDate(null);
-            evt.setEndDate(null);
-            evt.setCachedStartSortDateTime(null);
-        }
+        // Date & Time Descriptors (Start + End + Validation)
+        applyAndValidateDateDescriptors(evt, req);
 
         evt = eventRepository.saveAndFlush(evt);
 
@@ -428,7 +469,7 @@ public class EventTimelineService {
         }
 
         // Participants (DB persons + text-only participants)
-        if (req.getParticipants() != null && !req.getParticipants().isEmpty()) {
+        if (req.getParticipants() != null) {
             evt.getParticipants().clear();
             eventRepository.saveAndFlush(evt);
 
@@ -455,12 +496,238 @@ public class EventTimelineService {
         }
     }
 
+    private void applyAndValidateDateDescriptors(Event evt, SaveEventRequestDto req) {
+        if (req.getStartYear() != null) {
+            DateDescriptor startDd = evt.getStartDate() != null ? evt.getStartDate() : new DateDescriptor();
+            boolean startIsBetween = Boolean.TRUE.equals(req.getIsStartBetweenRange())
+                    && (req.getStartRangeEndYear() != null || req.getStartRangeEndHour() != null);
+
+            startDd.setDateType(startIsBetween ? DateType.RANGE : DateType.SINGLE);
+            startDd.setStartQualifier(parseQualifier(req.getStartQualifier()));
+            startDd.setStartYear(req.getStartYear());
+            startDd.setStartMonth(req.getStartMonth());
+            startDd.setStartDay(req.getStartDay());
+            startDd.setStartTimeQualifier(req.getStartHour() != null ? parseQualifier(req.getStartTimeQualifier()) : null);
+            startDd.setStartHour(req.getStartHour());
+            startDd.setStartMinute(req.getStartMinute());
+            startDd.setStartSecond(req.getStartSecond());
+
+            if (startIsBetween) {
+                Integer rEndYear = req.getStartRangeEndYear() != null ? req.getStartRangeEndYear() : req.getStartYear();
+                Integer rEndMonth = req.getStartRangeEndMonth() != null
+                        ? req.getStartRangeEndMonth()
+                        : (Objects.equals(rEndYear, req.getStartYear()) ? req.getStartMonth() : null);
+                Integer rEndDay = req.getStartRangeEndDay() != null
+                        ? req.getStartRangeEndDay()
+                        : (Objects.equals(rEndMonth, req.getStartMonth()) ? req.getStartDay() : null);
+
+                startDd.setEndQualifier(parseQualifier(req.getStartRangeEndQualifier()));
+                startDd.setEndYear(rEndYear);
+                startDd.setEndMonth(rEndMonth);
+                startDd.setEndDay(rEndDay);
+                startDd.setEndTimeQualifier(req.getStartRangeEndHour() != null
+                        ? parseQualifier(req.getStartRangeEndTimeQualifier())
+                        : null);
+                startDd.setEndHour(req.getStartRangeEndHour());
+                startDd.setEndMinute(req.getStartRangeEndMinute());
+                startDd.setEndSecond(req.getStartRangeEndSecond());
+
+                validateInternalBetweenRange(startDd, "daty początkowej");
+            } else {
+                clearRangeEndFields(startDd);
+            }
+
+            startDd.recalculateSortDates();
+            evt.setStartDate(startDd);
+            evt.setCachedStartSortDateTime(calculateAverageDate(startDd));
+        } else if (req.getStartQualifier() != null) {
+            evt.setStartDate(null);
+            evt.setCachedStartSortDateTime(null);
+        }
+
+        boolean wantsEndDate = Boolean.TRUE.equals(req.getHasEndDate())
+                || (Boolean.TRUE.equals(req.getIsRange()) && req.getEndYear() != null);
+
+        if (wantsEndDate && (req.getEndYear() != null || (req.getEndHour() != null && req.getStartYear() != null))) {
+            DateDescriptor endDd = evt.getEndDate() != null ? evt.getEndDate() : new DateDescriptor();
+            Integer resolvedEndYear = req.getEndYear() != null ? req.getEndYear() : req.getStartYear();
+            Integer resolvedEndMonth = req.getEndMonth() != null
+                    ? req.getEndMonth()
+                    : (req.getEndYear() == null ? req.getStartMonth() : null);
+            Integer resolvedEndDay = req.getEndDay() != null
+                    ? req.getEndDay()
+                    : (req.getEndYear() == null && req.getEndMonth() == null ? req.getStartDay() : null);
+
+            boolean endIsBetween = Boolean.TRUE.equals(req.getIsEndBetweenRange())
+                    && (req.getEndRangeEndYear() != null || req.getEndRangeEndHour() != null);
+
+            endDd.setDateType(endIsBetween ? DateType.RANGE : DateType.SINGLE);
+            endDd.setStartQualifier(parseQualifier(req.getEndQualifier()));
+            endDd.setStartYear(resolvedEndYear);
+            endDd.setStartMonth(resolvedEndMonth);
+            endDd.setStartDay(resolvedEndDay);
+            endDd.setStartTimeQualifier(req.getEndHour() != null ? parseQualifier(req.getEndTimeQualifier()) : null);
+            endDd.setStartHour(req.getEndHour());
+            endDd.setStartMinute(req.getEndMinute());
+            endDd.setStartSecond(req.getEndSecond());
+
+            if (endIsBetween) {
+                Integer rEndYear = req.getEndRangeEndYear() != null ? req.getEndRangeEndYear() : resolvedEndYear;
+                Integer rEndMonth = req.getEndRangeEndMonth() != null
+                        ? req.getEndRangeEndMonth()
+                        : (Objects.equals(rEndYear, resolvedEndYear) ? resolvedEndMonth : null);
+                Integer rEndDay = req.getEndRangeEndDay() != null
+                        ? req.getEndRangeEndDay()
+                        : (Objects.equals(rEndMonth, resolvedEndMonth) ? resolvedEndDay : null);
+
+                endDd.setEndQualifier(parseQualifier(req.getEndRangeEndQualifier()));
+                endDd.setEndYear(rEndYear);
+                endDd.setEndMonth(rEndMonth);
+                endDd.setEndDay(rEndDay);
+                endDd.setEndTimeQualifier(req.getEndRangeEndHour() != null
+                        ? parseQualifier(req.getEndRangeEndTimeQualifier())
+                        : null);
+                endDd.setEndHour(req.getEndRangeEndHour());
+                endDd.setEndMinute(req.getEndRangeEndMinute());
+                endDd.setEndSecond(req.getEndRangeEndSecond());
+
+                validateInternalBetweenRange(endDd, "daty końcowej");
+            } else {
+                clearRangeEndFields(endDd);
+            }
+
+            endDd.recalculateSortDates();
+            evt.setEndDate(endDd);
+            evt.setCachedEndSortDateTime(calculateAverageDate(endDd));
+        } else {
+            evt.setEndDate(null);
+            evt.setCachedEndSortDateTime(null);
+        }
+
+        // Cross-validate Start DateDescriptor vs End DateDescriptor
+        if (evt.getStartDate() != null && evt.getEndDate() != null) {
+            LocalDateTime sMin = evt.getStartDate().getSortDateTimeMin();
+            LocalDateTime sMax = evt.getStartDate().getSortDateTimeMax();
+            LocalDateTime eMin = evt.getEndDate().getSortDateTimeMin();
+            LocalDateTime eMax = evt.getEndDate().getSortDateTimeMax();
+
+            if (sMin != null && eMin != null && eMin.isBefore(sMin)) {
+                throw new IllegalArgumentException(
+                        "Początek daty lub godziny końcowej wydarzenia nie może być wcześniejszy niż początek daty początkowej."
+                );
+            }
+            if (sMax != null && eMax != null && eMax.isBefore(sMax)) {
+                throw new IllegalArgumentException(
+                        "Koniec daty lub godziny końcowej wydarzenia nie może być wcześniejszy niż koniec daty początkowej."
+                );
+            }
+        }
+    }
+
+    private void validateInternalBetweenRange(DateDescriptor dd, String label) {
+        LocalDateTime firstMin = DateDescriptor.computePointMin(
+                dd.getStartYear(), dd.getStartMonth(), dd.getStartDay(),
+                dd.getStartHour(), dd.getStartMinute(), dd.getStartSecond()
+        );
+        LocalDateTime secondMin = DateDescriptor.computePointMin(
+                dd.getEndYear(), dd.getEndMonth(), dd.getEndDay(),
+                dd.getEndHour(), dd.getEndMinute(), dd.getEndSecond()
+        );
+        LocalDateTime firstMax = DateDescriptor.computePointMax(
+                dd.getStartYear(), dd.getStartMonth(), dd.getStartDay(),
+                dd.getStartHour(), dd.getStartMinute(), dd.getStartSecond()
+        );
+        LocalDateTime secondMax = DateDescriptor.computePointMax(
+                dd.getEndYear(), dd.getEndMonth(), dd.getEndDay(),
+                dd.getEndHour(), dd.getEndMinute(), dd.getEndSecond()
+        );
+
+        if (firstMin != null && secondMin != null && secondMin.isBefore(firstMin)) {
+            throw new IllegalArgumentException(
+                    "W przedziale 'między ... a ...' dla " + label + " drugi punkt czasu nie może być wcześniejszy niż pierwszy."
+            );
+        }
+        if (firstMax != null && secondMax != null && secondMax.isBefore(firstMax)) {
+            throw new IllegalArgumentException(
+                    "W przedziale 'między ... a ...' dla " + label + " drugi punkt czasu nie może być wcześniejszy niż pierwszy."
+            );
+        }
+    }
+
+    private void clearRangeEndFields(DateDescriptor dd) {
+        dd.setEndQualifier(null);
+        dd.setEndYear(null);
+        dd.setEndMonth(null);
+        dd.setEndDay(null);
+        dd.setEndTimeQualifier(null);
+        dd.setEndHour(null);
+        dd.setEndMinute(null);
+        dd.setEndSecond(null);
+    }
+
+    private void applyParentEvents(Event evt, List<Long> parentIds) {
+        List<Long> distinctIds = parentIds == null ? List.of() :
+                parentIds.stream()
+                        .filter(Objects::nonNull)
+                        .distinct()
+                        .toList();
+
+        if (distinctIds.isEmpty()) {
+            evt.setParentEvent(null);
+            evt.getParentLinks().clear();
+            return;
+        }
+
+        List<Event> resolvedParents = new ArrayList<>();
+        for (Long pid : distinctIds) {
+            if (evt.getId() != null && pid.equals(evt.getId())) {
+                throw new IllegalArgumentException("Wydarzenie nie może być swoim własnym wydarzeniem nadrzędnym.");
+            }
+            Event parent = eventRepository.findById(pid)
+                    .orElseThrow(() -> new IllegalArgumentException("Nie znaleziono wydarzenia nadrzędnego: " + pid));
+            if (evt.getId() != null && hasAncestorCycle(parent, evt.getId(), new HashSet<>())) {
+                throw new IllegalArgumentException("Wykryto cykliczną hierarchię wydarzeń nadrzędnych.");
+            }
+            resolvedParents.add(parent);
+        }
+
+        evt.setParentEvent(resolvedParents.getFirst());
+
+        if (evt.getId() == null) {
+            evt = eventRepository.saveAndFlush(evt);
+        }
+
+        evt.getParentLinks().clear();
+        eventRepository.saveAndFlush(evt);
+
+        for (int i = 0; i < resolvedParents.size(); i++) {
+            evt.getParentLinks().add(new EventParentLink(evt, resolvedParents.get(i), i));
+        }
+    }
+
+    private boolean hasAncestorCycle(Event current, Long targetChildId, Set<Long> visited) {
+        if (current == null || current.getId() == null) {
+            return false;
+        }
+        if (current.getId().equals(targetChildId)) {
+            return true;
+        }
+        if (!visited.add(current.getId())) {
+            return false;
+        }
+        for (Event parent : current.getOrderedParentEvents()) {
+            if (hasAncestorCycle(parent, targetChildId, visited)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private EventTypeParticipantRole resolveEtprForEvent(Event evt, String roleCode) {
         UserCode roleUc = userCodeRepository
                 .findByCategoryAndCode(CodeCategory.EVENT_PARTICIPANT_ROLE.name(), roleCode)
                 .orElseThrow(() -> new IllegalArgumentException("Unknown participant role: " + roleCode));
 
-        // Check union of all assigned event types
         for (UserCode typeUc : evt.getAllEventTypes()) {
             Optional<EventTypeParticipantRole> found = etprRepository.findByEventTypeAndParticipantRole(typeUc, roleUc);
             if (found.isPresent()) {
@@ -468,29 +735,8 @@ public class EventTimelineService {
             }
         }
 
-        // If a custom combination is requested on a multi-type event, create or return for primary type
         return etprRepository.findByEventTypeAndParticipantRole(evt.getEventType(), roleUc)
                 .orElseGet(() -> etprRepository.saveAndFlush(new EventTypeParticipantRole(evt.getEventType(), roleUc)));
-    }
-
-    private void applyParentEvent(Event evt, Long parentEventId) {
-        if (parentEventId != null) {
-            if (evt.getId() != null && parentEventId.equals(evt.getId())) {
-                throw new IllegalArgumentException("Event cannot be its own parent.");
-            }
-            Event parent = eventRepository.findById(parentEventId)
-                    .orElseThrow(() -> new IllegalArgumentException("Parent event not found: " + parentEventId));
-            Event cursor = parent.getParentEvent();
-            while (cursor != null) {
-                if (evt.getId() != null && cursor.getId().equals(evt.getId())) {
-                    throw new IllegalArgumentException("Circular event hierarchy is not allowed.");
-                }
-                cursor = cursor.getParentEvent();
-            }
-            evt.setParentEvent(parent);
-        } else {
-            evt.setParentEvent(null);
-        }
     }
 
     private DateQualifier parseQualifier(String raw) {
@@ -510,10 +756,6 @@ public class EventTimelineService {
             return dd.getSortDateTimeMin().plusSeconds(halfSeconds);
         }
         return null;
-    }
-
-    private void dateDescriptorRepositoryCleanup() {
-        // Orphans cleaned up on next import/reset
     }
 
     private record ScoredTimelineEvent(TimelineEventDto dto, LocalDateTime sortDateTime) {}
@@ -599,14 +841,38 @@ public class EventTimelineService {
 
         List<EventAttributeItemDto> attributes = attrsByEventId.getOrDefault(evt.getId(), List.of());
 
-        Event parent = evt.getParentEvent();
-        String parentLabel = null;
-        if (parent != null) {
-            String pTypeLabel = resolveEventTypeLabel(parent.getEventType(), userCodeTranslations);
-            parentLabel = (parent.getTitle() != null && !parent.getTitle().isBlank())
-                    ? parent.getTitle() + " (" + pTypeLabel + ")"
+        List<Event> orderedParents = evt.getOrderedParentEvents();
+        List<ParentEventSummaryDto> parentSummaries = new ArrayList<>();
+        for (int idx = 0; idx < orderedParents.size(); idx++) {
+            Event pEvt = orderedParents.get(idx);
+            String pTypeLabel = resolveEventTypeLabel(pEvt.getEventType(), userCodeTranslations);
+            String pLabel = (pEvt.getTitle() != null && !pEvt.getTitle().isBlank())
+                    ? pEvt.getTitle() + " (" + pTypeLabel + ")"
                     : pTypeLabel;
+            String pDateText = formatEventDates(pEvt.getStartDate(), pEvt.getEndDate());
+            String pLoc = pEvt.getMainLocation() != null ? pEvt.getMainLocation().getName() : null;
+            String pParts = pEvt.getParticipants().stream()
+                    .map(ep -> ep.getParticipantText() != null
+                            ? ep.getParticipantText()
+                            : ((ep.getPerson() != null && ep.getPerson().getCachedSurname() != null ? ep.getPerson().getCachedSurname() : "")
+                            + " "
+                            + (ep.getPerson() != null && ep.getPerson().getCachedGivenName() != null ? ep.getPerson().getCachedGivenName() : "")).trim())
+                    .filter(s -> !s.isEmpty())
+                    .collect(Collectors.joining(" & "));
+
+            parentSummaries.add(ParentEventSummaryDto.builder()
+                    .eventId(pEvt.getId())
+                    .label(pLabel)
+                    .typeLabel(pTypeLabel)
+                    .title(pEvt.getTitle())
+                    .dateText(pDateText)
+                    .locationName(pLoc)
+                    .participantsSummary(pParts)
+                    .primaryFolderParent(idx == 0)
+                    .build());
         }
+
+        ParentEventSummaryDto firstParent = parentSummaries.isEmpty() ? null : parentSummaries.getFirst();
 
         List<TimelineEventDto> subEventDtos = (subEvents == null || subEvents.isEmpty())
                 ? List.of()
@@ -634,11 +900,15 @@ public class EventTimelineService {
                 .assignedTypeLabels(assignedLabels)
                 .title(evt.getTitle())
                 .description(evt.getDescription())
-                .parentEventId(parent != null ? parent.getId() : null)
-                .parentEventLabel(parentLabel)
+                .folderSlug(evt.getFolderSlug())
+                .suggestedFolderSlug(buildDefaultEventFolderSlug(evt, eventYear))
+                .parentEventId(firstParent != null ? firstParent.getEventId() : null)
+                .parentEventLabel(firstParent != null ? firstParent.getLabel() : null)
+                .parentEvents(parentSummaries)
                 .year(eventYear)
                 .dateText(formatEventDates(startDd, endDd))
                 .locationName(evt.getMainLocation() != null ? evt.getMainLocation().getName() : null)
+                // Start DateDescriptor
                 .startDateType(startDd != null && startDd.getDateType() != null ? startDd.getDateType().name() : null)
                 .startQualifier(startDd != null && startDd.getStartQualifier() != null ? startDd.getStartQualifier().name() : null)
                 .startYear(startDd != null ? startDd.getStartYear() : null)
@@ -647,16 +917,84 @@ public class EventTimelineService {
                 .startTimeQualifier(startDd != null && startDd.getStartTimeQualifier() != null ? startDd.getStartTimeQualifier().name() : null)
                 .startHour(startDd != null ? startDd.getStartHour() : null)
                 .startMinute(startDd != null ? startDd.getStartMinute() : null)
-                .endYear(startDd != null ? startDd.getEndYear() : null)
-                .endMonth(startDd != null ? startDd.getEndMonth() : null)
-                .endDay(startDd != null ? startDd.getEndDay() : null)
-                .endTimeQualifier(startDd != null && startDd.getEndTimeQualifier() != null ? startDd.getEndTimeQualifier().name() : null)
-                .endHour(startDd != null ? startDd.getEndHour() : null)
-                .endMinute(startDd != null ? startDd.getEndMinute() : null)
+                .startSecond(startDd != null ? startDd.getStartSecond() : null)
+                .startRangeEndQualifier(startDd != null && startDd.getEndQualifier() != null ? startDd.getEndQualifier().name() : null)
+                .startRangeEndYear(startDd != null ? startDd.getEndYear() : null)
+                .startRangeEndMonth(startDd != null ? startDd.getEndMonth() : null)
+                .startRangeEndDay(startDd != null ? startDd.getEndDay() : null)
+                .startRangeEndTimeQualifier(startDd != null && startDd.getEndTimeQualifier() != null ? startDd.getEndTimeQualifier().name() : null)
+                .startRangeEndHour(startDd != null ? startDd.getEndHour() : null)
+                .startRangeEndMinute(startDd != null ? startDd.getEndMinute() : null)
+                .startRangeEndSecond(startDd != null ? startDd.getEndSecond() : null)
+                // End DateDescriptor
+                .hasEndDate(endDd != null)
+                .endDateType(endDd != null && endDd.getDateType() != null ? endDd.getDateType().name() : null)
+                .endQualifier(endDd != null && endDd.getStartQualifier() != null ? endDd.getStartQualifier().name() : null)
+                .endYear(endDd != null ? endDd.getStartYear() : (startDd != null ? startDd.getEndYear() : null))
+                .endMonth(endDd != null ? endDd.getStartMonth() : (startDd != null ? startDd.getEndMonth() : null))
+                .endDay(endDd != null ? endDd.getStartDay() : (startDd != null ? startDd.getEndDay() : null))
+                .endTimeQualifier(endDd != null && endDd.getStartTimeQualifier() != null ? endDd.getStartTimeQualifier().name() : null)
+                .endHour(endDd != null ? endDd.getStartHour() : (startDd != null ? startDd.getEndHour() : null))
+                .endMinute(endDd != null ? endDd.getStartMinute() : (startDd != null ? startDd.getEndMinute() : null))
+                .endSecond(endDd != null ? endDd.getStartSecond() : (startDd != null ? startDd.getEndSecond() : null))
+                .endRangeEndQualifier(endDd != null && endDd.getEndQualifier() != null ? endDd.getEndQualifier().name() : null)
+                .endRangeEndYear(endDd != null ? endDd.getEndYear() : null)
+                .endRangeEndMonth(endDd != null ? endDd.getEndMonth() : null)
+                .endRangeEndDay(endDd != null ? endDd.getEndDay() : null)
+                .endRangeEndTimeQualifier(endDd != null && endDd.getEndTimeQualifier() != null ? endDd.getEndTimeQualifier().name() : null)
+                .endRangeEndHour(endDd != null ? endDd.getEndHour() : null)
+                .endRangeEndMinute(endDd != null ? endDd.getEndMinute() : null)
+                .endRangeEndSecond(endDd != null ? endDd.getEndSecond() : null)
                 .participants(participantDtos)
                 .attributes(attributes)
                 .subEvents(subEventDtos)
                 .build();
+    }
+
+    public String buildDefaultEventFolderSlug(Event evt, Integer yearOverride) {
+        DateDescriptor dd = evt.getStartDate();
+        Integer y = yearOverride != null ? yearOverride : (dd != null ? dd.getStartYear() : null);
+        Integer m = dd != null ? dd.getStartMonth() : null;
+        Integer d = dd != null ? dd.getStartDay() : null;
+
+        StringBuilder datePrefix = new StringBuilder();
+        if (y != null) {
+            datePrefix.append(y);
+            if (m != null) {
+                datePrefix.append(String.format("_%02d", m));
+                if (d != null) {
+                    datePrefix.append(String.format("_%02d", d));
+                }
+            }
+        }
+
+        String namePart = (evt.getTitle() != null && !evt.getTitle().isBlank())
+                ? storageService.toSnakeCase(evt.getTitle())
+                : storageService.toSnakeCase(evt.getEventType().getCode());
+
+        List<String> participantFullNames = evt.getParticipants().size() > 3
+                ? List.of()
+                : evt.getParticipants().stream()
+                .sorted(Comparator.comparing(ep -> ep.getPerson() != null ? ep.getPerson().getId() : Long.MAX_VALUE))
+                .map(ep -> {
+                    if (ep.getPerson() != null) {
+                        String given = ep.getPerson().getCachedGivenName() != null ? ep.getPerson().getCachedGivenName() : "";
+                        String sur = ep.getPerson().getCachedSurname() != null ? ep.getPerson().getCachedSurname() : "";
+                        return (given + " " + sur).trim();
+                    }
+                    return ep.getParticipantText() != null ? ep.getParticipantText().trim() : "";
+                })
+                .filter(s -> !s.isEmpty())
+                .map(storageService::toSnakeCase)
+                .distinct()
+                .limit(3)
+                .toList();
+
+        String suffix = participantFullNames.isEmpty()
+                ? namePart
+                : namePart + "_" + String.join("_", participantFullNames);
+
+        return datePrefix.isEmpty() ? suffix : datePrefix + "_" + suffix;
     }
 
     private String translateRoleBySex(String roleCode, PersonSex sex) {
@@ -756,8 +1094,9 @@ public class EventTimelineService {
                 + (p.getCachedGivenName() != null ? p.getCachedGivenName() : "")).trim();
     }
 
-    private String resolveEventTypeLabel(UserCode uc, Map<Long, String> translations) {
-        if (uc.getId() != null && translations.containsKey(uc.getId())) {
+    public static String resolveEventTypeLabel(UserCode uc, Map<Long, String> translations) {
+        if (uc == null) return "";
+        if (uc.getId() != null && translations != null && translations.containsKey(uc.getId())) {
             return translations.get(uc.getId());
         }
         return DEFAULT_EVENT_TYPE_LABELS.getOrDefault(uc.getCode(), uc.getCode());
@@ -866,17 +1205,17 @@ public class EventTimelineService {
         if (dd.getDateType() == DateType.RANGE) {
             String d1 = formatYmdAndTime(
                     dd.getStartYear(), dd.getStartMonth(), dd.getStartDay(),
-                    dd.getStartTimeQualifier(), dd.getStartHour(), dd.getStartMinute()
+                    dd.getStartTimeQualifier(), dd.getStartHour(), dd.getStartMinute(), dd.getStartSecond()
             );
             String d2 = formatYmdAndTime(
                     dd.getEndYear(), dd.getEndMonth(), dd.getEndDay(),
-                    dd.getEndTimeQualifier(), dd.getEndHour(), dd.getEndMinute()
+                    dd.getEndTimeQualifier(), dd.getEndHour(), dd.getEndMinute(), dd.getEndSecond()
             );
             return "między " + d1 + " a " + d2;
         }
         String base = formatYmdAndTime(
                 dd.getStartYear(), dd.getStartMonth(), dd.getStartDay(),
-                dd.getStartTimeQualifier(), dd.getStartHour(), dd.getStartMinute()
+                dd.getStartTimeQualifier(), dd.getStartHour(), dd.getStartMinute(), dd.getStartSecond()
         );
         if (base.isEmpty()) {
             return null;
@@ -898,7 +1237,8 @@ public class EventTimelineService {
             Integer d,
             DateQualifier timeQual,
             Integer hour,
-            Integer minute
+            Integer minute,
+            Integer second
     ) {
         if (y == null) return "";
         String datePart;
@@ -913,9 +1253,15 @@ public class EventTimelineService {
         if (hour == null) {
             return datePart;
         }
-        String timeStr = minute != null
-                ? String.format("%02d:%02d", hour, minute)
-                : String.format("%02d:00", hour);
+        String timeStr;
+        if (second != null) {
+            timeStr = String.format("%02d:%02d:%02d", hour, minute != null ? minute : 0, second);
+        } else if (minute != null) {
+            timeStr = String.format("%02d:%02d", hour, minute);
+        } else {
+            timeStr = String.format("%02d:00", hour);
+        }
+
         String qualPrefix = "";
         if (timeQual != null && timeQual != DateQualifier.EXACT) {
             qualPrefix = switch (timeQual) {

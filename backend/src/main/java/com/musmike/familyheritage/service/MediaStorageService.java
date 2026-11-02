@@ -101,6 +101,17 @@ public class MediaStorageService {
         }
     }
 
+    public byte[] readFileBytesIfExists(String relativePath) {
+        try {
+            Path path = resolveMediaFilePath(relativePath);
+            if (Files.exists(path)) {
+                return Files.readAllBytes(path);
+            }
+        } catch (IOException ignored) {
+        }
+        return null;
+    }
+
     public String renameFileInSameDirectory(String currentRelativePath, String newFileName) {
         Path currentFile = resolveMediaFilePath(currentRelativePath);
         Path parentDir = currentFile.getParent();
@@ -118,11 +129,51 @@ public class MediaStorageService {
 
         try {
             if (Files.exists(currentFile)) {
-                Files.move(currentFile, targetFile, StandardCopyOption.ATOMIC_MOVE);
+                Files.move(currentFile, targetFile, StandardCopyOption.REPLACE_EXISTING);
             }
             return getRootDirectory().relativize(targetFile).toString().replace('\\', '/');
         } catch (IOException e) {
             throw new IllegalStateException("Failed to rename media file on disk.", e);
+        }
+    }
+
+    public String moveFileToRelativePath(String currentRelativePath, String targetRelativePath) {
+        Path currentFile = resolveMediaFilePath(currentRelativePath);
+        Path targetFile = resolveMediaFilePath(targetRelativePath);
+
+        if (currentFile.equals(targetFile)) {
+            return currentRelativePath;
+        }
+        if (Files.exists(targetFile)) {
+            throw new IllegalArgumentException("Plik docelowy już istnieje: " + targetRelativePath);
+        }
+
+        try {
+            Files.createDirectories(targetFile.getParent());
+            if (Files.exists(currentFile)) {
+                Files.move(currentFile, targetFile, StandardCopyOption.REPLACE_EXISTING);
+                cleanUpEmptyParentDirectories(currentFile.getParent());
+            }
+            return getRootDirectory().relativize(targetFile).toString().replace('\\', '/');
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to move media file on disk.", e);
+        }
+    }
+
+    private void cleanUpEmptyParentDirectories(Path dir) {
+        Path root = getRootDirectory();
+        Path cursor = dir;
+        while (cursor != null && !cursor.equals(root) && cursor.startsWith(root)) {
+            try (Stream<Path> entries = Files.list(cursor)) {
+                if (entries.findAny().isEmpty()) {
+                    Files.deleteIfExists(cursor);
+                    cursor = cursor.getParent();
+                } else {
+                    break;
+                }
+            } catch (IOException e) {
+                break;
+            }
         }
     }
 
@@ -131,6 +182,7 @@ public class MediaStorageService {
             if (relativePath != null && !relativePath.isBlank()) {
                 Path file = resolveMediaFilePath(relativePath);
                 Files.deleteIfExists(file);
+                cleanUpEmptyParentDirectories(file.getParent());
             }
             if (mediaId != null) {
                 Path thumb = resolveThumbnailPath(mediaId);

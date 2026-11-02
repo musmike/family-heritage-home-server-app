@@ -14,17 +14,33 @@ export interface MediaItemDto {
   mediaType: MediaType;
   primaryContext: MediaPrimaryContext;
   relativePath: string | null;
+  directoryPath?: string | null;
   fileName: string;
   mimeType: string;
   fileSize: number;
   title: string | null;
   description: string | null;
+
+  dateQualifier?: string | null;
   year?: number | null;
   month?: number | null;
   day?: number | null;
+  timeQualifier?: string | null;
   hour?: number | null;
   minute?: number | null;
+  second?: number | null;
   dateText?: string | null;
+  sortDateTime?: string | null;
+
+  metadataYear?: number | null;
+  metadataMonth?: number | null;
+  metadataDay?: number | null;
+  metadataHour?: number | null;
+  metadataMinute?: number | null;
+  metadataSecond?: number | null;
+  metadataDateText?: string | null;
+  metadataDateSource?: string | null;
+
   collectionId?: number | null;
   collectionName?: string | null;
   createdAt: string;
@@ -98,17 +114,47 @@ export interface MediaFilenamePreviewDto {
 
 export interface UpdateMediaItemRequestDto {
   fileName?: string | null;
+  customFolderName?: string | null;
   title?: string | null;
   description?: string | null;
+  dateSourceMode?: 'MANUAL' | 'METADATA' | 'EVENT' | 'UNDATED' | null;
+  contextEventId?: number | null;
+  dateQualifier?: string | null;
   year?: number | null;
   month?: number | null;
   day?: number | null;
+  timeQualifier?: string | null;
   hour?: number | null;
   minute?: number | null;
+  second?: number | null;
   personIds?: number[];
   setAsAvatarForPersonId?: number | null;
   avatarCropX?: number | null;
   avatarCropY?: number | null;
   avatarCropZoom?: number | null;
   setAsPrimaryForGraveId?: number | null;
+}
+
+export interface BulkUpdateMediaRequestDto {
+  mediaIds: number[];
+  baseFileNameStem?: string | null;
+  customFolderName?: string | null;
+  contextEventId?: number | null;
+  dateSourceMode?: 'NO_CHANGE' | 'MANUAL' | 'METADATA' | 'EVENT' | 'UNDATED' | null;
+  dateQualifier?: string | null;
+  year?: number | null;
+  month?: number | null;
+  day?: number | null;
+  timeQualifier?: string | null;
+  hour?: number | null;
+  minute?: number | null;
+  second?: number | null;
+}
+
+export interface LinkExistingMediaRequestDto {
+  mediaIds: number[];
+  graveId?: number | null;
+  personId?: number | null;
+  eventId?: number | null;
+  collectionId?: number | null;
 }

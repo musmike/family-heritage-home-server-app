@@ -44,6 +44,9 @@ public class DateDescriptor {
     @Column(name = "start_minute")
     private Integer startMinute;
 
+    @Column(name = "start_second")
+    private Integer startSecond;
+
     @Enumerated(EnumType.STRING)
     @Column(length = 50)
     private DateQualifier endQualifier;
@@ -62,6 +65,9 @@ public class DateDescriptor {
     @Column(name = "end_minute")
     private Integer endMinute;
 
+    @Column(name = "end_second")
+    private Integer endSecond;
+
     private LocalDateTime sortDateTimeMin;
     private LocalDateTime sortDateTimeMax;
 
@@ -72,43 +78,71 @@ public class DateDescriptor {
             return;
         }
 
-        this.sortDateTimeMin = computePointMin(startYear, startMonth, startDay, startHour, startMinute);
+        this.sortDateTimeMin = computePointMin(startYear, startMonth, startDay, startHour, startMinute, startSecond);
 
         if (dateType == DateType.RANGE && endYear != null) {
-            this.sortDateTimeMax = computePointMax(endYear, endMonth, endDay, endHour, endMinute);
+            this.sortDateTimeMax = computePointMax(endYear, endMonth, endDay, endHour, endMinute, endSecond);
+        } else if (dateType == DateType.RANGE && endHour != null) {
+            this.sortDateTimeMax = computePointMax(startYear, startMonth, startDay, endHour, endMinute, endSecond);
         } else {
-            this.sortDateTimeMax = computePointMax(startYear, startMonth, startDay, startHour, startMinute);
+            this.sortDateTimeMax = computePointMax(startYear, startMonth, startDay, startHour, startMinute, startSecond);
         }
     }
 
-    private LocalDateTime computePointMin(Integer y, Integer m, Integer d, Integer h, Integer min) {
+    public static LocalDateTime computePointMin(
+            Integer y,
+            Integer m,
+            Integer d,
+            Integer h,
+            Integer min,
+            Integer sec
+    ) {
+        if (y == null) {
+            return null;
+        }
         if (m != null && d != null) {
-            int safeDay = Math.min(d, YearMonth.of(y, m).lengthOfMonth());
+            int safeMonth = Math.clamp(m, 1, 12);
+            int safeDay = Math.clamp(d, 1, YearMonth.of(y, safeMonth).lengthOfMonth());
             if (h != null) {
                 int safeHour = Math.clamp(h, 0, 23);
                 int safeMin = min != null ? Math.clamp(min, 0, 59) : 0;
-                return LocalDateTime.of(y, m, safeDay, safeHour, safeMin);
+                int safeSec = (min != null && sec != null) ? Math.clamp(sec, 0, 59) : 0;
+                return LocalDateTime.of(y, safeMonth, safeDay, safeHour, safeMin, safeSec);
             }
-            return LocalDateTime.of(y, m, safeDay, 0, 0);
+            return LocalDateTime.of(y, safeMonth, safeDay, 0, 0);
         } else if (m != null) {
-            return LocalDateTime.of(y, m, 1, 0, 0);
+            int safeMonth = Math.clamp(m, 1, 12);
+            return LocalDateTime.of(y, safeMonth, 1, 0, 0);
         } else {
             return LocalDateTime.of(y, 1, 1, 0, 0);
         }
     }
 
-    private LocalDateTime computePointMax(Integer y, Integer m, Integer d, Integer h, Integer min) {
+    public static LocalDateTime computePointMax(
+            Integer y,
+            Integer m,
+            Integer d,
+            Integer h,
+            Integer min,
+            Integer sec
+    ) {
+        if (y == null) {
+            return null;
+        }
         if (m != null && d != null) {
-            int safeDay = Math.min(d, YearMonth.of(y, m).lengthOfMonth());
+            int safeMonth = Math.clamp(m, 1, 12);
+            int safeDay = Math.clamp(d, 1, YearMonth.of(y, safeMonth).lengthOfMonth());
             if (h != null) {
                 int safeHour = Math.clamp(h, 0, 23);
                 int safeMin = min != null ? Math.clamp(min, 0, 59) : 59;
-                return LocalDateTime.of(y, m, safeDay, safeHour, safeMin);
+                int safeSec = (min != null && sec != null) ? Math.clamp(sec, 0, 59) : 0;
+                return LocalDateTime.of(y, safeMonth, safeDay, safeHour, safeMin, safeSec);
             }
-            return LocalDateTime.of(y, m, safeDay, 23, 59);
+            return LocalDateTime.of(y, safeMonth, safeDay, 23, 59);
         } else if (m != null) {
-            int lastDay = YearMonth.of(y, m).lengthOfMonth();
-            return LocalDateTime.of(y, m, lastDay, 23, 59);
+            int safeMonth = Math.clamp(m, 1, 12);
+            int lastDay = YearMonth.of(y, safeMonth).lengthOfMonth();
+            return LocalDateTime.of(y, safeMonth, lastDay, 23, 59);
         } else {
             return LocalDateTime.of(y, 12, 31, 23, 59);
         }

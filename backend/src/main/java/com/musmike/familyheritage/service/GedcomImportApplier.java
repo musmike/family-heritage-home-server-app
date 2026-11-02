@@ -424,7 +424,7 @@ public class GedcomImportApplier {
             );
         }
 
-        // BURIAL & GRAVE (Creates only BURIAL event, without FUNERAL parent)
+        // BURIAL & GRAVE
         processBurialWithMerge(gedIndi.getBurialPlace(), previousBurialPlace, person, personFullName, burialRole);
 
         return personRepository.save(person);
@@ -988,6 +988,12 @@ public class GedcomImportApplier {
         }
         ceremonySubEvent = eventRepository.save(ceremonySubEvent);
 
+        boolean hasParentLink = ceremonySubEvent.getParentLinks().stream()
+                .anyMatch(l -> l.getParentEvent() != null && Objects.equals(l.getParentEvent().getId(), finalParentWedding.getId()));
+        if (!hasParentLink) {
+            ceremonySubEvent.getParentLinks().add(new EventParentLink(ceremonySubEvent, finalParentWedding, 0));
+        }
+
         ceremonySubEvent.getParticipants().removeIf(ep -> {
             if (ep.getPerson() == null) return false;
             Long pid = ep.getPerson().getId();
@@ -1050,13 +1056,15 @@ public class GedcomImportApplier {
                 && d1.getStartTimeQualifier() == d2.getStartTimeQualifier()
                 && Objects.equals(d1.getStartHour(), d2.getStartHour())
                 && Objects.equals(d1.getStartMinute(), d2.getStartMinute())
+                && Objects.equals(d1.getStartSecond(), d2.getStartSecond())
                 && d1.getEndQualifier() == d2.getEndQualifier()
                 && Objects.equals(d1.getEndYear(), d2.getEndYear())
                 && Objects.equals(d1.getEndMonth(), d2.getEndMonth())
                 && Objects.equals(d1.getEndDay(), d2.getEndDay())
                 && d1.getEndTimeQualifier() == d2.getEndTimeQualifier()
                 && Objects.equals(d1.getEndHour(), d2.getEndHour())
-                && Objects.equals(d1.getEndMinute(), d2.getEndMinute());
+                && Objects.equals(d1.getEndMinute(), d2.getEndMinute())
+                && Objects.equals(d1.getEndSecond(), d2.getEndSecond());
     }
 
     private PersonGedcomData copyPersonGedcomData(PersonGedcomData source) {

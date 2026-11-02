@@ -40,6 +40,8 @@ describe('EventsPage and EventDetailsPage Components', () => {
     size: 5000,
     totalEvents: 2,
     totalPages: 1,
+    minAvailableYear: 1940,
+    maxAvailableYear: 2020,
     availableTypes: [
       { code: 'BIRTH', label: 'Narodziny', system: true },
       { code: 'WEDDING', label: 'Ślub i wesele', system: true },
@@ -61,8 +63,9 @@ describe('EventsPage and EventDetailsPage Components', () => {
                 assignedTypeCodes: ['WEDDING'],
                 assignedTypeLabels: ['Ślub i wesele'],
                 systemType: true,
+                description: '## Przebieg uroczystości\nWspomnienia ze **ślubu** w Warszawie.',
                 year: 1948,
-                dateText: '10.06.1948, godz. 14:00',
+                dateText: '10.06.1948, godz. 14:00:00',
                 locationName: 'Warszawa',
                 participants: [
                   {
@@ -88,7 +91,7 @@ describe('EventsPage and EventDetailsPage Components', () => {
                     typeLabel: 'Ceremonia ślubu',
                     systemType: true,
                     year: 1948,
-                    dateText: '10.06.1948, godz. 14:00',
+                    dateText: '10.06.1948, godz. 14:00:00',
                     locationName: 'Warszawa',
                     participants: [],
                     attributes: [],
@@ -107,7 +110,7 @@ describe('EventsPage and EventDetailsPage Components', () => {
     vi.clearAllMocks();
   });
 
-  it('should render collapsed decades, expand decade and year, show sub-events with marker and filter by type', async () => {
+  it('should default to DESC sort order, commit year slider only on mouseUp, and expand decades/years', async () => {
     const mockedApi = vi.mocked(eventTimelineApi);
     mockedApi.getEventsTimeline.mockResolvedValue(mockTimeline);
 
@@ -126,6 +129,11 @@ describe('EventsPage and EventDetailsPage Components', () => {
       expect(screen.getByTestId('decade-section-1940')).toBeInTheDocument();
     });
 
+    // Default sortOrder is DESC
+    expect(mockedApi.getEventsTimeline).toHaveBeenCalledWith(
+      expect.objectContaining({ sortOrder: 'DESC' })
+    );
+
     expect(screen.queryByTestId('year-toggle-1948')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('decade-toggle-1940'));
@@ -137,16 +145,21 @@ describe('EventsPage and EventDetailsPage Components', () => {
     expect(screen.getByText(/↳ Podwydarzenie: Ceremonia ślubu/i)).toBeInTheDocument();
     expect(screen.getByText('Kowalski Jan')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId('events-types-dropdown-trigger'));
-    fireEvent.click(screen.getByTestId('event-type-checkbox-VACATION'));
+    // Dragging slider changes visual value without calling API until mouseUp
+    const callCountBeforeDrag = mockedApi.getEventsTimeline.mock.calls.length;
+    const sliderFrom = screen.getByTestId('slider-year-from');
+    fireEvent.change(sliderFrom, { target: { value: '1950' } });
+    expect(mockedApi.getEventsTimeline.mock.calls.length).toBe(callCountBeforeDrag);
+
+    fireEvent.mouseUp(sliderFrom);
     await waitFor(() => {
       expect(mockedApi.getEventsTimeline).toHaveBeenCalledWith(
-        expect.objectContaining({ types: ['VACATION'] })
+        expect.objectContaining({ yearFrom: 1950 })
       );
     });
   });
 
-  it('should render full event details on EventDetailsPage', async () => {
+  it('should render full event details with Markdown description section on EventDetailsPage', async () => {
     const mockedApi = vi.mocked(eventTimelineApi);
     mockedApi.getEventById.mockResolvedValue(mockTimeline.decades[0].years[0].events[0]);
 
@@ -164,6 +177,8 @@ describe('EventsPage and EventDetailsPage Components', () => {
       expect(screen.getByText(/Kowalski Jan \(28 lat\)/i)).toBeInTheDocument();
     });
     expect(screen.getByText('Warszawa')).toBeInTheDocument();
-    expect(screen.getByText('10.06.1948, godz. 14:00')).toBeInTheDocument();
+    expect(screen.getByText('10.06.1948, godz. 14:00:00')).toBeInTheDocument();
+    expect(screen.getByTestId('wiki-event-description-section')).toBeInTheDocument();
+    expect(screen.getByText('Przebieg uroczystości')).toBeInTheDocument();
   });
 });

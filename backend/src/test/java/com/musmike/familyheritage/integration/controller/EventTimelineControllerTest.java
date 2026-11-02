@@ -8,6 +8,7 @@ import com.musmike.familyheritage.model.*;
 import com.musmike.familyheritage.model.enums.*;
 import com.musmike.familyheritage.repository.*;
 import com.musmike.familyheritage.service.GedcomImportService;
+import com.musmike.familyheritage.service.MediaService;
 import jakarta.persistence.EntityManager;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,6 +18,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayInputStream;
@@ -24,6 +26,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -43,7 +46,10 @@ class EventTimelineControllerTest extends AbstractIntegrationTest {
     @Autowired private EventTypeParticipantRoleRepository etprRepository;
     @Autowired private EventRepository eventRepository;
     @Autowired private LocationRepository locationRepository;
+    @Autowired private MediaService mediaService;
     @Autowired private EntityManager entityManager;
+
+    private Event vacationEvent;
 
     @BeforeEach
     void setUpEvents() throws Exception {
@@ -52,7 +58,7 @@ class EventTimelineControllerTest extends AbstractIntegrationTest {
             1 SOUR MYHERITAGE
             1 CHAR UTF-8
             0 @I1@ INDI
-            1 NAME Jan /Kowalski/
+            1 NAME Jan Aleksander /Kowalski/
             1 SEX M
             1 BIRT
             2 DATE 10 JAN 1920
@@ -116,14 +122,14 @@ class EventTimelineControllerTest extends AbstractIntegrationTest {
         Location zakopane = locationRepository.saveAndFlush(new Location("Zakopane"));
         Person jan = personRepository.findByGedcomDataGedRefId("@I1@").orElseThrow();
 
-        Event vacationEvent = new Event();
+        vacationEvent = new Event();
         vacationEvent.setEventType(vacationCode);
         vacationEvent.setStartDate(start1960);
         vacationEvent.setCachedStartSortDateTime(LocalDateTime.of(1960, 7, 10, 12, 0));
         vacationEvent.setMainLocation(zakopane);
         vacationEvent = eventRepository.saveAndFlush(vacationEvent);
         vacationEvent.addParticipant(new EventParticipant(vacationEvent, jan, vacationPrincipal));
-        eventRepository.saveAndFlush(vacationEvent);
+        vacationEvent = eventRepository.saveAndFlush(vacationEvent);
 
         entityManager.flush();
         entityManager.clear();
@@ -132,9 +138,15 @@ class EventTimelineControllerTest extends AbstractIntegrationTest {
     @Test
     @Transactional
     @WithMockUser(username = "admin", roles = {"ADMIN"})
-    void shouldGroupTopLevelEventsIntoDecadesWithSubEventsAttachedAndSupportMultiTypeAndTimeAndTextParticipants() throws Exception {
-        // 1. Verify top-level events on timeline include WEDDING with sub-event WEDDING_CEREMONY attached
+    void shouldDefaultToDescendingDecadesAndSupportAscAndMultiTypeAndSecondsAndRanges() throws Exception {
+        // 1. Default sortOrder = DESC (newest decade 2000s first!)
         mockMvc.perform(get("/events"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalEvents").value(8))
+                .andExpect(jsonPath("$.decades[0].decadeStart").value(2000));
+
+        // 2. Explicit sortOrder = ASC
+        mockMvc.perform(get("/events").param("sortOrder", "ASC"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalEvents").value(8))
                 .andExpect(jsonPath("$.minAvailableYear").value(1920))
@@ -147,23 +159,35 @@ class EventTimelineControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.decades[1].years[0].events[0].subEvents[0].typeCode").value("WEDDING_CEREMONY"))
                 .andExpect(jsonPath("$.decades[1].years[0].events[0].participants[*].ageAtEvent", hasItems(28, 23)))
                 .andExpect(jsonPath("$.decades[2].decadeStart").value(1950))
-                .andExpect(jsonPath("$.decades[2].years[0].events[0].participants[0].parentNames", hasItems("Kowalski Jan", "Nowak Anna")));
+                .andExpect(jsonPath("$.decades[2].years[0].events[0].participants[0].parentNames", hasItems("Kowalski Jan Aleksander", "Nowak Anna")));
 
-        // 2. Create a multi-type Baptism event with exact time (09:15), DB Godparent (Jan -> Ojciec chrzestny), and text-only Witness
+        // 3. Create event with date & time range (with seconds) and multiple parent events
         Person jan = personRepository.findByGedcomDataGedRefId("@I1@").orElseThrow();
         Person marek = personRepository.findByGedcomDataGedRefId("@I3@").orElseThrow();
 
         SaveEventRequestDto createBaptismReq = SaveEventRequestDto.builder()
                 .typeCodes(List.of("BAPTISM", "BAPTISM_CEREMONY"))
                 .title("Chrzest Marka")
+                .description("## Przygotowania\nOpis chrztu w **Gdańsku**.")
+                .parentEventIds(List.of(vacationEvent.getId()))
                 .locationName("Gdańsk, Kościół św. Mikołaja")
                 .startQualifier("EXACT")
-                .startYear(1952)
-                .startMonth(6)
-                .startDay(15)
+                .startYear(1960)
+                .startMonth(7)
+                .startDay(11)
                 .startTimeQualifier("EXACT")
                 .startHour(9)
                 .startMinute(15)
+                .startSecond(30)
+                .hasEndDate(true)
+                .endQualifier("EXACT")
+                .endYear(1960)
+                .endMonth(7)
+                .endDay(11)
+                .endTimeQualifier("EXACT")
+                .endHour(11)
+                .endMinute(0)
+                .endSecond(0)
                 .participants(List.of(
                         new SaveEventParticipantRequestDto(marek.getId(), null, null, "PRINCIPAL"),
                         new SaveEventParticipantRequestDto(jan.getId(), null, null, "GODPARENT"),
@@ -171,18 +195,103 @@ class EventTimelineControllerTest extends AbstractIntegrationTest {
                 ))
                 .build();
 
-        mockMvc.perform(post("/events")
+        MvcResult createdRes = mockMvc.perform(post("/events")
                         .cookie(new Cookie("XSRF-TOKEN", CSRF))
                         .header("X-XSRF-TOKEN", CSRF)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(createBaptismReq)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.assignedTypeCodes", containsInAnyOrder("BAPTISM", "BAPTISM_CEREMONY")))
-                .andExpect(jsonPath("$.dateText").value("15.06.1952, godz. 09:15"))
+                .andExpect(jsonPath("$.dateText").value("od 11.07.1960, godz. 09:15:30 do 11.07.1960, godz. 11:00:00"))
+                .andExpect(jsonPath("$.parentEvents", hasSize(1)))
+                .andExpect(jsonPath("$.parentEvents[0].eventId").value(vacationEvent.getId()))
+                .andExpect(jsonPath("$.parentEvents[0].primaryFolderParent").value(true))
                 .andExpect(jsonPath("$.participants", hasSize(3)))
-                .andExpect(jsonPath("$.participants[?(@.roleCode=='GODPARENT')].roleLabel").value(hasItem("Ojciec chrzestny")))
-                .andExpect(jsonPath("$.participants[?(@.roleCode=='WITNESS')].participantText").value(hasItem("Stanisława Wiśniewska (sąsiadka)")))
-                .andExpect(jsonPath("$.participants[?(@.roleCode=='WITNESS')].roleLabel").value(hasItem("Świadek")));
+                .andReturn();
+
+        Long subEventId = objectMapper.readTree(createdRes.getResponse().getContentAsString()).get("eventId").asLong();
+        Event createdSubEvent = eventRepository.findById(subEventId).orElseThrow();
+
+        // Verify that child event directory is nested inside first parent event's folder and includes all given names!
+        String resolvedSubDir = mediaService.resolveEventDirectoryPath(createdSubEvent, null);
+        assertThat(resolvedSubDir).isEqualTo(
+                "dated/1960s/1960/1960_07_10_vacation_jan_aleksander_kowalski/1960_07_11_chrzest_marka_marek_kowalski_jan_aleksander_kowalski_stanislawa_wisniewska_sasiadka"
+        );
+    }
+
+    @Test
+    @Transactional
+    @WithMockUser(username = "admin", roles = {"ADMIN"})
+    void shouldValidateChronologicalOrderAndRequireTitleWhenMoreThanThreeParticipants() throws Exception {
+        // 1. Reject end date earlier than start date
+        SaveEventRequestDto invalidDatesReq = SaveEventRequestDto.builder()
+                .typeCodes(List.of("TRIP"))
+                .title("Błędny wyjazd")
+                .startYear(1990)
+                .startMonth(5)
+                .startDay(20)
+                .hasEndDate(true)
+                .endYear(1990)
+                .endMonth(5)
+                .endDay(10)
+                .build();
+
+        mockMvc.perform(post("/events")
+                        .cookie(new Cookie("XSRF-TOKEN", CSRF))
+                        .header("X-XSRF-TOKEN", CSRF)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalidDatesReq)))
+                .andExpect(status().isBadRequest());
+
+        // 2. Allow overlapping BETWEEN ranges when startMin <= endMin and startMax <= endMax
+        SaveEventRequestDto overlappingBetweenReq = SaveEventRequestDto.builder()
+                .typeCodes(List.of("SUMMER_VACATION"))
+                .title("Wakacje nad morzem")
+                .isStartBetweenRange(true)
+                .startYear(1995)
+                .startMonth(7)
+                .startDay(10)
+                .startRangeEndYear(1995)
+                .startRangeEndMonth(7)
+                .startRangeEndDay(15)
+                .hasEndDate(true)
+                .isEndBetweenRange(true)
+                .endYear(1995)
+                .endMonth(7)
+                .endDay(12)
+                .endRangeEndYear(1995)
+                .endRangeEndMonth(7)
+                .endRangeEndDay(20)
+                .build();
+
+        mockMvc.perform(post("/events")
+                        .cookie(new Cookie("XSRF-TOKEN", CSRF))
+                        .header("X-XSRF-TOKEN", CSRF)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(overlappingBetweenReq)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.dateText").value("od między 10.07.1995 a 15.07.1995 do między 12.07.1995 a 20.07.1995"));
+
+        // 3. Reject >3 participants when title is blank
+        SaveEventRequestDto fourParticipantsNoTitle = SaveEventRequestDto.builder()
+                .typeCodes(List.of("FAMILY_GATHERING"))
+                .title("")
+                .startYear(2000)
+                .participants(List.of(
+                        new SaveEventParticipantRequestDto(null, "Osoba 1", PersonSex.MALE, "PARTICIPANT"),
+                        new SaveEventParticipantRequestDto(null, "Osoba 2", PersonSex.FEMALE, "PARTICIPANT"),
+                        new SaveEventParticipantRequestDto(null, "Osoba 3", PersonSex.MALE, "PARTICIPANT"),
+                        new SaveEventParticipantRequestDto(null, "Osoba 4", PersonSex.FEMALE, "PARTICIPANT")
+                ))
+                .build();
+
+        mockMvc.perform(post("/events")
+                        .cookie(new Cookie("XSRF-TOKEN", CSRF))
+                        .header("X-XSRF-TOKEN", CSRF)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(fourParticipantsNoTitle)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", containsString("więcej niż 3 osoby")));
     }
 
     @Test

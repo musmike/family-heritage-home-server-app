@@ -17,6 +17,9 @@ public interface EventRepository extends JpaRepository<Event, Long> {
             "LEFT JOIN FETCH e.mainLocation " +
             "LEFT JOIN FETCH e.parentEvent pe " +
             "LEFT JOIN FETCH pe.eventType " +
+            "LEFT JOIN FETCH e.parentLinks pl " +
+            "LEFT JOIN FETCH pl.parentEvent lpe " +
+            "LEFT JOIN FETCH lpe.eventType " +
             "LEFT JOIN FETCH e.participants ep " +
             "LEFT JOIN FETCH ep.person p " +
             "LEFT JOIN FETCH p.birthEvent be " +
@@ -36,6 +39,7 @@ public interface EventRepository extends JpaRepository<Event, Long> {
     @Query(value = "DELETE FROM events e WHERE e.parent_event_id IS NULL " +
             "AND NOT EXISTS (SELECT 1 FROM event_participants ep WHERE ep.event_id = e.id) " +
             "AND NOT EXISTS (SELECT 1 FROM families f WHERE f.primary_wedding_id = e.id) " +
-            "AND NOT EXISTS (SELECT 1 FROM events child WHERE child.parent_event_id = e.id)", nativeQuery = true)
+            "AND NOT EXISTS (SELECT 1 FROM events child WHERE child.parent_event_id = e.id) " +
+            "AND NOT EXISTS (SELECT 1 FROM event_parent_links epl WHERE epl.parent_event_id = e.id)", nativeQuery = true)
     void deleteOrphanEvents();
 }

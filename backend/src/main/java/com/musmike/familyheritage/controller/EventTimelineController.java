@@ -29,7 +29,7 @@ public class EventTimelineController {
             @RequestParam(name = "yearTo", required = false) Integer yearTo,
             @RequestParam(name = "includeUndated", defaultValue = "true") boolean includeUndated,
             @RequestParam(name = "includeArchived", defaultValue = "false") boolean includeArchived,
-            @RequestParam(name = "sortOrder", defaultValue = "ASC") String sortOrder,
+            @RequestParam(name = "sortOrder", defaultValue = "DESC") String sortOrder,
             @RequestParam(name = "page", defaultValue = "0") int page,
             @RequestParam(name = "size", defaultValue = "5000") int size
     ) {
@@ -86,9 +86,14 @@ public class EventTimelineController {
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<ErrorResponse> handleNotFound(IllegalArgumentException ex) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(new ErrorResponse("NOT_FOUND", ex.getMessage()));
+    public ResponseEntity<ErrorResponse> handleBadRequestOrNotFound(IllegalArgumentException ex) {
+        String msg = ex.getMessage() != null ? ex.getMessage() : "Invalid request";
+        if (msg.contains("not found") || msg.contains("Nie znaleziono")) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(new ErrorResponse("NOT_FOUND", msg));
+        }
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ErrorResponse("BAD_REQUEST", msg));
     }
 
     @ExceptionHandler(AccessDeniedException.class)

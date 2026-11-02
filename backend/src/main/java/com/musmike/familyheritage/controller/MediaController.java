@@ -76,14 +76,16 @@ public class MediaController {
             @RequestParam(name = "eventId", required = false) Long eventId,
             @RequestParam(name = "collectionId", required = false) Long collectionId,
             @RequestParam(name = "customYear", required = false) Integer customYear,
+            @RequestParam(name = "customFolderName", required = false) String customFolderName,
             @RequestParam(name = "customFileName", required = false) String customFileName,
             @RequestParam(name = "originalFilename", required = false) String originalFilename,
             @RequestParam(name = "mimeType", required = false) String mimeType
     ) {
         ensureAdmin();
         return ResponseEntity.ok(
-                mediaService.previewFilename(
-                        primaryContext, graveId, personId, eventId, collectionId, customYear, customFileName, originalFilename, mimeType
+                mediaService.previewFilenameWithFolder(
+                        primaryContext, graveId, personId, eventId, collectionId,
+                        customYear, customFolderName, customFileName, originalFilename, mimeType
                 )
         );
     }
@@ -92,6 +94,7 @@ public class MediaController {
     public ResponseEntity<MediaItemDto> uploadMedia(
             @RequestParam("file") MultipartFile file,
             @RequestParam("primaryContext") MediaPrimaryContext primaryContext,
+            @RequestParam(name = "customFolderName", required = false) String customFolderName,
             @RequestParam(name = "customFileName", required = false) String customFileName,
             @RequestParam(name = "title", required = false) String title,
             @RequestParam(name = "description", required = false) String description,
@@ -103,6 +106,8 @@ public class MediaController {
             @RequestParam(name = "customDay", required = false) Integer customDay,
             @RequestParam(name = "customHour", required = false) Integer customHour,
             @RequestParam(name = "customMinute", required = false) Integer customMinute,
+            @RequestParam(name = "customSecond", required = false) Integer customSecond,
+            @RequestParam(name = "clientLastModifiedMs", required = false) Long clientLastModifiedMs,
             @RequestParam(name = "personIds", required = false) String personIdsParam,
             @RequestParam(name = "setAsPersonAvatar", defaultValue = "false") boolean setAsPersonAvatar,
             @RequestParam(name = "setAsGravePrimary", defaultValue = "false") boolean setAsGravePrimary
@@ -110,9 +115,10 @@ public class MediaController {
         ensureAdmin();
         List<Long> personIds = parseIdsList(personIdsParam);
 
-        MediaItemDto created = mediaService.uploadMedia(
+        MediaItemDto created = mediaService.uploadMediaExtended(
                 file,
                 primaryContext,
+                customFolderName,
                 customFileName,
                 title,
                 description,
@@ -124,6 +130,8 @@ public class MediaController {
                 customDay,
                 customHour,
                 customMinute,
+                customSecond,
+                clientLastModifiedMs,
                 personIds,
                 setAsPersonAvatar,
                 setAsGravePrimary
@@ -135,9 +143,16 @@ public class MediaController {
     public ResponseEntity<List<MediaItemDto>> uploadBatchMedia(
             @RequestParam("files") List<MultipartFile> files,
             @RequestParam("primaryContext") MediaPrimaryContext primaryContext,
+            @RequestParam(name = "customFolderName", required = false) String customFolderName,
             @RequestParam(name = "customFileNames", required = false) List<String> customFileNames,
             @RequestParam(name = "titles", required = false) List<String> titles,
             @RequestParam(name = "customYears", required = false) List<Integer> customYears,
+            @RequestParam(name = "customMonths", required = false) List<Integer> customMonths,
+            @RequestParam(name = "customDays", required = false) List<Integer> customDays,
+            @RequestParam(name = "customHours", required = false) List<Integer> customHours,
+            @RequestParam(name = "customMinutes", required = false) List<Integer> customMinutes,
+            @RequestParam(name = "customSeconds", required = false) List<Integer> customSeconds,
+            @RequestParam(name = "clientLastModifiedList", required = false) List<Long> clientLastModifiedList,
             @RequestParam(name = "graveId", required = false) Long graveId,
             @RequestParam(name = "eventId", required = false) Long eventId,
             @RequestParam(name = "collectionId", required = false) Long collectionId,
@@ -147,12 +162,19 @@ public class MediaController {
         ensureAdmin();
         List<Long> personIds = parseIdsList(personIdsParam);
 
-        List<MediaItemDto> created = mediaService.uploadBatchMedia(
+        List<MediaItemDto> created = mediaService.uploadBatchMediaExtended(
                 files,
                 primaryContext,
+                customFolderName,
                 customFileNames,
                 titles,
                 customYears,
+                customMonths,
+                customDays,
+                customHours,
+                customMinutes,
+                customSeconds,
+                clientLastModifiedList,
                 graveId,
                 eventId,
                 collectionId,
@@ -169,6 +191,34 @@ public class MediaController {
     ) {
         ensureAdmin();
         return ResponseEntity.ok(mediaService.updateMedia(mediaId, request));
+    }
+
+    @PutMapping("/bulk-update")
+    public ResponseEntity<List<MediaItemDto>> bulkUpdateMedia(
+            @RequestBody BulkUpdateMediaRequestDto request
+    ) {
+        ensureAdmin();
+        return ResponseEntity.ok(mediaService.bulkUpdateMedia(request));
+    }
+
+    @PostMapping("/link-existing")
+    public ResponseEntity<List<MediaItemDto>> linkExistingMedia(
+            @RequestBody LinkExistingMediaRequestDto request
+    ) {
+        ensureAdmin();
+        return ResponseEntity.ok(mediaService.linkExistingMedia(request));
+    }
+
+    @DeleteMapping("/{mediaId}/unlink")
+    public ResponseEntity<Void> unlinkMediaFromContext(
+            @PathVariable Long mediaId,
+            @RequestParam(name = "graveId", required = false) Long graveId,
+            @RequestParam(name = "personId", required = false) Long personId,
+            @RequestParam(name = "eventId", required = false) Long eventId
+    ) {
+        ensureAdmin();
+        mediaService.unlinkMediaFromContext(mediaId, graveId, personId, eventId);
+        return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping("/{mediaId}")

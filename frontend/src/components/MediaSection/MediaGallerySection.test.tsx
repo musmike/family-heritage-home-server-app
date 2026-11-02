@@ -9,10 +9,14 @@ vi.mock('../../api/mediaApi', () => ({
     getMediaByPerson: vi.fn(),
     getMediaByGrave: vi.fn(),
     getMediaByEvent: vi.fn(),
+    getGalleryPage: vi.fn(),
     previewFilename: vi.fn(),
     uploadMedia: vi.fn(),
     uploadBatchMedia: vi.fn(),
     updateMedia: vi.fn(),
+    bulkUpdateMedia: vi.fn(),
+    linkExistingMedia: vi.fn(),
+    unlinkMediaFromContext: vi.fn(),
     deleteMedia: vi.fn(),
     getThumbnailUrl: (id: number) => `http://mock/media/${String(id)}/thumbnail`,
     getFileUrl: (id: number) => `http://mock/media/${String(id)}/file`,
@@ -33,14 +37,56 @@ describe('MediaGallerySection Component', () => {
         fileSize: 1024,
         title: 'Portret ślubny',
         description: null,
+        metadataDateText: '15.07.2018, godz. 14:23:08',
+        metadataDateSource: 'EXIF: DateTimeOriginal (Data wykonania zdjęcia)',
         createdAt: '2026-10-31T10:00:00',
+        personIds: [1],
+        graveIds: [],
+      },
+      {
+        id: 51,
+        mediaType: 'VIDEO',
+        primaryContext: 'PERSON',
+        relativePath: 'undated/collections/jan_kowalski/nagranie_01.mp4',
+        fileName: 'nagranie_01.mp4',
+        mimeType: 'video/mp4',
+        fileSize: 4096,
+        title: 'Wywiad rodzinny',
+        description: null,
+        createdAt: '2026-10-31T11:00:00',
         personIds: [1],
         graveIds: [],
       },
     ]);
   });
 
-  it('should render media tiles without raw filename on main tile, open fullscreen lightbox and show details drawer for admin', async () => {
+  it('should filter by image/video, open fullscreen lightbox, show metadata source tag, and allow linking existing gallery media', async () => {
+    vi.mocked(mediaApi).getGalleryPage.mockResolvedValue({
+      content: [
+        {
+          id: 99,
+          mediaType: 'IMAGE',
+          primaryContext: 'EVENT',
+          relativePath: 'dated/1990s/1995/wakacje_01.jpg',
+          fileName: 'wakacje_01.jpg',
+          mimeType: 'image/jpeg',
+          fileSize: 2048,
+          title: 'Wujek na wakacjach',
+          description: null,
+          createdAt: '2026-10-31T12:00:00',
+          personIds: [],
+          graveIds: [],
+        },
+      ],
+      page: 0,
+      size: 60,
+      totalElements: 1,
+      totalPages: 1,
+      totalImagesCount: 1,
+      totalVideosCount: 0,
+      collections: [],
+    });
+
     render(
       <MemoryRouter>
         <MediaGallerySection
@@ -56,22 +102,43 @@ describe('MediaGallerySection Component', () => {
     await waitFor(() => {
       expect(screen.getByTestId('media-tile-50')).toBeInTheDocument();
     });
+    expect(screen.getByTestId('media-tile-51')).toBeInTheDocument();
 
-    // Title is visible, but raw snake_case filename is hidden on the main tile
-    expect(screen.getByText('Portret ślubny')).toBeInTheDocument();
-    expect(screen.queryByText(/Nazwa pliku:/i)).not.toBeInTheDocument();
+    // Filter to Videos Only -> hides image 50, keeps video 51
+    fireEvent.click(screen.getByTestId('media-filter-video'));
+    expect(screen.queryByTestId('media-tile-50')).not.toBeInTheDocument();
+    expect(screen.getByTestId('media-tile-51')).toBeInTheDocument();
 
-    // Click tile -> opens Fullscreen Lightbox
+    // Reset filter to All
+    fireEvent.click(screen.getByTestId('media-filter-all'));
+    expect(screen.getByTestId('media-tile-50')).toBeInTheDocument();
+
+    // Click tile 50 -> opens Fullscreen Lightbox and shows metadata source tag in details drawer
     fireEvent.click(screen.getByTestId('media-tile-50'));
     expect(screen.getByTestId('media-lightbox-modal')).toBeInTheDocument();
 
-    // Open details drawer -> filename and admin path become visible
     fireEvent.click(screen.getByTestId('toggle-media-details-drawer'));
     expect(
       screen.getByText(/Nazwa pliku: jan_kowalski_portrait_01\.jpg/i)
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Ścieżka na dysku \(widoczna dla administratora\):/i)
+      screen.getByText(/EXIF: DateTimeOriginal \(Data wykonania zdjęcia\)/i)
     ).toBeInTheDocument();
+
+    // Close lightbox and open "Wybierz istniejące z galerii" modal
+    fireEvent.click(screen.getByTestId('media-lightbox-modal'));
+    fireEvent.click(screen.getByTestId('open-link-existing-media-button'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('existing-gallery-candidate-99')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId('existing-gallery-candidate-99'));
+    fireEvent.click(screen.getByTestId('confirm-link-existing-media-button'));
+
+    await waitFor(() => {
+      expect(mediaApi.linkExistingMedia).toHaveBeenCalledWith(
+        expect.objectContaining({ mediaIds: [99], personId: 1 })
+      );
+    });
   });
 });

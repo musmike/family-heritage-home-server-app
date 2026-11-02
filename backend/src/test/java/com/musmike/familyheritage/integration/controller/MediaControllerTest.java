@@ -1,14 +1,12 @@
 package com.musmike.familyheritage.integration.controller;
 
 import tools.jackson.databind.ObjectMapper;
-import com.musmike.familyheritage.dto.MediaItemDto;
-import com.musmike.familyheritage.dto.SaveCemeteryRequestDto;
-import com.musmike.familyheritage.dto.SaveGraveRequestDto;
-import com.musmike.familyheritage.dto.UpdateMediaItemRequestDto;
+import com.musmike.familyheritage.dto.*;
 import com.musmike.familyheritage.integration.AbstractIntegrationTest;
 import com.musmike.familyheritage.model.Person;
 import com.musmike.familyheritage.repository.PersonRepository;
 import com.musmike.familyheritage.service.BurialService;
+import com.musmike.familyheritage.service.EventTimelineService;
 import com.musmike.familyheritage.service.MediaStorageService;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
@@ -21,9 +19,12 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -36,6 +37,7 @@ class MediaControllerTest extends AbstractIntegrationTest {
     @Autowired private ObjectMapper objectMapper;
     @Autowired private PersonRepository personRepository;
     @Autowired private BurialService burialService;
+    @Autowired private EventTimelineService eventTimelineService;
     @Autowired private MediaStorageService storageService;
 
     @Test
@@ -123,44 +125,95 @@ class MediaControllerTest extends AbstractIntegrationTest {
     @Test
     @Transactional
     @WithMockUser(username = "admin", roles = {"ADMIN"})
-    void shouldSaveDatedEventMediaInDecadeYearFolderAndAggregateSubEventMediaInParentEvent() throws Exception {
-        // 1. Create parent event ("Wyjazd do Gdańska", 1975) and child event ("Pogrzeb ciotki", 1975)
-        String gedcom = """
-            0 HEAD
-            1 SOUR TEST
-            0 @I1@ INDI
-            1 NAME Jan /Kowalski/
-            1 SEX M
-            1 BIRT
-            2 DATE 10 MAY 1975
-            1 DEAT
-            2 DATE 12 MAY 1975
-            0 TRLR
-            """;
-        var extractor = new com.musmike.familyheritage.service.GedcomFileExtractor();
-        var parsed = extractor.extract(new java.io.ByteArrayInputStream(gedcom.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-        Person jan = personRepository.findAll().stream().findFirst().orElseGet(() -> {
-            Person p = new Person();
-            p.setCachedGivenName("Jan");
-            p.setCachedSurname("Kowalski");
-            return personRepository.saveAndFlush(p);
-        });
+    void shouldExtractExifDateAutoMoveEventFolderOnDateChangeBulkUpdateAndLinkExistingMedia() throws Exception {
+        Person jan = new Person();
+        jan.setCachedGivenName("Jan Aleksander");
+        jan.setCachedSurname("Kowalski");
+        jan = personRepository.saveAndFlush(jan);
 
-        // Link two events in 1975 via EventTimelineController
-        MockMultipartFile tripPhoto = new MockMultipartFile(
-                "file", "trip.jpg", "image/jpeg", new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF}
-        );
+        TimelineEventDto evt = eventTimelineService.createEvent(SaveEventRequestDto.builder()
+                .typeCodes(List.of("SUMMER_VACATION"))
+                .title("Wakacje nad morzem")
+                .startYear(1995)
+                .startMonth(7)
+                .startDay(10)
+                .participants(List.of(new SaveEventParticipantRequestDto(jan.getId(), null, null, "PRINCIPAL")))
+                .build());
 
-        mockMvc.perform(multipart("/media/upload")
-                        .file(tripPhoto)
-                        .param("primaryContext", "OTHER")
-                        .param("customYear", "1975")
-                        .param("customFileName", "trip_to_gdansk")
+        // Upload photo with embedded EXIF timestamp header ("1995:07:12 14:25:38")
+        byte[] fakeExifJpeg = ("\u00FF\u00D8\u00FF\u00E1Exif1995:07:12 14:25:38").getBytes(StandardCharsets.ISO_8859_1);
+        MockMultipartFile photo = new MockMultipartFile("file", "sea.jpg", "image/jpeg", fakeExifJpeg);
+
+        MvcResult uploadRes = mockMvc.perform(multipart("/media/upload")
+                        .file(photo)
+                        .param("primaryContext", "EVENT")
+                        .param("eventId", String.valueOf(evt.getEventId()))
+                        .param("customYear", "1995")
                         .param("personIds", String.valueOf(jan.getId()))
                         .cookie(new Cookie("XSRF-TOKEN", CSRF))
                         .header("X-XSRF-TOKEN", CSRF))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.relativePath").value("dated/1970s/1975/misc_1975/trip_to_gdansk_01.jpg"));
+                .andExpect(jsonPath("$.relativePath").value(
+                        "dated/1990s/1995/1995_07_10_wakacje_nad_morzem_jan_aleksander_kowalski/1995_07_10_wakacje_nad_morzem_jan_aleksander_kowalski_01.jpg"
+                ))
+                .andExpect(jsonPath("$.metadataYear").value(1995))
+                .andExpect(jsonPath("$.metadataMonth").value(7))
+                .andExpect(jsonPath("$.metadataDay").value(12))
+                .andExpect(jsonPath("$.metadataHour").value(14))
+                .andExpect(jsonPath("$.metadataMinute").value(25))
+                .andExpect(jsonPath("$.metadataSecond").value(38))
+                .andExpect(jsonPath("$.metadataDateSource", containsString("EXIF")))
+                .andReturn();
+
+        Long mediaId = objectMapper.readTree(uploadRes.getResponse().getContentAsString()).get("id").asLong();
+
+        // Switch media item's effective date to METADATA via bulkUpdateMedia
+        BulkUpdateMediaRequestDto bulkReq = BulkUpdateMediaRequestDto.builder()
+                .mediaIds(List.of(mediaId))
+                .dateSourceMode("METADATA")
+                .build();
+
+        mockMvc.perform(put("/media/bulk-update")
+                        .cookie(new Cookie("XSRF-TOKEN", CSRF))
+                        .header("X-XSRF-TOKEN", CSRF)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(bulkReq)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].dateText").value("12.07.1995, godz. 14:25:38"));
+
+        // Update Event date from 10.07.1995 to 20.08.1996 -> folder and filename automatically update!
+        eventTimelineService.updateEvent(evt.getEventId(), SaveEventRequestDto.builder()
+                .typeCodes(List.of("SUMMER_VACATION"))
+                .title("Wakacje nad morzem")
+                .startYear(1996)
+                .startMonth(8)
+                .startDay(20)
+                .participants(List.of(new SaveEventParticipantRequestDto(jan.getId(), null, null, "PRINCIPAL")))
+                .build());
+
+        mockMvc.perform(get("/media/by-event/{id}", evt.getEventId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.directMedia[0].relativePath").value(
+                        "dated/1990s/1996/1996_08_20_wakacje_nad_morzem_jan_aleksander_kowalski/1996_08_20_wakacje_nad_morzem_jan_aleksander_kowalski_01.jpg"
+                ));
+
+        // Link this existing vacation photo to a Grave as well!
+        var grave = burialService.createGrave(SaveGraveRequestDto.builder()
+                .initialPersonId(jan.getId())
+                .build(), true);
+
+        LinkExistingMediaRequestDto linkReq = LinkExistingMediaRequestDto.builder()
+                .mediaIds(List.of(mediaId))
+                .graveId(grave.getGraveId())
+                .build();
+
+        mockMvc.perform(post("/media/link-existing")
+                        .cookie(new Cookie("XSRF-TOKEN", CSRF))
+                        .header("X-XSRF-TOKEN", CSRF)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(linkReq)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].graveIds", hasItem(grave.getGraveId().intValue())));
     }
 
     @Test
@@ -177,8 +230,7 @@ class MediaControllerTest extends AbstractIntegrationTest {
         anna.setCachedSurname("Kowalska");
         anna = personRepository.saveAndFlush(anna);
 
-        // 1. Create family collection ("Zbiór po babci Katarzynie")
-        var colReq = com.musmike.familyheritage.dto.SaveMediaCollectionRequestDto.builder()
+        var colReq = SaveMediaCollectionRequestDto.builder()
                 .name("Zbiór po babci Katarzynie")
                 .founderPersonId(anna.getId())
                 .build();
@@ -194,7 +246,6 @@ class MediaControllerTest extends AbstractIntegrationTest {
 
         Long colId = objectMapper.readTree(colRes.getResponse().getContentAsString()).get("id").asLong();
 
-        // 2. Upload photo to that collection with BOTH Jan and Anna tagged
         MockMultipartFile sharedPhoto = new MockMultipartFile(
                 "file", "shared.jpg", "image/jpeg", new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF}
         );
@@ -209,7 +260,6 @@ class MediaControllerTest extends AbstractIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.relativePath").value("undated/collections/zbior_po_babci_katarzynie/zbior_po_babci_katarzynie_01.jpg"));
 
-        // 3. Query /media/gallery filtering by BOTH Jan and Anna (matchAllPersons = true)
         mockMvc.perform(get("/media/gallery")
                         .param("personIds", jan.getId() + "," + anna.getId())
                         .param("matchAllPersons", "true"))
@@ -231,7 +281,6 @@ class MediaControllerTest extends AbstractIntegrationTest {
                 "file", "living_portrait.mp4", "video/mp4", new byte[]{0x00, 0x01, 0x02}
         );
 
-        // Even if customFileName already ends with "_01.mp4", it must NOT become "_01_01.mp4"
         MvcResult uploadRes = mockMvc.perform(multipart("/media/upload")
                         .file(videoFile)
                         .param("primaryContext", "PERSON")
@@ -250,7 +299,6 @@ class MediaControllerTest extends AbstractIntegrationTest {
                 uploadRes.getResponse().getContentAsString(), MediaItemDto.class
         );
 
-        // Update avatar crop coordinates (e.g. X=30, Y=20, Zoom=1.8)
         UpdateMediaItemRequestDto cropReq = UpdateMediaItemRequestDto.builder()
                 .setAsAvatarForPersonId(jan.getId())
                 .avatarCropX(30)

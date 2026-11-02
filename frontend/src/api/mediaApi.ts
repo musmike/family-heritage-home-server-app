@@ -1,6 +1,8 @@
 import api from './axiosInstance';
 import type {
+  BulkUpdateMediaRequestDto,
   EventMediaOverviewDto,
+  LinkExistingMediaRequestDto,
   MediaCollectionDto,
   MediaFilenamePreviewDto,
   MediaGalleryPageDto,
@@ -93,6 +95,7 @@ export const mediaApi = {
     eventId?: number;
     collectionId?: number;
     customYear?: number;
+    customFolderName?: string;
     customFileName?: string;
     originalFilename?: string;
     mimeType?: string;
@@ -106,6 +109,7 @@ export const mediaApi = {
   uploadMedia: async (params: {
     file: File;
     primaryContext: MediaPrimaryContext;
+    customFolderName?: string;
     customFileName?: string;
     title?: string;
     description?: string;
@@ -117,6 +121,8 @@ export const mediaApi = {
     customDay?: number;
     customHour?: number;
     customMinute?: number;
+    customSecond?: number;
+    clientLastModifiedMs?: number;
     personIds?: number[];
     setAsPersonAvatar?: boolean;
     setAsGravePrimary?: boolean;
@@ -124,6 +130,9 @@ export const mediaApi = {
     const formData = new FormData();
     formData.append('file', params.file);
     formData.append('primaryContext', params.primaryContext);
+    if (params.customFolderName && params.customFolderName.trim() !== '') {
+      formData.append('customFolderName', params.customFolderName.trim());
+    }
     if (params.customFileName && params.customFileName.trim() !== '') {
       formData.append('customFileName', params.customFileName.trim());
     }
@@ -157,6 +166,12 @@ export const mediaApi = {
     if (params.customMinute !== undefined) {
       formData.append('customMinute', String(params.customMinute));
     }
+    if (params.customSecond !== undefined) {
+      formData.append('customSecond', String(params.customSecond));
+    }
+    if (params.clientLastModifiedMs !== undefined) {
+      formData.append('clientLastModifiedMs', String(params.clientLastModifiedMs));
+    }
     if (params.personIds && params.personIds.length > 0) {
       formData.append('personIds', params.personIds.join(','));
     }
@@ -176,9 +191,16 @@ export const mediaApi = {
   uploadBatchMedia: async (params: {
     files: File[];
     primaryContext: MediaPrimaryContext;
+    customFolderName?: string;
     customFileNames: string[];
     titles: string[];
     customYears: (number | null)[];
+    customMonths?: (number | null)[];
+    customDays?: (number | null)[];
+    customHours?: (number | null)[];
+    customMinutes?: (number | null)[];
+    customSeconds?: (number | null)[];
+    clientLastModifiedList?: (number | null)[];
     graveId?: number;
     eventId?: number;
     collectionId?: number;
@@ -190,6 +212,9 @@ export const mediaApi = {
       formData.append('files', file);
     }
     formData.append('primaryContext', params.primaryContext);
+    if (params.customFolderName && params.customFolderName.trim() !== '') {
+      formData.append('customFolderName', params.customFolderName.trim());
+    }
     for (const name of params.customFileNames) {
       formData.append('customFileNames', name);
     }
@@ -198,6 +223,36 @@ export const mediaApi = {
     }
     for (const y of params.customYears) {
       formData.append('customYears', y !== null ? String(y) : '');
+    }
+    if (params.customMonths) {
+      for (const m of params.customMonths) {
+        formData.append('customMonths', m !== null ? String(m) : '');
+      }
+    }
+    if (params.customDays) {
+      for (const d of params.customDays) {
+        formData.append('customDays', d !== null ? String(d) : '');
+      }
+    }
+    if (params.customHours) {
+      for (const h of params.customHours) {
+        formData.append('customHours', h !== null ? String(h) : '');
+      }
+    }
+    if (params.customMinutes) {
+      for (const min of params.customMinutes) {
+        formData.append('customMinutes', min !== null ? String(min) : '');
+      }
+    }
+    if (params.customSeconds) {
+      for (const sec of params.customSeconds) {
+        formData.append('customSeconds', sec !== null ? String(sec) : '');
+      }
+    }
+    if (params.clientLastModifiedList) {
+      for (const lm of params.clientLastModifiedList) {
+        formData.append('clientLastModifiedList', lm !== null ? String(lm) : '');
+      }
     }
     if (params.graveId !== undefined) {
       formData.append('graveId', String(params.graveId));
@@ -230,6 +285,27 @@ export const mediaApi = {
       payload
     );
     return response.data;
+  },
+
+  bulkUpdateMedia: async (
+    payload: BulkUpdateMediaRequestDto
+  ): Promise<MediaItemDto[]> => {
+    const response = await api.put<MediaItemDto[]>('/media/bulk-update', payload);
+    return response.data;
+  },
+
+  linkExistingMedia: async (
+    payload: LinkExistingMediaRequestDto
+  ): Promise<MediaItemDto[]> => {
+    const response = await api.post<MediaItemDto[]>('/media/link-existing', payload);
+    return response.data;
+  },
+
+  unlinkMediaFromContext: async (
+    mediaId: number,
+    params: { graveId?: number; personId?: number; eventId?: number }
+  ): Promise<void> => {
+    await api.delete(`/media/${String(mediaId)}/unlink`, { params });
   },
 
   deleteMedia: async (mediaId: number): Promise<void> => {

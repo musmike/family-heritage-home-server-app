@@ -1,12 +1,18 @@
 import { useState, useEffect, useMemo, use } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import axios from 'axios';
 import { eventTimelineApi } from '../../api/eventTimelineApi';
 import { biographyApi } from '../../api/biographyApi';
 import { AuthContext } from '../../context/AuthContext';
 import Loader from '../../components/Loader/Loader';
 import PersonAvatar from '../../components/PersonAvatar/PersonAvatar';
 import MediaGallerySection from '../../components/MediaSection/MediaGallerySection';
-import { QUALIFIER_OPTIONS, ROLE_LABELS } from './EventsPage';
+import WikiEventDescriptionSection from '../../components/WikiEventDescription/WikiEventDescriptionSection';
+import {
+  formatParticipantsSummary,
+  QUALIFIER_OPTIONS,
+  ROLE_LABELS,
+} from './EventsPage';
 import styles from './EventsPage.module.css';
 import type {
   EventTypeOptionDto,
@@ -27,6 +33,16 @@ const formatPolishAge = (age: number | null, approximate: boolean): string | nul
   return `${prefix}${String(age)} lat`;
 };
 
+const parseOptInt = (val: string): number | null => {
+  const trimmed = val.trim();
+  if (trimmed === '') return null;
+  const num = Number(trimmed);
+  return Number.isNaN(num) ? null : num;
+};
+
+const numToStr = (val: number | null | undefined): string =>
+  val !== undefined && val !== null ? String(val) : '';
+
 export default function EventDetailsPage() {
   const { eventId } = useParams<{ eventId: string }>();
   const navigate = useNavigate();
@@ -42,12 +58,19 @@ export default function EventDetailsPage() {
   // Admin Full Edit State
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [typeCodes, setTypeCodes] = useState<string[]>([]);
+  const [typeSearch, setTypeSearch] = useState<string>('');
   const [titleInput, setTitleInput] = useState<string>('');
   const [descInput, setDescInput] = useState<string>('');
   const [locInput, setLocInput] = useState<string>('');
-  const [parentEventIdInput, setParentEventIdInput] = useState<string>('');
+  const [folderSlugInput, setFolderSlugInput] = useState<string>('');
+
+  // Multi-Parent Events State
+  const [parentEventIds, setParentEventIds] = useState<number[]>([]);
+  const [parentSearchQuery, setParentSearchQuery] = useState<string>('');
   const [candidateParentEvents, setCandidateParentEvents] = useState<TimelineEventDto[]>([]);
 
+  // Start Date & Time State
+  const [isStartBetween, setIsStartBetween] = useState<boolean>(false);
   const [startQual, setStartQual] = useState<string>('EXACT');
   const [startYear, setStartYear] = useState<string>('');
   const [startMonth, setStartMonth] = useState<string>('');
@@ -55,7 +78,39 @@ export default function EventDetailsPage() {
   const [startTimeQual, setStartTimeQual] = useState<string>('EXACT');
   const [startHour, setStartHour] = useState<string>('');
   const [startMinute, setStartMinute] = useState<string>('');
+  const [startSecond, setStartSecond] = useState<string>('');
 
+  const [startRangeEndQual, setStartRangeEndQual] = useState<string>('EXACT');
+  const [startRangeEndYear, setStartRangeEndYear] = useState<string>('');
+  const [startRangeEndMonth, setStartRangeEndMonth] = useState<string>('');
+  const [startRangeEndDay, setStartRangeEndDay] = useState<string>('');
+  const [startRangeEndTimeQual, setStartRangeEndTimeQual] = useState<string>('EXACT');
+  const [startRangeEndHour, setStartRangeEndHour] = useState<string>('');
+  const [startRangeEndMinute, setStartRangeEndMinute] = useState<string>('');
+  const [startRangeEndSecond, setStartRangeEndSecond] = useState<string>('');
+
+  // End Date & Time State
+  const [hasEndDate, setHasEndDate] = useState<boolean>(false);
+  const [isEndBetween, setIsEndBetween] = useState<boolean>(false);
+  const [endQual, setEndQual] = useState<string>('EXACT');
+  const [endYear, setEndYear] = useState<string>('');
+  const [endMonth, setEndMonth] = useState<string>('');
+  const [endDay, setEndDay] = useState<string>('');
+  const [endTimeQual, setEndTimeQual] = useState<string>('EXACT');
+  const [endHour, setEndHour] = useState<string>('');
+  const [endMinute, setEndMinute] = useState<string>('');
+  const [endSecond, setEndSecond] = useState<string>('');
+
+  const [endRangeEndQual, setEndRangeEndQual] = useState<string>('EXACT');
+  const [endRangeEndYear, setEndRangeEndYear] = useState<string>('');
+  const [endRangeEndMonth, setEndRangeEndMonth] = useState<string>('');
+  const [endRangeEndDay, setEndRangeEndDay] = useState<string>('');
+  const [endRangeEndTimeQual, setEndRangeEndTimeQual] = useState<string>('EXACT');
+  const [endRangeEndHour, setEndRangeEndHour] = useState<string>('');
+  const [endRangeEndMinute, setEndRangeEndMinute] = useState<string>('');
+  const [endRangeEndSecond, setEndRangeEndSecond] = useState<string>('');
+
+  // Participants State
   const [editParticipants, setEditParticipants] = useState<
     (SaveEventParticipantRequestDto & { displayLabel: string })[]
   >([]);
@@ -74,26 +129,54 @@ export default function EventDetailsPage() {
     setTitleInput(result.title ?? '');
     setDescInput(result.description ?? '');
     setLocInput(result.locationName ?? '');
-    setParentEventIdInput(
-      result.parentEventId !== undefined && result.parentEventId !== null
-        ? String(result.parentEventId)
-        : ''
-    );
+    setFolderSlugInput(result.folderSlug ?? '');
+
+    if (result.parentEvents && result.parentEvents.length > 0) {
+      setParentEventIds(result.parentEvents.map(p => p.eventId));
+    } else if (result.parentEventId !== undefined && result.parentEventId !== null) {
+      setParentEventIds([result.parentEventId]);
+    } else {
+      setParentEventIds([]);
+    }
+
+    setIsStartBetween(result.startDateType === 'RANGE');
     setStartQual(result.startQualifier ?? 'EXACT');
-    setStartYear(result.startYear ? String(result.startYear) : '');
-    setStartMonth(result.startMonth ? String(result.startMonth) : '');
-    setStartDay(result.startDay ? String(result.startDay) : '');
+    setStartYear(numToStr(result.startYear));
+    setStartMonth(numToStr(result.startMonth));
+    setStartDay(numToStr(result.startDay));
     setStartTimeQual(result.startTimeQualifier ?? 'EXACT');
-    setStartHour(
-      result.startHour !== undefined && result.startHour !== null
-        ? String(result.startHour)
-        : ''
-    );
-    setStartMinute(
-      result.startMinute !== undefined && result.startMinute !== null
-        ? String(result.startMinute)
-        : ''
-    );
+    setStartHour(numToStr(result.startHour));
+    setStartMinute(numToStr(result.startMinute));
+    setStartSecond(numToStr(result.startSecond));
+
+    setStartRangeEndQual(result.startRangeEndQualifier ?? 'EXACT');
+    setStartRangeEndYear(numToStr(result.startRangeEndYear));
+    setStartRangeEndMonth(numToStr(result.startRangeEndMonth));
+    setStartRangeEndDay(numToStr(result.startRangeEndDay));
+    setStartRangeEndTimeQual(result.startRangeEndTimeQualifier ?? 'EXACT');
+    setStartRangeEndHour(numToStr(result.startRangeEndHour));
+    setStartRangeEndMinute(numToStr(result.startRangeEndMinute));
+    setStartRangeEndSecond(numToStr(result.startRangeEndSecond));
+
+    setHasEndDate(result.hasEndDate === true);
+    setIsEndBetween(result.endDateType === 'RANGE');
+    setEndQual(result.endQualifier ?? 'EXACT');
+    setEndYear(numToStr(result.endYear));
+    setEndMonth(numToStr(result.endMonth));
+    setEndDay(numToStr(result.endDay));
+    setEndTimeQual(result.endTimeQualifier ?? 'EXACT');
+    setEndHour(numToStr(result.endHour));
+    setEndMinute(numToStr(result.endMinute));
+    setEndSecond(numToStr(result.endSecond));
+
+    setEndRangeEndQual(result.endRangeEndQualifier ?? 'EXACT');
+    setEndRangeEndYear(numToStr(result.endRangeEndYear));
+    setEndRangeEndMonth(numToStr(result.endRangeEndMonth));
+    setEndRangeEndDay(numToStr(result.endRangeEndDay));
+    setEndRangeEndTimeQual(result.endRangeEndTimeQualifier ?? 'EXACT');
+    setEndRangeEndHour(numToStr(result.endRangeEndHour));
+    setEndRangeEndMinute(numToStr(result.endRangeEndMinute));
+    setEndRangeEndSecond(numToStr(result.endRangeEndSecond));
 
     setEditParticipants(
       result.participants.map(p => {
@@ -143,13 +226,27 @@ export default function EventDetailsPage() {
     return Array.from(set);
   }, [typeCodes, availableTypes]);
 
+  const filteredParentCandidates = useMemo<TimelineEventDto[]>(() => {
+    const q = parentSearchQuery.trim().toLowerCase();
+    return candidateParentEvents
+      .filter(ev => !parentEventIds.includes(ev.eventId))
+      .filter(ev => {
+        if (!q) return true;
+        const typesStr = (ev.assignedTypeLabels ?? [ev.typeLabel]).join(' ');
+        const partsStr = formatParticipantsSummary(ev);
+        const combined = `${ev.title ?? ''} ${typesStr} ${ev.dateText ?? ''} ${ev.locationName ?? ''} ${partsStr}`.toLowerCase();
+        return combined.includes(q);
+      })
+      .slice(0, 12);
+  }, [candidateParentEvents, parentEventIds, parentSearchQuery]);
+
   const handleOpenEdit = async () => {
     setIsEditing(prev => !prev);
     if (!isEditing && availableTypes.length === 0) {
       try {
         const [typesRes, timeline] = await Promise.all([
           eventTimelineApi.getAvailableTypes(),
-          eventTimelineApi.getEventsTimeline({ includeUndated: true, size: 500 }),
+          eventTimelineApi.getEventsTimeline({ includeUndated: true, size: 1000 }),
         ]);
         setAvailableTypes(typesRes);
         const flat: TimelineEventDto[] = [];
@@ -159,7 +256,19 @@ export default function EventDetailsPage() {
               if (String(ev.eventId) !== eventId) {
                 flat.push(ev);
               }
+              if (ev.subEvents) {
+                for (const sub of ev.subEvents) {
+                  if (String(sub.eventId) !== eventId) {
+                    flat.push(sub);
+                  }
+                }
+              }
             }
+          }
+        }
+        for (const u of timeline.undatedEvents) {
+          if (String(u.eventId) !== eventId) {
+            flat.push(u);
           }
         }
         setCandidateParentEvents(flat);
@@ -170,11 +279,20 @@ export default function EventDetailsPage() {
   };
 
   const toggleFormTypeCode = (code: string) => {
-    setTypeCodes(prev => {
-      if (prev.includes(code)) {
-        return prev.length > 1 ? prev.filter(c => c !== code) : prev;
-      }
-      return [...prev, code];
+    setTypeCodes(prev =>
+      prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]
+    );
+  };
+
+  const handleMoveParentOrder = (index: number, direction: -1 | 1) => {
+    setParentEventIds(prev => {
+      const targetIndex = index + direction;
+      if (targetIndex < 0 || targetIndex >= prev.length) return prev;
+      const copy = [...prev];
+      const temp = copy[index];
+      copy[index] = copy[targetIndex];
+      copy[targetIndex] = temp;
+      return copy;
     });
   };
 
@@ -195,20 +313,68 @@ export default function EventDetailsPage() {
   const handleSaveFullEvent = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!eventData) return;
+    setErrorMessage(null);
+
+    if (typeCodes.length === 0) {
+      setErrorMessage('Wybierz przynajmniej jeden typ wydarzenia.');
+      return;
+    }
+
+    if (editParticipants.length > 3 && titleInput.trim() === '') {
+      setErrorMessage(
+        'Gdy w wydarzeniu uczestniczą więcej niż 3 osoby, podanie własnego tytułu wydarzenia jest wymagane.'
+      );
+      return;
+    }
+
     try {
       const updated = await eventTimelineApi.updateEvent(eventData.eventId, {
         typeCodes,
         title: titleInput.trim() || null,
         description: descInput.trim() || null,
+        folderSlug: folderSlugInput.trim() || null,
         locationName: locInput.trim() || null,
-        parentEventId: parentEventIdInput.trim() !== '' ? Number(parentEventIdInput) : null,
+        parentEventIds,
+
+        isStartBetweenRange: isStartBetween,
         startQualifier: startQual,
-        startYear: startYear !== '' ? Number(startYear) : null,
-        startMonth: startMonth !== '' ? Number(startMonth) : null,
-        startDay: startDay !== '' ? Number(startDay) : null,
+        startYear: parseOptInt(startYear),
+        startMonth: parseOptInt(startMonth),
+        startDay: parseOptInt(startDay),
         startTimeQualifier: startTimeQual,
-        startHour: startHour !== '' ? Number(startHour) : null,
-        startMinute: startMinute !== '' ? Number(startMinute) : null,
+        startHour: parseOptInt(startHour),
+        startMinute: parseOptInt(startMinute),
+        startSecond: parseOptInt(startSecond),
+
+        startRangeEndQualifier: startRangeEndQual,
+        startRangeEndYear: parseOptInt(startRangeEndYear),
+        startRangeEndMonth: parseOptInt(startRangeEndMonth),
+        startRangeEndDay: parseOptInt(startRangeEndDay),
+        startRangeEndTimeQualifier: startRangeEndTimeQual,
+        startRangeEndHour: parseOptInt(startRangeEndHour),
+        startRangeEndMinute: parseOptInt(startRangeEndMinute),
+        startRangeEndSecond: parseOptInt(startRangeEndSecond),
+
+        hasEndDate,
+        isEndBetweenRange: isEndBetween,
+        endQualifier: endQual,
+        endYear: parseOptInt(endYear),
+        endMonth: parseOptInt(endMonth),
+        endDay: parseOptInt(endDay),
+        endTimeQualifier: endTimeQual,
+        endHour: parseOptInt(endHour),
+        endMinute: parseOptInt(endMinute),
+        endSecond: parseOptInt(endSecond),
+
+        endRangeEndQualifier: endRangeEndQual,
+        endRangeEndYear: parseOptInt(endRangeEndYear),
+        endRangeEndMonth: parseOptInt(endRangeEndMonth),
+        endRangeEndDay: parseOptInt(endRangeEndDay),
+        endRangeEndTimeQualifier: endRangeEndTimeQual,
+        endRangeEndHour: parseOptInt(endRangeEndHour),
+        endRangeEndMinute: parseOptInt(endRangeEndMinute),
+        endRangeEndSecond: parseOptInt(endRangeEndSecond),
+
         participants: editParticipants.map(ep => ({
           personId: ep.personId,
           participantText: ep.participantText,
@@ -219,8 +385,12 @@ export default function EventDetailsPage() {
       setEventData(updated);
       syncEditForm(updated);
       setIsEditing(false);
-    } catch {
-      setErrorMessage('Nie udało się zapisać zmian w wydarzeniu.');
+    } catch (err: unknown) {
+      if (axios.isAxiosError<{ message?: string }>(err) && err.response?.data.message) {
+        setErrorMessage(err.response.data.message);
+      } else {
+        setErrorMessage('Nie udało się zapisać zmian w wydarzeniu. Sprawdź poprawność wprowadzonych dat.');
+      }
     }
   };
 
@@ -242,7 +412,7 @@ export default function EventDetailsPage() {
     );
   }
 
-  if (errorMessage || !eventData) {
+  if (!eventData) {
     return (
       <div className={styles.pageWrapper}>
         <div role="alert" className={styles.AlertError}>
@@ -265,6 +435,24 @@ export default function EventDetailsPage() {
     eventData.assignedTypeLabels && eventData.assignedTypeLabels.length > 0
       ? eventData.assignedTypeLabels.join(' • ')
       : eventData.typeLabel;
+
+  const filteredFormTypes = availableTypes.filter(t =>
+    t.label.toLowerCase().includes(typeSearch.trim().toLowerCase())
+  );
+
+  const resolvedParentEvents =
+    eventData.parentEvents && eventData.parentEvents.length > 0
+      ? eventData.parentEvents
+      : eventData.parentEventId
+        ? [
+            {
+              eventId: eventData.parentEventId,
+              label: eventData.parentEventLabel ?? 'Wydarzenie nadrzędne',
+              typeLabel: '',
+              primaryFolderParent: true,
+            },
+          ]
+        : [];
 
   return (
     <div className={styles.pageWrapper}>
@@ -307,58 +495,115 @@ export default function EventDetailsPage() {
         </div>
       </div>
 
+      {errorMessage && (
+        <div role="alert" className={styles.AlertError}>
+          {errorMessage}
+        </div>
+      )}
+
       {/* Admin Full Edit Form */}
       {isAdmin && isEditing && (
         <section className={styles.detailsCard} data-testid="edit-event-details-form">
           <h2 className={styles.sectionSubtitle}>
-            Edycja typów, daty, godziny, uczestników oraz wydarzenia nadrzędnego
+            Edycja typów, zakresów dat i czasu, folderu, uczestników oraz wydarzeń nadrzędnych
           </h2>
           <form
             onSubmit={e => {
               void handleSaveFullEvent(e);
             }}
-            style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
+            style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}
           >
+            {/* 1. Modern Multi-Type Pill Selector */}
             {availableTypes.length > 0 && (
-              <div className={styles.formField}>
-                <span className={styles.filterLabel}>Przypisane typy wydarzenia:</span>
-                <div
-                  style={{
-                    maxHeight: '140px',
-                    overflowY: 'auto',
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))',
-                    gap: '0.35rem',
-                    padding: '0.6rem',
-                    backgroundColor: '#f8fafc',
-                    border: '1px solid #cbd5e1',
-                    borderRadius: '8px',
+              <div className={styles.selectorPanel}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <span className={styles.filterLabel}>
+                    Przypisane typy wydarzenia (wybrano: {String(typeCodes.length)}) *
+                  </span>
+                  {typeCodes.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTypeCodes([]);
+                      }}
+                      className={styles.popoverActionBtn}
+                    >
+                      Wyczyść wszystkie typy
+                    </button>
+                  )}
+                </div>
+
+                <div className={styles.selectedPillsRow}>
+                  {typeCodes.length === 0 ? (
+                    <span style={{ fontSize: '0.82rem', color: '#dc2626', fontWeight: 600 }}>
+                      Brak wybranego typu – kliknij przynajmniej jeden typ poniżej.
+                    </span>
+                  ) : (
+                    typeCodes.map(code => {
+                      const label = availableTypes.find(t => t.code === code)?.label ?? code;
+                      return (
+                        <span key={code} className={styles.selectedTypePill}>
+                          <span>{label}</span>
+                          <button
+                            type="button"
+                            aria-label={`Usuń typ ${label}`}
+                            onClick={() => {
+                              toggleFormTypeCode(code);
+                            }}
+                            className={styles.pillRemoveBtn}
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      );
+                    })
+                  )}
+                </div>
+
+                <input
+                  type="text"
+                  placeholder="Filtruj dostępne typy wydarzenia..."
+                  value={typeSearch}
+                  onChange={e => {
+                    setTypeSearch(e.target.value);
                   }}
-                >
-                  {availableTypes.map(opt => (
-                    <label key={opt.code} className={styles.typeCheckboxItem}>
-                      <input
-                        type="checkbox"
-                        checked={typeCodes.includes(opt.code)}
-                        onChange={() => {
+                  className={styles.textInput}
+                />
+
+                <div className={styles.availableTypePillsGrid}>
+                  {filteredFormTypes.map(opt => {
+                    const isSelected = typeCodes.includes(opt.code);
+                    return (
+                      <button
+                        key={opt.code}
+                        type="button"
+                        onClick={() => {
                           toggleFormTypeCode(opt.code);
                         }}
-                      />
-                      <span>{opt.label}</span>
-                    </label>
-                  ))}
+                        className={`${styles.typeChoiceChip} ${
+                          isSelected ? styles.typeChoiceChipSelected : ''
+                        }`}
+                      >
+                        <span>{isSelected ? '✓' : '+'}</span>
+                        <span>{opt.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
 
+            {/* 2. Title, Location & Custom Folder Slug */}
             <div className={styles.detailsGrid}>
               <div className={styles.formField}>
                 <label htmlFor="evt-title-input" className={styles.filterLabel}>
-                  Własny tytuł wydarzenia
+                  Własny tytuł wydarzenia{' '}
+                  {editParticipants.length > 3 ? '* (wymagany przy >3 uczestnikach)' : ''}
                 </label>
                 <input
                   id="evt-title-input"
                   type="text"
+                  required={editParticipants.length > 3}
                   value={titleInput}
                   onChange={e => {
                     setTitleInput(e.target.value);
@@ -369,7 +614,7 @@ export default function EventDetailsPage() {
 
               <div className={styles.formField}>
                 <label htmlFor="evt-loc-input" className={styles.filterLabel}>
-                  Miejsce
+                  Miejsce / miejscowość
                 </label>
                 <input
                   id="evt-loc-input"
@@ -383,175 +628,687 @@ export default function EventDetailsPage() {
               </div>
 
               <div className={styles.formField}>
-                <label htmlFor="evt-parent-select" className={styles.filterLabel}>
-                  Wydarzenie nadrzędne
+                <label htmlFor="evt-folder-input" className={styles.filterLabel}>
+                  Nazwa folderu docelowego na dysku (snake_case)
                 </label>
-                <select
-                  id="evt-parent-select"
-                  value={parentEventIdInput}
+                <input
+                  id="evt-folder-input"
+                  type="text"
+                  placeholder={eventData.suggestedFolderSlug ?? 'np. 1948_06_10_slub'}
+                  value={folderSlugInput}
                   onChange={e => {
-                    setParentEventIdInput(e.target.value);
+                    setFolderSlugInput(e.target.value);
                   }}
-                  className={styles.selectInput}
-                >
-                  <option value="">— Brak (wydarzenie główne) —</option>
-                  {candidateParentEvents.map(cand => (
-                    <option key={cand.eventId} value={String(cand.eventId)}>
-                      {cand.dateText ?? cand.year ?? 'Bez daty'} –{' '}
-                      {cand.title ?? cand.typeLabel}
-                    </option>
-                  ))}
-                </select>
+                  className={styles.textInput}
+                />
               </div>
             </div>
 
-            <div className={styles.detailsGrid}>
-              <div className={styles.formField}>
-                <label htmlFor="edit-evt-qual" className={styles.filterLabel}>
-                  Kwalifikator daty
-                </label>
-                <select
-                  id="edit-evt-qual"
-                  value={startQual}
-                  onChange={e => {
-                    setStartQual(e.target.value);
-                  }}
-                  className={styles.selectInput}
-                >
-                  {QUALIFIER_OPTIONS.map(q => (
-                    <option key={q.value} value={q.value}>
-                      {q.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className={styles.formField}>
-                <label htmlFor="edit-evt-year" className={styles.filterLabel}>
-                  Rok
-                </label>
-                <input
-                  id="edit-evt-year"
-                  type="number"
-                  value={startYear}
-                  onChange={e => {
-                    setStartYear(e.target.value);
-                  }}
-                  className={styles.textInput}
-                />
-              </div>
-
-              <div className={styles.formField}>
-                <label htmlFor="edit-evt-month" className={styles.filterLabel}>
-                  Miesiąc
-                </label>
-                <input
-                  id="edit-evt-month"
-                  type="number"
-                  min={1}
-                  max={12}
-                  value={startMonth}
-                  onChange={e => {
-                    setStartMonth(e.target.value);
-                  }}
-                  className={styles.textInput}
-                />
-              </div>
-
-              <div className={styles.formField}>
-                <label htmlFor="edit-evt-day" className={styles.filterLabel}>
-                  Dzień
-                </label>
-                <input
-                  id="edit-evt-day"
-                  type="number"
-                  min={1}
-                  max={31}
-                  value={startDay}
-                  onChange={e => {
-                    setStartDay(e.target.value);
-                  }}
-                  className={styles.textInput}
-                />
-              </div>
-
-              <div className={styles.formField}>
-                <label htmlFor="edit-evt-tqual" className={styles.filterLabel}>
-                  Kwalifikator czasu
-                </label>
-                <select
-                  id="edit-evt-tqual"
-                  value={startTimeQual}
-                  onChange={e => {
-                    setStartTimeQual(e.target.value);
-                  }}
-                  className={styles.selectInput}
-                >
-                  {QUALIFIER_OPTIONS.map(q => (
-                    <option key={q.value} value={q.value}>
-                      {q.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className={styles.formField}>
-                <span className={styles.filterLabel}>Godzina (GG:MM)</span>
-                <div style={{ display: 'flex', gap: '0.4rem' }}>
+            {/* 3. Start Date & Time Section */}
+            <div className={styles.dateSectionBox}>
+              <div className={styles.dateSectionHeader}>
+                <span className={styles.filterLabel}>
+                  📅 Data i czas rozpoczęcia (lub jedyna data wydarzenia)
+                </span>
+                <label className={styles.inlineToggleLabel}>
                   <input
-                    type="number"
-                    min={0}
-                    max={23}
-                    placeholder="GG"
-                    value={startHour}
+                    type="checkbox"
+                    checked={isStartBetween}
                     onChange={e => {
-                      setStartHour(e.target.value);
+                      setIsStartBetween(e.target.checked);
                     }}
-                    className={styles.textInput}
                   />
-                  <input
-                    type="number"
-                    min={0}
-                    max={59}
-                    placeholder="MM"
-                    value={startMinute}
+                  <span>Przedział niepewności „między … a …”</span>
+                </label>
+              </div>
+
+              <div className={styles.dateSubGrid}>
+                <div className={styles.formField}>
+                  <label htmlFor="edit-evt-qual" className={styles.filterLabel}>
+                    Kwalifikator daty
+                  </label>
+                  <select
+                    id="edit-evt-qual"
+                    value={startQual}
                     onChange={e => {
-                      setStartMinute(e.target.value);
+                      setStartQual(e.target.value);
+                    }}
+                    className={styles.selectInput}
+                  >
+                    {QUALIFIER_OPTIONS.map(q => (
+                      <option key={q.value} value={q.value}>
+                        {q.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className={styles.formField}>
+                  <label htmlFor="edit-evt-year" className={styles.filterLabel}>
+                    Rok
+                  </label>
+                  <input
+                    id="edit-evt-year"
+                    type="number"
+                    value={startYear}
+                    onChange={e => {
+                      setStartYear(e.target.value);
                     }}
                     className={styles.textInput}
                   />
                 </div>
+
+                <div className={styles.formField}>
+                  <label htmlFor="edit-evt-month" className={styles.filterLabel}>
+                    Miesiąc (1–12)
+                  </label>
+                  <input
+                    id="edit-evt-month"
+                    type="number"
+                    min={1}
+                    max={12}
+                    value={startMonth}
+                    onChange={e => {
+                      setStartMonth(e.target.value);
+                    }}
+                    className={styles.textInput}
+                  />
+                </div>
+
+                <div className={styles.formField}>
+                  <label htmlFor="edit-evt-day" className={styles.filterLabel}>
+                    Dzień (1–31)
+                  </label>
+                  <input
+                    id="edit-evt-day"
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={startDay}
+                    onChange={e => {
+                      setStartDay(e.target.value);
+                    }}
+                    className={styles.textInput}
+                  />
+                </div>
+
+                <div className={styles.formField}>
+                  <label htmlFor="edit-evt-tqual" className={styles.filterLabel}>
+                    Kwalifikator czasu
+                  </label>
+                  <select
+                    id="edit-evt-tqual"
+                    value={startTimeQual}
+                    onChange={e => {
+                      setStartTimeQual(e.target.value);
+                    }}
+                    className={styles.selectInput}
+                  >
+                    {QUALIFIER_OPTIONS.map(q => (
+                      <option key={q.value} value={q.value}>
+                        {q.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className={styles.formField} style={{ gridColumn: 'span 2' }}>
+                  <span className={styles.filterLabel}>Godzina (GG : MM : SS)</span>
+                  <div className={styles.timeTripletGroup}>
+                    <input
+                      type="number"
+                      min={0}
+                      max={23}
+                      placeholder="GG"
+                      value={startHour}
+                      onChange={e => {
+                        setStartHour(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                    <span>:</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={59}
+                      placeholder="MM"
+                      value={startMinute}
+                      onChange={e => {
+                        setStartMinute(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                    <span>:</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={59}
+                      placeholder="SS"
+                      value={startSecond}
+                      onChange={e => {
+                        setStartSecond(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {isStartBetween && (
+                <div className={styles.dateSubGrid} style={{ paddingTop: '0.6rem', borderTop: '1px dashed #cbd5e1' }}>
+                  <div className={styles.formField}>
+                    <span className={styles.filterLabel}>Druga granica („… a …”)</span>
+                    <select
+                      value={startRangeEndQual}
+                      onChange={e => {
+                        setStartRangeEndQual(e.target.value);
+                      }}
+                      className={styles.selectInput}
+                    >
+                      {QUALIFIER_OPTIONS.map(q => (
+                        <option key={q.value} value={q.value}>
+                          {q.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className={styles.formField}>
+                    <span className={styles.filterLabel}>Rok (do)</span>
+                    <input
+                      type="number"
+                      placeholder={startYear || 'RRRR'}
+                      value={startRangeEndYear}
+                      onChange={e => {
+                        setStartRangeEndYear(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                  </div>
+
+                  <div className={styles.formField}>
+                    <span className={styles.filterLabel}>Miesiąc (do)</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={12}
+                      value={startRangeEndMonth}
+                      onChange={e => {
+                        setStartRangeEndMonth(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                  </div>
+
+                  <div className={styles.formField}>
+                    <span className={styles.filterLabel}>Dzień (do)</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={31}
+                      value={startRangeEndDay}
+                      onChange={e => {
+                        setStartRangeEndDay(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                  </div>
+
+                  <div className={styles.formField}>
+                    <span className={styles.filterLabel}>Kwalifikator czasu</span>
+                    <select
+                      value={startRangeEndTimeQual}
+                      onChange={e => {
+                        setStartRangeEndTimeQual(e.target.value);
+                      }}
+                      className={styles.selectInput}
+                    >
+                      {QUALIFIER_OPTIONS.map(q => (
+                        <option key={q.value} value={q.value}>
+                          {q.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className={styles.formField} style={{ gridColumn: 'span 2' }}>
+                    <span className={styles.filterLabel}>Godzina (do) (GG : MM : SS)</span>
+                    <div className={styles.timeTripletGroup}>
+                      <input
+                        type="number"
+                        min={0}
+                        max={23}
+                        placeholder="GG"
+                        value={startRangeEndHour}
+                        onChange={e => {
+                          setStartRangeEndHour(e.target.value);
+                        }}
+                        className={styles.textInput}
+                      />
+                      <span>:</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={59}
+                        placeholder="MM"
+                        value={startRangeEndMinute}
+                        onChange={e => {
+                          setStartRangeEndMinute(e.target.value);
+                        }}
+                        className={styles.textInput}
+                      />
+                      <span>:</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={59}
+                        placeholder="SS"
+                        value={startRangeEndSecond}
+                        onChange={e => {
+                          setStartRangeEndSecond(e.target.value);
+                        }}
+                        className={styles.textInput}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div style={{ paddingTop: '0.4rem', borderTop: '1px solid #e2e8f0' }}>
+                <label className={styles.inlineToggleLabel}>
+                  <input
+                    type="checkbox"
+                    checked={hasEndDate}
+                    onChange={e => {
+                      setHasEndDate(e.target.checked);
+                    }}
+                  />
+                  <span>
+                    Wydarzenie trwało w czasie – dodaj datę lub godzinę zakończenia („od … do …”)
+                  </span>
+                </label>
               </div>
             </div>
 
-            <div className={styles.formField}>
-              <label htmlFor="evt-desc-input" className={styles.filterLabel}>
-                Opis wydarzenia
-              </label>
+            {/* 4. End Date & Time Section */}
+            {hasEndDate && (
+              <div className={styles.dateSectionBox}>
+                <div className={styles.dateSectionHeader}>
+                  <span className={styles.filterLabel}>🏁 Data i czas zakończenia („do …”)</span>
+                  <label className={styles.inlineToggleLabel}>
+                    <input
+                      type="checkbox"
+                      checked={isEndBetween}
+                      onChange={e => {
+                        setIsEndBetween(e.target.checked);
+                      }}
+                    />
+                    <span>Przedział niepewności „między … a …” dla końca wydarzenia</span>
+                  </label>
+                </div>
+
+                <div className={styles.dateSubGrid}>
+                  <div className={styles.formField}>
+                    <span className={styles.filterLabel}>Kwalifikator daty końcowej</span>
+                    <select
+                      value={endQual}
+                      onChange={e => {
+                        setEndQual(e.target.value);
+                      }}
+                      className={styles.selectInput}
+                    >
+                      {QUALIFIER_OPTIONS.map(q => (
+                        <option key={q.value} value={q.value}>
+                          {q.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className={styles.formField}>
+                    <span className={styles.filterLabel}>Rok zakończenia</span>
+                    <input
+                      type="number"
+                      placeholder={startYear || 'RRRR'}
+                      value={endYear}
+                      onChange={e => {
+                        setEndYear(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                  </div>
+
+                  <div className={styles.formField}>
+                    <span className={styles.filterLabel}>Miesiąc (1–12)</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={12}
+                      value={endMonth}
+                      onChange={e => {
+                        setEndMonth(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                  </div>
+
+                  <div className={styles.formField}>
+                    <span className={styles.filterLabel}>Dzień (1–31)</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={31}
+                      value={endDay}
+                      onChange={e => {
+                        setEndDay(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                  </div>
+
+                  <div className={styles.formField}>
+                    <span className={styles.filterLabel}>Kwalifikator czasu</span>
+                    <select
+                      value={endTimeQual}
+                      onChange={e => {
+                        setEndTimeQual(e.target.value);
+                      }}
+                      className={styles.selectInput}
+                    >
+                      {QUALIFIER_OPTIONS.map(q => (
+                        <option key={q.value} value={q.value}>
+                          {q.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className={styles.formField} style={{ gridColumn: 'span 2' }}>
+                    <span className={styles.filterLabel}>Godzina zakończenia (GG : MM : SS)</span>
+                    <div className={styles.timeTripletGroup}>
+                      <input
+                        type="number"
+                        min={0}
+                        max={23}
+                        placeholder="GG"
+                        value={endHour}
+                        onChange={e => {
+                          setEndHour(e.target.value);
+                        }}
+                        className={styles.textInput}
+                      />
+                      <span>:</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={59}
+                        placeholder="MM"
+                        value={endMinute}
+                        onChange={e => {
+                          setEndMinute(e.target.value);
+                        }}
+                        className={styles.textInput}
+                      />
+                      <span>:</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={59}
+                        placeholder="SS"
+                        value={endSecond}
+                        onChange={e => {
+                          setEndSecond(e.target.value);
+                        }}
+                        className={styles.textInput}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {isEndBetween && (
+                  <div className={styles.dateSubGrid} style={{ paddingTop: '0.6rem', borderTop: '1px dashed #cbd5e1' }}>
+                    <div className={styles.formField}>
+                      <span className={styles.filterLabel}>Druga granica końca („… a …”)</span>
+                      <select
+                        value={endRangeEndQual}
+                        onChange={e => {
+                          setEndRangeEndQual(e.target.value);
+                        }}
+                        className={styles.selectInput}
+                      >
+                        {QUALIFIER_OPTIONS.map(q => (
+                          <option key={q.value} value={q.value}>
+                            {q.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className={styles.formField}>
+                      <span className={styles.filterLabel}>Rok (do)</span>
+                      <input
+                        type="number"
+                        value={endRangeEndYear}
+                        onChange={e => {
+                          setEndRangeEndYear(e.target.value);
+                        }}
+                        className={styles.textInput}
+                      />
+                    </div>
+
+                    <div className={styles.formField}>
+                      <span className={styles.filterLabel}>Miesiąc (do)</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={12}
+                        value={endRangeEndMonth}
+                        onChange={e => {
+                          setEndRangeEndMonth(e.target.value);
+                        }}
+                        className={styles.textInput}
+                      />
+                    </div>
+
+                    <div className={styles.formField}>
+                      <span className={styles.filterLabel}>Dzień (do)</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={31}
+                        value={endRangeEndDay}
+                        onChange={e => {
+                          setEndRangeEndDay(e.target.value);
+                        }}
+                        className={styles.textInput}
+                      />
+                    </div>
+
+                    <div className={styles.formField}>
+                      <span className={styles.filterLabel}>Kwalifikator czasu</span>
+                      <select
+                        value={endRangeEndTimeQual}
+                        onChange={e => {
+                          setEndRangeEndTimeQual(e.target.value);
+                        }}
+                        className={styles.selectInput}
+                      >
+                        {QUALIFIER_OPTIONS.map(q => (
+                          <option key={q.value} value={q.value}>
+                            {q.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className={styles.formField} style={{ gridColumn: 'span 2' }}>
+                      <span className={styles.filterLabel}>Godzina (do) (GG : MM : SS)</span>
+                      <div className={styles.timeTripletGroup}>
+                        <input
+                          type="number"
+                          min={0}
+                          max={23}
+                          placeholder="GG"
+                          value={endRangeEndHour}
+                          onChange={e => {
+                            setEndRangeEndHour(e.target.value);
+                          }}
+                          className={styles.textInput}
+                        />
+                        <span>:</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={59}
+                          placeholder="MM"
+                          value={endRangeEndMinute}
+                          onChange={e => {
+                            setEndRangeEndMinute(e.target.value);
+                          }}
+                          className={styles.textInput}
+                        />
+                        <span>:</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={59}
+                          placeholder="SS"
+                          value={endRangeEndSecond}
+                          onChange={e => {
+                            setEndRangeEndSecond(e.target.value);
+                          }}
+                          className={styles.textInput}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 5. Multiple Parent Events Search & Picker */}
+            <div className={styles.selectorPanel}>
+              <span className={styles.filterLabel}>
+                Wydarzenia nadrzędne (pierwsze wydarzenie na liście określa folder macierzysty na dysku):
+              </span>
+
+              {parentEventIds.length > 0 && (
+                <div className={styles.selectedParentsList}>
+                  {parentEventIds.map((pid, idx) => {
+                    const found = candidateParentEvents.find(ev => ev.eventId === pid);
+                    const existingSummary = eventData.parentEvents?.find(pe => pe.eventId === pid);
+                    const titleStr = found
+                      ? found.title
+                        ? `${found.title} (${found.typeLabel})`
+                        : found.typeLabel
+                      : (existingSummary?.label ?? 'Wybrane wydarzenie nadrzędne');
+
+                    return (
+                      <div key={pid} className={styles.selectedParentCard}>
+                        <div className={styles.parentCandidateInfo}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            <span className={styles.parentCandidateTitle}>
+                              {String(idx + 1)}. {titleStr}
+                            </span>
+                            {idx === 0 && (
+                              <span className={styles.primaryFolderBadge}>
+                                📁 Główny folder nadrzędny
+                              </span>
+                            )}
+                          </div>
+                          {found && (
+                            <div className={styles.parentCandidateMeta}>
+                              {found.dateText && <span>📅 {found.dateText}</span>}
+                              <span>👤 {formatParticipantsSummary(found)}</span>
+                              {found.locationName && <span>📍 {found.locationName}</span>}
+                            </div>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '0.35rem' }}>
+                          <button
+                            type="button"
+                            disabled={idx === 0}
+                            onClick={() => {
+                              handleMoveParentOrder(idx, -1);
+                            }}
+                            className={styles.btnSecondary}
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            disabled={idx === parentEventIds.length - 1}
+                            onClick={() => {
+                              handleMoveParentOrder(idx, 1);
+                            }}
+                            className={styles.btnSecondary}
+                          >
+                            ↓
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setParentEventIds(prev => prev.filter(id => id !== pid));
+                            }}
+                            className={styles.btnDanger}
+                          >
+                            ✕ Usuń
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
               <input
-                id="evt-desc-input"
                 type="text"
-                value={descInput}
+                placeholder="Wyszukaj wydarzenie nadrzędne po uczestnikach, tytule, typie, dacie lub miejscowości..."
+                value={parentSearchQuery}
                 onChange={e => {
-                  setDescInput(e.target.value);
+                  setParentSearchQuery(e.target.value);
                 }}
                 className={styles.textInput}
               />
+
+              {filteredParentCandidates.length > 0 && (
+                <div className={styles.parentCandidateList}>
+                  {filteredParentCandidates.map(cand => {
+                    const typesStr = (cand.assignedTypeLabels ?? [cand.typeLabel]).join(' • ');
+                    return (
+                      <div key={cand.eventId} className={styles.parentCandidateRow}>
+                        <div className={styles.parentCandidateInfo}>
+                          <span className={styles.parentCandidateTitle}>
+                            {cand.title ? `${cand.title} (${typesStr})` : typesStr}
+                          </span>
+                          <div className={styles.parentCandidateMeta}>
+                            <span>📅 {cand.dateText ?? cand.year ?? 'Bez daty'}</span>
+                            <span>👤 {formatParticipantsSummary(cand)}</span>
+                            {cand.locationName && <span>📍 {cand.locationName}</span>}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setParentEventIds(prev => [...prev, cand.eventId]);
+                          }}
+                          className={styles.btnSecondary}
+                        >
+                          + Dodaj jako nadrzędne
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
-            {/* Participants Management in Edit Form */}
-            <div
-              style={{
-                backgroundColor: '#f8fafc',
-                border: '1px solid #e2e8f0',
-                borderRadius: '8px',
-                padding: '0.9rem',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.65rem',
-              }}
-            >
-              <span className={styles.filterLabel}>Uczestnicy wydarzenia:</span>
+            {/* 6. Participants Management in Edit Form */}
+            <div className={styles.selectorPanel}>
+              <span className={styles.filterLabel}>
+                Uczestnicy wydarzenia ({String(editParticipants.length)}):
+              </span>
               <div className={styles.detailsGrid}>
                 <div className={styles.formField}>
                   <span className={styles.filterLabel}>Rola</span>
@@ -716,6 +1473,7 @@ export default function EventDetailsPage() {
         </section>
       )}
 
+      {/* Main Info Card */}
       <section className={styles.detailsCard}>
         <div className={styles.detailsGrid}>
           <div className={styles.infoBox}>
@@ -734,16 +1492,12 @@ export default function EventDetailsPage() {
               <span className={styles.infoValue}>{eventData.locationName}</span>
             </div>
           )}
-          {eventData.parentEventId && (
+          {isAdmin && (eventData.folderSlug ?? eventData.suggestedFolderSlug) && (
             <div className={styles.infoBox}>
-              <span className={styles.infoLabel}>Wydarzenie nadrzędne</span>
-              <Link
-                to={`/events/${String(eventData.parentEventId)}`}
-                className={styles.infoValue}
-                style={{ color: '#2563eb', textDecoration: 'underline' }}
-              >
-                ↑ {eventData.parentEventLabel ?? 'Przejdź do wydarzenia nadrzędnego'}
-              </Link>
+              <span className={styles.infoLabel}>Folder wydarzenia na dysku</span>
+              <span className={styles.infoValue} style={{ fontSize: '0.84rem', fontFamily: 'monospace' }}>
+                {eventData.folderSlug ?? eventData.suggestedFolderSlug}
+              </span>
             </div>
           )}
           {eventData.attributes.map(attr => (
@@ -758,10 +1512,27 @@ export default function EventDetailsPage() {
           ))}
         </div>
 
-        {eventData.description && (
-          <div className={styles.infoBox}>
-            <span className={styles.infoLabel}>Opis wydarzenia</span>
-            <span className={styles.infoValue}>{eventData.description}</span>
+        {/* Ordered Parent Events */}
+        {resolvedParentEvents.length > 0 && (
+          <div>
+            <h2 className={styles.sectionSubtitle}>
+              Wydarzenia nadrzędne ({resolvedParentEvents.length})
+            </h2>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem', marginTop: '0.6rem' }}>
+              {resolvedParentEvents.map(pe => (
+                <Link
+                  key={pe.eventId}
+                  to={`/events/${String(pe.eventId)}`}
+                  className={styles.btnSecondary}
+                >
+                  <span>↑ {pe.label}</span>
+                  {pe.dateText ? <span>({pe.dateText})</span> : null}
+                  {pe.primaryFolderParent && resolvedParentEvents.length > 1 && (
+                    <span className={styles.primaryFolderBadge}>Folder nadrzędny</span>
+                  )}
+                </Link>
+              ))}
+            </div>
           </div>
         )}
 
@@ -845,6 +1616,17 @@ export default function EventDetailsPage() {
           })}
         </div>
       </section>
+
+      {/* Point 5: Wiki Markdown Event Description Section */}
+      <WikiEventDescriptionSection
+        eventId={eventData.eventId}
+        description={eventData.description}
+        isAdmin={isAdmin}
+        onEventUpdated={updated => {
+          setEventData(updated);
+          syncEditForm(updated);
+        }}
+      />
 
       <MediaGallerySection
         context="EVENT"

@@ -6,9 +6,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
-import java.util.Set;
+import java.util.*;
 
 @Entity
 @Table(name = "events")
@@ -37,12 +35,22 @@ public class Event {
     @Column(columnDefinition = "TEXT")
     private String description;
 
+    @Column(name = "folder_slug")
+    private String folderSlug;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_event_id")
     private Event parentEvent;
 
     @OneToMany(mappedBy = "parentEvent", cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<Event> subEvents = new HashSet<>();
+
+    @OneToMany(mappedBy = "childEvent", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("sortOrder ASC, id ASC")
+    private List<EventParentLink> parentLinks = new ArrayList<>();
+
+    @OneToMany(mappedBy = "parentEvent", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Set<EventParentLink> childLinks = new HashSet<>();
 
     private LocalDateTime cachedStartSortDateTime;
     private LocalDateTime cachedEndSortDateTime;
@@ -76,5 +84,38 @@ public class Event {
             all.addAll(assignedTypes);
         }
         return all;
+    }
+
+    public List<Event> getOrderedParentEvents() {
+        List<Event> ordered = new ArrayList<>();
+        Set<Long> seenIds = new HashSet<>();
+
+        if (parentLinks != null) {
+            List<EventParentLink> sortedLinks = new ArrayList<>(parentLinks);
+            sortedLinks.sort(Comparator
+                    .comparing(EventParentLink::getSortOrder, Comparator.nullsLast(Integer::compareTo))
+                    .thenComparing(EventParentLink::getId, Comparator.nullsLast(Long::compareTo)));
+            for (EventParentLink link : sortedLinks) {
+                Event p = link.getParentEvent();
+                if (p != null && (p.getId() == null || seenIds.add(p.getId()))) {
+                    ordered.add(p);
+                }
+            }
+        }
+
+        if (parentEvent != null && (parentEvent.getId() == null || seenIds.add(parentEvent.getId()))) {
+            ordered.addFirst(parentEvent);
+        }
+
+        return ordered;
+    }
+
+    public Event getPrimaryParentEvent() {
+        List<Event> parents = getOrderedParentEvents();
+        return parents.isEmpty() ? null : parents.getFirst();
+    }
+
+    public boolean hasAnyParentEvent() {
+        return parentEvent != null || (parentLinks != null && !parentLinks.isEmpty());
     }
 }

@@ -50,6 +50,13 @@ public class MediaItem {
     @JoinColumn(name = "date_descriptor_id")
     private DateDescriptor dateDescriptor;
 
+    @OneToOne(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @JoinColumn(name = "metadata_date_descriptor_id")
+    private DateDescriptor metadataDateDescriptor;
+
+    @Column(name = "metadata_date_source", length = 120)
+    private String metadataDateSource;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "collection_id")
     private MediaCollection collection;

@@ -13,14 +13,22 @@ import java.util.List;
 @AllArgsConstructor
 public class UpdateMediaItemRequestDto {
     private String fileName;
+    private String customFolderName;
     private String title;
     private String description;
 
+    // "MANUAL", "METADATA", "EVENT", "UNDATED"
+    private String dateSourceMode;
+    private Long contextEventId;
+
+    private String dateQualifier;
     private Integer year;
     private Integer month;
     private Integer day;
+    private String timeQualifier;
     private Integer hour;
     private Integer minute;
+    private Integer second;
 
     private List<Long> personIds;
     private Long setAsAvatarForPersonId;

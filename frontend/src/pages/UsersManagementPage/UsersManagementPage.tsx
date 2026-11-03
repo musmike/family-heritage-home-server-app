@@ -299,13 +299,13 @@ export default function UsersManagementPage() {
                       onClick={() => {
                         setSelectedPersonId(p.id);
                         setSelectedPersonLabel(
-                          `${p.surname ?? ''} ${p.givenName ?? ''}`.trim()
+                          `${p.givenName ?? ''} ${p.surname ?? ''}`.trim()
                         );
                         setPersonSearchResults([]);
                       }}
                       className={styles.btnSecondary}
                     >
-                      ✓ Wybierz: {p.surname} {p.givenName} ({p.birthYear ?? '?'})
+                      ✓ Wybierz: {p.givenName} {p.surname} ({p.birthYear ?? '?'})
                     </button>
                   ))}
                 </div>

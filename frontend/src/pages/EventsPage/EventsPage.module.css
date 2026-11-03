@@ -134,6 +134,11 @@
   position: relative;
 }
 
+.filterFieldTypes {
+  flex: 1.5 1 270px;
+  min-width: 250px;
+}
+
 .formField {
   display: flex;
   flex-direction: column;
@@ -189,6 +194,13 @@
   font-weight: 600;
   cursor: pointer;
   text-align: left;
+}
+
+.multiSelectTriggerText {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-right: 0.5rem;
 }
 
 .dualSliderContainer {

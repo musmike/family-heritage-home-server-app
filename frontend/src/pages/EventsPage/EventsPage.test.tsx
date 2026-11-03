@@ -143,7 +143,7 @@ describe('EventsPage and EventDetailsPage Components', () => {
     expect(screen.getByTestId('timeline-event-100')).toBeInTheDocument();
     expect(screen.getByTestId('timeline-subevent-101')).toBeInTheDocument();
     expect(screen.getByText(/↳ Podwydarzenie: Ceremonia ślubu/i)).toBeInTheDocument();
-    expect(screen.getByText('Kowalski Jan')).toBeInTheDocument();
+    expect(screen.getByText('Jan Kowalski')).toBeInTheDocument();
 
     // Dragging slider changes visual value without calling API until mouseUp
     const callCountBeforeDrag = mockedApi.getEventsTimeline.mock.calls.length;
@@ -174,7 +174,7 @@ describe('EventsPage and EventDetailsPage Components', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/Kowalski Jan \(28 lat\)/i)).toBeInTheDocument();
+      expect(screen.getByText(/Jan Kowalski \(28 lat\)/i)).toBeInTheDocument();
     });
     expect(screen.getByText('Warszawa')).toBeInTheDocument();
     expect(screen.getByText('10.06.1948, godz. 14:00:00')).toBeInTheDocument();

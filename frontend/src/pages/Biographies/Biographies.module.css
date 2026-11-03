@@ -588,7 +588,8 @@
   width: 100%;
   max-width: 280px;
   background: none;
-  border: 1px solid #cbd5e1;
+  border: none;
+  outline: none;
   border-radius: 0;
   overflow: hidden;
   padding: 0;
@@ -598,7 +599,7 @@
 }
 
 .infoboxPortraitButton:hover {
-  border-color: #94a3b8;
+  opacity: 0.95;
 }
 
 .infoboxPortraitMedia {
@@ -608,6 +609,8 @@
   object-fit: contain;
   display: block;
   background-color: transparent;
+  border: none;
+  outline: none;
 }
 
 @media (max-width: 767px) {

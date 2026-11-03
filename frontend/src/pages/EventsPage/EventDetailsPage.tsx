@@ -182,7 +182,7 @@ export default function EventDetailsPage() {
       result.participants.map(p => {
         const name = p.participantText
           ? `${p.participantText} [spoza drzewa]`
-          : `${p.surname ?? ''} ${p.givenName ?? ''}`.trim();
+          : `${p.givenName ?? ''} ${p.surname ?? ''}`.trim();
         return {
           personId: p.personId,
           participantText: p.participantText,
@@ -1206,7 +1206,7 @@ export default function EventDetailsPage() {
                       key={p.id}
                       type="button"
                       onClick={() => {
-                        const lbl = `${p.surname ?? ''} ${p.givenName ?? ''}`.trim();
+                        const lbl = `${p.givenName ?? ''} ${p.surname ?? ''}`.trim();
                         setEditParticipants(prev => [
                           ...prev,
                           {
@@ -1220,7 +1220,7 @@ export default function EventDetailsPage() {
                       }}
                       className={styles.btnSecondary}
                     >
-                      + Wybierz: {p.surname} {p.givenName} ({p.birthYear ?? '?'})
+                      + Wybierz: {p.givenName} {p.surname} ({p.birthYear ?? '?'})
                     </button>
                   ))}
                 </div>
@@ -1354,7 +1354,7 @@ export default function EventDetailsPage() {
 
         <div className={styles.participantsList}>
           {eventData.participants.map((p, idx) => {
-            const fallbackName = `${p.surname ?? ''} ${p.givenName ?? ''}`.trim() || '—';
+            const fallbackName = `${p.givenName ?? ''} ${p.surname ?? ''}`.trim() || '—';
             const fullName = p.participantText ?? fallbackName;
             const ageLabel = formatPolishAge(p.ageAtEvent, p.ageApproximate);
             const rLabel = p.roleLabel ?? (ROLE_LABELS[p.roleCode] ?? p.roleCode);

@@ -61,6 +61,15 @@ public class MediaController {
         return ResponseEntity.status(HttpStatus.CREATED).body(mediaService.createCollection(request));
     }
 
+    @PutMapping("/collections/{collectionId}")
+    public ResponseEntity<MediaCollectionDto> updateCollection(
+            @PathVariable Long collectionId,
+            @RequestBody SaveMediaCollectionRequestDto request
+    ) {
+        ensureAdmin();
+        return ResponseEntity.ok(mediaService.updateCollection(collectionId, request));
+    }
+
     @DeleteMapping("/collections/{collectionId}")
     public ResponseEntity<Void> deleteCollection(@PathVariable Long collectionId) {
         ensureAdmin();
@@ -344,10 +353,19 @@ public class MediaController {
     public ResponseEntity<Resource> serveThumbnail(@PathVariable Long mediaId) {
         Resource resource = mediaService.getThumbnailResource(mediaId);
         String mime = mediaService.getMimeType(mediaId);
-        org.springframework.http.MediaType contentType =
-                (mime != null && mime.toLowerCase().contains("gif"))
-                        ? org.springframework.http.MediaType.IMAGE_GIF
-                        : org.springframework.http.MediaType.IMAGE_JPEG;
+        boolean hasCustomThumb = mediaService.hasThumbnail(mediaId);
+        org.springframework.http.MediaType contentType;
+        if (hasCustomThumb) {
+            contentType = org.springframework.http.MediaType.IMAGE_JPEG;
+        } else if (mime != null) {
+            try {
+                contentType = org.springframework.http.MediaType.parseMediaType(mime);
+            } catch (Exception ignored) {
+                contentType = org.springframework.http.MediaType.IMAGE_JPEG;
+            }
+        } else {
+            contentType = org.springframework.http.MediaType.IMAGE_JPEG;
+        }
         return ResponseEntity.ok()
                 .contentType(contentType)
                 .cacheControl(CacheControl.maxAge(1, TimeUnit.DAYS).cachePrivate())

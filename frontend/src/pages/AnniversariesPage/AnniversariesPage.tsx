@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { dashboardApi } from '../../api/dashboardApi';
 import Loader from '../../components/Loader/Loader';
+import { Pagination } from '../../components/Pagination/Pagination';
 import PersonAvatar from '../../components/PersonAvatar/PersonAvatar';
 import styles from './AnniversariesPage.module.css';
 import type { AnniversaryItemDto, AnniversariesPageDto } from '../../types/dashboard';
@@ -41,7 +42,7 @@ const formatDaysUntil = (days: number): string => {
 
 const formatParticipantsNames = (item: AnniversaryItemDto): string =>
   item.participants
-    .map(p => `${p.surname ?? ''} ${p.givenName ?? ''}`.trim())
+    .map(p => `${p.givenName ?? ''} ${p.surname ?? ''}`.trim())
     .filter(Boolean)
     .join(' & ');
 
@@ -353,34 +354,13 @@ export default function AnniversariesPage() {
             })}
           </section>
 
-          <div className={styles.paginationBar}>
-            <span className={styles.pageSubtitle}>
-              Łącznie rocznic: <strong>{pageData.totalElements}</strong> (strona{' '}
-              {pageData.totalPages === 0 ? 0 : pageData.page + 1} z {pageData.totalPages})
-            </span>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button
-                type="button"
-                disabled={page <= 0}
-                onClick={() => {
-                  setPage(prev => Math.max(0, prev - 1));
-                }}
-                className={styles.btnSecondary}
-              >
-                ← Poprzednia
-              </button>
-              <button
-                type="button"
-                disabled={page + 1 >= pageData.totalPages}
-                onClick={() => {
-                  setPage(prev => prev + 1);
-                }}
-                className={styles.btnSecondary}
-              >
-                Następna →
-              </button>
-            </div>
-          </div>
+          <Pagination
+            currentPage={page}
+            totalPages={pageData.totalPages}
+            totalElements={pageData.totalElements}
+            elementsLabel="Łącznie rocznic"
+            onPageChange={setPage}
+          />
         </>
       )}
     </div>

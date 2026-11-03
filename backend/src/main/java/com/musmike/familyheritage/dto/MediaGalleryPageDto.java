@@ -22,6 +22,7 @@ public class MediaGalleryPageDto {
 
     private long totalImagesCount;
     private long totalVideosCount;
+    private long totalAudiosCount;
 
     @Builder.Default
     private List<MediaCollectionDto> collections = new ArrayList<>();

@@ -75,7 +75,7 @@ const formatDaysUntil = (days: number): string => {
 
 const formatAnniversaryParticipants = (item: AnniversaryItemDto): string =>
   item.participants
-    .map(p => `${p.surname ?? ''} ${p.givenName ?? ''}`.trim())
+    .map(p => `${p.givenName ?? ''} ${p.surname ?? ''}`.trim())
     .filter(Boolean)
     .join(' & ');
 

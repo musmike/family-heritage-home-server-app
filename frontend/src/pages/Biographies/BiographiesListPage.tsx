@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { biographyApi } from '../../api/biographyApi';
 import Loader from '../../components/Loader/Loader';
 import PersonAvatar from '../../components/PersonAvatar/PersonAvatar';
+import { Pagination } from '../../components/Pagination/Pagination';
 import styles from './Biographies.module.css';
 import type { BiographyPageDto, PersonListItemDto, PersonSex } from '../../types/biography';
 
@@ -48,7 +49,7 @@ export default function BiographiesListPage() {
   const [sexFilter, setSexFilter] = useState<string>('ALL');
   const [lifeStateFilter, setLifeStateFilter] = useState<string>('ALL');
   const [includeArchived, setIncludeArchived] = useState<boolean>(false);
-  const [sortBy, setSortBy] = useState<string>('SURNAME_ASC');
+  const [sortBy, setSortBy] = useState<string>('BIRTH_DATE_DESC');
   const [page, setPage] = useState<number>(0);
 
   useEffect(() => {
@@ -221,7 +222,7 @@ export default function BiographiesListPage() {
                   <PersonAvatar sex={person.sex} size="lg" avatarMediaId={person.avatarMediaId} />
                   <div className={styles.cardTitleGroup}>
                     <div className={styles.personName}>
-                      {`${person.surname ?? ''} ${person.givenName ?? ''}`.trim() || '—'}
+                      {`${person.givenName ?? ''} ${person.surname ?? ''}`.trim() || '—'}
                     </div>
                     <div className={styles.lifespanLine}>{formatLifespanSummary(person)}</div>
                     <div className={styles.badgesRow}>
@@ -273,34 +274,13 @@ export default function BiographiesListPage() {
           </div>
 
           {/* Pagination Bar */}
-          <div className={styles.paginationBar}>
-            <span className={styles.pageSubtitle}>
-              Łącznie osób: <strong>{pageData.totalElements}</strong> (strona{' '}
-              {pageData.totalPages === 0 ? 0 : pageData.page + 1} z {pageData.totalPages})
-            </span>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button
-                type="button"
-                disabled={page <= 0}
-                onClick={() => {
-                  setPage(prev => Math.max(0, prev - 1));
-                }}
-                className={styles.btnSecondary}
-              >
-                ← Poprzednia
-              </button>
-              <button
-                type="button"
-                disabled={page + 1 >= pageData.totalPages}
-                onClick={() => {
-                  setPage(prev => prev + 1);
-                }}
-                className={styles.btnSecondary}
-              >
-                Następna →
-              </button>
-            </div>
-          </div>
+          <Pagination
+            currentPage={page}
+            totalPages={pageData.totalPages}
+            totalElements={pageData.totalElements}
+            elementsLabel="Łącznie osób"
+            onPageChange={setPage}
+          />
         </>
       )}
     </div>

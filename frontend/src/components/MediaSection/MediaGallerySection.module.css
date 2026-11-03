@@ -117,6 +117,26 @@
   width: 100%;
 }
 
+.textarea {
+  font-family: inherit;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: #1e293b;
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  min-height: 80px;
+  resize: vertical;
+}
+
+.textarea:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
 /* Custom Polish File Picker */
 .hiddenFileInput {
   display: none;

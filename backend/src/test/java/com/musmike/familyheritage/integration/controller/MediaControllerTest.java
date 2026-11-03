@@ -64,7 +64,7 @@ class MediaControllerTest extends AbstractIntegrationTest {
                         .param("graveId", String.valueOf(grave.getGraveId()))
                         .param("originalFilename", "IMG_001.JPG"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.directoryPath").value("undated/graves/cmentarz_parafialny_w_kocku"))
+                .andExpect(jsonPath("$.directoryPath").value("collections/graves/cmentarz_parafialny_w_kocku"))
                 .andExpect(jsonPath("$.suggestedFileName").value("jan_lukasiewicz_grave_01.jpg"));
 
         // 2. Upload photo to grave and set as primary grave photo + person avatar
@@ -83,7 +83,7 @@ class MediaControllerTest extends AbstractIntegrationTest {
                         .header("X-XSRF-TOKEN", CSRF))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.fileName").value("jan_lukasiewicz_grave_01.jpg"))
-                .andExpect(jsonPath("$.relativePath").value("undated/graves/cmentarz_parafialny_w_kocku/jan_lukasiewicz_grave_01.jpg"))
+                .andExpect(jsonPath("$.relativePath").value("collections/graves/cmentarz_parafialny_w_kocku/jan_lukasiewicz_grave_01.jpg"))
                 .andReturn();
 
         MediaItemDto uploaded = objectMapper.readValue(
@@ -105,7 +105,7 @@ class MediaControllerTest extends AbstractIntegrationTest {
                         .content(objectMapper.writeValueAsString(renameReq)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.fileName").value("grob_rodziny_lukasiewiczow_kock.jpg"))
-                .andExpect(jsonPath("$.relativePath").value("undated/graves/cmentarz_parafialny_w_kocku/grob_rodziny_lukasiewiczow_kock.jpg"));
+                .andExpect(jsonPath("$.relativePath").value("collections/graves/cmentarz_parafialny_w_kocku/grob_rodziny_lukasiewiczow_kock.jpg"));
 
         // 4. Serve file bytes
         mockMvc.perform(get("/media/{id}/file", uploaded.getId()))
@@ -118,7 +118,7 @@ class MediaControllerTest extends AbstractIntegrationTest {
                 .andExpect(status().isNoContent());
 
         assertThat(Files.exists(storageService.resolveMediaFilePath(
-                "undated/graves/cmentarz_parafialny_w_kocku/grob_rodziny_lukasiewiczow_kock.jpg"
+                "collections/graves/cmentarz_parafialny_w_kocku/grob_rodziny_lukasiewiczow_kock.jpg"
         ))).isFalse();
     }
 
@@ -258,7 +258,7 @@ class MediaControllerTest extends AbstractIntegrationTest {
                         .cookie(new Cookie("XSRF-TOKEN", CSRF))
                         .header("X-XSRF-TOKEN", CSRF))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.relativePath").value("undated/collections/zbior_po_babci_katarzynie/zbior_po_babci_katarzynie_01.jpg"));
+                .andExpect(jsonPath("$.relativePath").value("collections/zbior_po_babci_katarzynie/zbior_po_babci_katarzynie_01.jpg"));
 
         mockMvc.perform(get("/media/gallery")
                         .param("personIds", jan.getId() + "," + anna.getId())
@@ -277,6 +277,20 @@ class MediaControllerTest extends AbstractIntegrationTest {
         jan.setCachedSurname("Kowalski");
         jan = personRepository.saveAndFlush(jan);
 
+        var colReq = SaveMediaCollectionRequestDto.builder()
+                .name("Kolekcja Portretów")
+                .build();
+
+        MvcResult colRes = mockMvc.perform(post("/media/collections")
+                        .cookie(new Cookie("XSRF-TOKEN", CSRF))
+                        .header("X-XSRF-TOKEN", CSRF)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(colReq)))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        Long colId = objectMapper.readTree(colRes.getResponse().getContentAsString()).get("id").asLong();
+
         MockMultipartFile videoFile = new MockMultipartFile(
                 "file", "living_portrait.mp4", "video/mp4", new byte[]{0x00, 0x01, 0x02}
         );
@@ -284,6 +298,7 @@ class MediaControllerTest extends AbstractIntegrationTest {
         MvcResult uploadRes = mockMvc.perform(multipart("/media/upload")
                         .file(videoFile)
                         .param("primaryContext", "PERSON")
+                        .param("collectionId", String.valueOf(colId))
                         .param("customFileName", "jan_kowalski_portrait_01.mp4")
                         .param("personIds", String.valueOf(jan.getId()))
                         .param("setAsPersonAvatar", "true")

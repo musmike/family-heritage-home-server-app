@@ -226,6 +226,7 @@ describe('Biographies Module (List and Biography Page)', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('person-card-1')).toBeInTheDocument();
+      expect(screen.getByText('Jan Kowalski')).toBeInTheDocument();
     });
     expect(screen.getByText(/1920 – 1990 \(70 lat\)/i)).toBeInTheDocument();
 

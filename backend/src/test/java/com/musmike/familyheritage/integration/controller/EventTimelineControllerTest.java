@@ -159,7 +159,7 @@ class EventTimelineControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.decades[1].years[0].events[0].subEvents[0].typeCode").value("WEDDING_CEREMONY"))
                 .andExpect(jsonPath("$.decades[1].years[0].events[0].participants[*].ageAtEvent", hasItems(28, 23)))
                 .andExpect(jsonPath("$.decades[2].decadeStart").value(1950))
-                .andExpect(jsonPath("$.decades[2].years[0].events[0].participants[0].parentNames", hasItems("Kowalski Jan Aleksander", "Nowak Anna")));
+                .andExpect(jsonPath("$.decades[2].years[0].events[0].participants[0].parentNames", hasItems("Jan Aleksander Kowalski", "Anna Nowak")));
 
         // 3. Create event with date & time range (with seconds) and multiple parent events
         Person jan = personRepository.findByGedcomDataGedRefId("@I1@").orElseThrow();

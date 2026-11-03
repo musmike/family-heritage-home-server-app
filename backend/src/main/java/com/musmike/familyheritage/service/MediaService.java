@@ -67,6 +67,7 @@ public class MediaService {
 
         long totalImages = allItems.stream().filter(m -> m.getMediaType() == MediaType.IMAGE).count();
         long totalVideos = allItems.stream().filter(m -> m.getMediaType() == MediaType.VIDEO).count();
+        long totalAudios = allItems.stream().filter(m -> m.getMediaType() == MediaType.AUDIO).count();
 
         List<MediaItemDto> filtered = allItems.stream()
                 .filter(m -> mediaType == null || m.getMediaType() == mediaType)
@@ -96,6 +97,7 @@ public class MediaService {
                 .totalPages(totalPages)
                 .totalImagesCount(totalImages)
                 .totalVideosCount(totalVideos)
+                .totalAudiosCount(totalAudios)
                 .collections(getAllCollections())
                 .build();
     }
@@ -114,11 +116,6 @@ public class MediaService {
             throw new IllegalArgumentException("Collection name cannot be blank.");
         }
 
-        boolean isDated = Boolean.TRUE.equals(req.getDatedCollection());
-        if (isDated && req.getStartYear() == null) {
-            throw new IllegalArgumentException("Kolekcja datowana wymaga podania roku początkowego.");
-        }
-
         MediaCollection parentCol = null;
         if (req.getParentCollectionId() != null) {
             parentCol = mediaCollectionRepository.findById(req.getParentCollectionId())
@@ -131,26 +128,105 @@ public class MediaService {
                     .orElseThrow(() -> new IllegalArgumentException("Person not found: " + req.getFounderPersonId()));
         }
 
-        String rawSlug = (req.getCustomSlug() != null && !req.getCustomSlug().isBlank())
-                ? req.getCustomSlug()
-                : (isDated && req.getStartYear() != null ? req.getStartYear() + "_" + req.getName() : req.getName());
+        MediaCollection col = new MediaCollection();
+        col.setName(req.getName().trim());
+        col.setDescription(trimToNull(req.getDescription()));
+        col.setParentCollection(parentCol);
+        col.setFounderPerson(founder);
+
+        applyCollectionDateDescriptors(col, req);
+
+        String datePrefix = buildDatePrefix(col.getStartDate(), col.getEndDate());
+        String cleanUserSlug = (req.getCustomSlug() != null && !req.getCustomSlug().isBlank())
+                ? storageService.toSnakeCase(req.getCustomSlug())
+                : storageService.toSnakeCase(req.getName());
+        cleanUserSlug = cleanUserSlug.replaceFirst("^\\d{4}(_\\d{2})*(_\\d{2})*(-_)?(\\d{4}(_\\d{2})*(_\\d{2})*_)?", "");
+        if (cleanUserSlug.isBlank()) cleanUserSlug = storageService.toSnakeCase(req.getName());
+
+        String rawSlug = !datePrefix.isEmpty() ? datePrefix + "_" + cleanUserSlug : cleanUserSlug;
         String baseSlug = storageService.toSnakeCase(rawSlug);
         String uniqueSlug = baseSlug;
         int counter = 2;
         while (mediaCollectionRepository.findBySlug(uniqueSlug).isPresent()) {
             uniqueSlug = baseSlug + "_" + counter++;
         }
-
-        MediaCollection col = new MediaCollection();
-        col.setName(req.getName().trim());
         col.setSlug(uniqueSlug);
-        col.setDescription(trimToNull(req.getDescription()));
-        col.setParentCollection(parentCol);
-        col.setIsDatedCollection(isDated);
-        col.setStartYear(req.getStartYear());
-        col.setEndYear(req.getEndYear());
-        col.setFounderPerson(founder);
+
         col = mediaCollectionRepository.saveAndFlush(col);
+
+        return toCollectionDto(col);
+    }
+
+    @Transactional
+    public MediaCollectionDto updateCollection(Long collectionId, SaveMediaCollectionRequestDto req) {
+        MediaCollection col = mediaCollectionRepository.findById(collectionId)
+                .orElseThrow(() -> new IllegalArgumentException("Collection not found: " + collectionId));
+
+        if (req.getName() == null || req.getName().isBlank()) {
+            throw new IllegalArgumentException("Collection name cannot be blank.");
+        }
+
+        String oldDir = resolveCollectionDirectoryPath(col);
+
+        col.setName(req.getName().trim());
+        col.setDescription(trimToNull(req.getDescription()));
+
+        if (req.getParentCollectionId() != null) {
+            if (req.getParentCollectionId().equals(collectionId)) {
+                throw new IllegalArgumentException("Collection cannot be its own parent.");
+            }
+            MediaCollection parentCol = mediaCollectionRepository.findById(req.getParentCollectionId())
+                    .orElseThrow(() -> new IllegalArgumentException("Parent collection not found: " + req.getParentCollectionId()));
+            col.setParentCollection(parentCol);
+        } else {
+            col.setParentCollection(null);
+        }
+
+        Person founder = null;
+        if (req.getFounderPersonId() != null) {
+            founder = personRepository.findById(req.getFounderPersonId())
+                    .orElseThrow(() -> new IllegalArgumentException("Person not found: " + req.getFounderPersonId()));
+        }
+        col.setFounderPerson(founder);
+
+        applyCollectionDateDescriptors(col, req);
+
+        String datePrefix = buildDatePrefix(col.getStartDate(), col.getEndDate());
+        String cleanUserSlug = (req.getCustomSlug() != null && !req.getCustomSlug().isBlank())
+                ? storageService.toSnakeCase(req.getCustomSlug())
+                : storageService.toSnakeCase(req.getName());
+        cleanUserSlug = cleanUserSlug.replaceFirst("^\\d{4}(_\\d{2})*(_\\d{2})*(-_)?(\\d{4}(_\\d{2})*(_\\d{2})*_)?", "");
+        if (cleanUserSlug.isBlank()) cleanUserSlug = storageService.toSnakeCase(req.getName());
+
+        final Long targetColId = col.getId();
+        String desiredSlug = !datePrefix.isEmpty() ? datePrefix + "_" + cleanUserSlug : cleanUserSlug;
+        if (!desiredSlug.equals(col.getSlug())) {
+            String uniqueSlug = desiredSlug;
+            int counter = 2;
+            while (mediaCollectionRepository.findBySlug(uniqueSlug)
+                    .filter(c -> !c.getId().equals(targetColId)).isPresent()) {
+                uniqueSlug = desiredSlug + "_" + counter++;
+            }
+            col.setSlug(uniqueSlug);
+        }
+
+        col = mediaCollectionRepository.saveAndFlush(col);
+
+        String newDir = resolveCollectionDirectoryPath(col);
+        if (!oldDir.equals(newDir)) {
+            List<MediaItem> items = mediaItemRepository.findByCollectionId(col.getId());
+            for (MediaItem item : items) {
+                String oldRelPath = item.getRelativePath();
+                if (oldRelPath != null && oldRelPath.startsWith(oldDir + "/")) {
+                    String sub = oldRelPath.substring(oldDir.length() + 1);
+                    String targetRelPath = newDir + "/" + sub;
+                    String finalPath = storageService.moveFileToRelativePath(oldRelPath, targetRelPath);
+                    item.setRelativePath(finalPath);
+                    mediaItemRepository.save(item);
+                }
+            }
+            storageService.deleteDirectoryRecursively(oldDir);
+        }
 
         return toCollectionDto(col);
     }
@@ -160,19 +236,132 @@ public class MediaService {
         MediaCollection col = mediaCollectionRepository.findById(collectionId)
                 .orElseThrow(() -> new IllegalArgumentException("Collection not found: " + collectionId));
 
+        List<MediaItem> items = mediaItemRepository.findByCollectionId(collectionId);
+
+        List<MediaItem> exclusiveItems = new ArrayList<>();
+        List<MediaItem> sharedItems = new ArrayList<>();
+
+        for (MediaItem item : items) {
+            boolean hasEvents = !item.getEvents().isEmpty();
+            boolean hasGraves = !item.getGraves().isEmpty();
+            boolean hasPersons = !item.getPersons().isEmpty() || !item.getPersonLinks().isEmpty();
+            if (!hasEvents && !hasGraves && !hasPersons) {
+                exclusiveItems.add(item);
+            } else {
+                sharedItems.add(item);
+            }
+        }
+
+        if (!exclusiveItems.isEmpty()) {
+            throw new IllegalStateException("Nie można usunąć kolekcji, ponieważ zawiera pliki multimedialne przypisane wyłącznie do niej ("
+                    + exclusiveItems.size() + " plików). Usuń lub przenieś te multimedia przed usunięciem kolekcji.");
+        }
+
+        for (MediaItem item : sharedItems) {
+            item.setCollection(null);
+            String targetDir = resolveDirectoryForContext(
+                    item.getPrimaryContext(),
+                    item.getGraves().stream().findFirst().map(Grave::getId).orElse(null),
+                    item.getPersons().stream().findFirst().map(Person::getId).orElse(null),
+                    item.getEvents().stream().findFirst().map(Event::getId).orElse(null),
+                    null,
+                    extractYearFromItem(item),
+                    Boolean.TRUE.equals(item.getIsPortrait()),
+                    Boolean.TRUE.equals(item.getIsUnknown()),
+                    item.getPersons().size()
+            );
+            String newRelPath = targetDir + "/" + item.getFileName();
+            if (!Objects.equals(item.getRelativePath(), newRelPath)) {
+                String finalPath = storageService.moveFileToRelativePath(item.getRelativePath(), newRelPath);
+                item.setRelativePath(finalPath);
+            }
+            mediaItemRepository.save(item);
+        }
+
+        String colDir = resolveCollectionDirectoryPath(col);
+        storageService.deleteDirectoryRecursively(colDir);
+
         for (MediaCollection child : mediaCollectionRepository.findAll()) {
             if (child.getParentCollection() != null && child.getParentCollection().getId().equals(collectionId)) {
                 child.setParentCollection(col.getParentCollection());
                 mediaCollectionRepository.save(child);
             }
         }
-        for (MediaItem item : mediaItemRepository.findByCollectionId(collectionId)) {
-            item.setCollection(null);
-            mediaItemRepository.save(item);
-        }
-        mediaItemRepository.flush();
+
         mediaCollectionRepository.delete(col);
         mediaCollectionRepository.flush();
+    }
+
+    private Integer extractYearFromItem(MediaItem item) {
+        if (item.getDateDescriptor() != null && item.getDateDescriptor().getStartYear() != null) {
+            return item.getDateDescriptor().getStartYear();
+        }
+        if (item.getMetadataDateDescriptor() != null && item.getMetadataDateDescriptor().getStartYear() != null) {
+            return item.getMetadataDateDescriptor().getStartYear();
+        }
+        return null;
+    }
+
+    @Transactional
+    public void prepareEventDeletion(Long eventId) {
+        Event evt = eventRepository.findById(eventId)
+                .orElseThrow(() -> new IllegalArgumentException("Event not found: " + eventId));
+
+        List<MediaItem> eventMedia = mediaItemRepository.findByEventsIdOrderByIdAsc(eventId);
+
+        List<MediaItem> exclusiveItems = new ArrayList<>();
+        List<MediaItem> sharedItems = new ArrayList<>();
+
+        for (MediaItem item : eventMedia) {
+            boolean hasOtherEvents = item.getEvents().stream().anyMatch(e -> !e.getId().equals(eventId));
+            boolean hasGraves = !item.getGraves().isEmpty();
+            boolean hasCollection = item.getCollection() != null;
+            boolean hasPersons = !item.getPersons().isEmpty() || !item.getPersonLinks().isEmpty();
+
+            if (!hasOtherEvents && !hasGraves && !hasCollection && !hasPersons) {
+                exclusiveItems.add(item);
+            } else {
+                sharedItems.add(item);
+            }
+        }
+
+        if (!exclusiveItems.isEmpty()) {
+            throw new IllegalStateException("Nie można usunąć wydarzenia, ponieważ zawiera pliki multimedialne przypisane wyłącznie do niego ("
+                    + exclusiveItems.size() + " plików). Usuń lub przenieś te multimedia przed usunięciem wydarzenia.");
+        }
+
+        for (MediaItem item : sharedItems) {
+            item.getEvents().removeIf(e -> e.getId().equals(eventId));
+
+            Long remainingEvtId = item.getEvents().stream().findFirst().map(Event::getId).orElse(null);
+            Long remainingColId = item.getCollection() != null ? item.getCollection().getId() : null;
+            Long remainingGraveId = item.getGraves().stream().findFirst().map(Grave::getId).orElse(null);
+            Long remainingPersonId = item.getPersons().stream().findFirst().map(Person::getId).orElse(null);
+
+            String targetDir = resolveDirectoryForContext(
+                    item.getPrimaryContext() == MediaPrimaryContext.EVENT && remainingEvtId == null
+                            ? (remainingGraveId != null ? MediaPrimaryContext.GRAVE : (remainingPersonId != null ? MediaPrimaryContext.PERSON : MediaPrimaryContext.OTHER))
+                            : item.getPrimaryContext(),
+                    remainingGraveId,
+                    remainingPersonId,
+                    remainingEvtId,
+                    remainingColId,
+                    extractYearFromItem(item),
+                    Boolean.TRUE.equals(item.getIsPortrait()),
+                    Boolean.TRUE.equals(item.getIsUnknown()),
+                    item.getPersons().size()
+            );
+
+            String newRelPath = targetDir + "/" + item.getFileName();
+            if (!Objects.equals(item.getRelativePath(), newRelPath)) {
+                String finalPath = storageService.moveFileToRelativePath(item.getRelativePath(), newRelPath);
+                item.setRelativePath(finalPath);
+            }
+            mediaItemRepository.save(item);
+        }
+
+        String eventDir = resolveEventDirectoryPath(evt, null);
+        storageService.deleteDirectoryRecursively(eventDir);
     }
 
     @Transactional
@@ -355,9 +544,15 @@ public class MediaService {
 
         byte[] fileBytes = file.getBytes();
         String mimeType = file.getContentType() != null ? file.getContentType() : "image/jpeg";
-        MediaType mediaType = mimeType.toLowerCase(Locale.ROOT).startsWith("video/")
-                ? MediaType.VIDEO
-                : MediaType.IMAGE;
+        String lowerMime = mimeType.toLowerCase(Locale.ROOT);
+        MediaType mediaType;
+        if (lowerMime.startsWith("video/")) {
+            mediaType = MediaType.VIDEO;
+        } else if (lowerMime.startsWith("audio/") || lowerMime.contains("ogg") || lowerMime.contains("mp3") || lowerMime.contains("wav") || lowerMime.contains("flac") || lowerMime.contains("aac") || lowerMime.contains("m4a")) {
+            mediaType = MediaType.AUDIO;
+        } else {
+            mediaType = MediaType.IMAGE;
+        }
 
         Event linkedEvent = null;
         if (eventId != null) {
@@ -1630,6 +1825,12 @@ public class MediaService {
     }
 
     @Transactional
+    public boolean hasThumbnail(Long mediaId) {
+        Path thumbPath = storageService.resolveThumbnailPath(mediaId);
+        return Files.exists(thumbPath);
+    }
+
+    @Transactional
     public String getMimeType(Long mediaId) {
         return mediaItemRepository.findById(mediaId)
                 .map(MediaItem::getMimeType)
@@ -1643,9 +1844,115 @@ public class MediaService {
         return list.get(idx);
     }
 
+    public static String formatSingleDatePrefix(Integer year, Integer month, Integer day) {
+        if (year == null) return "";
+        StringBuilder sb = new StringBuilder(String.valueOf(year));
+        if (month != null) {
+            sb.append(String.format("_%02d", month));
+            if (day != null) {
+                sb.append(String.format("_%02d", day));
+            }
+        }
+        return sb.toString();
+    }
+
+    public static String buildDatePrefix(DateDescriptor start, DateDescriptor end) {
+        if (start == null && end == null) {
+            return "";
+        }
+        String startStr = "";
+        String endStr = "";
+
+        if (start != null) {
+            startStr = formatSingleDatePrefix(start.getStartYear(), start.getStartMonth(), start.getStartDay());
+            if (start.getDateType() == DateType.RANGE && start.getEndYear() != null) {
+                endStr = formatSingleDatePrefix(start.getEndYear(), start.getEndMonth(), start.getEndDay());
+            }
+        }
+        if (end != null) {
+            Integer ey = end.getStartYear() != null ? end.getStartYear() : end.getEndYear();
+            Integer em = end.getStartMonth() != null ? end.getStartMonth() : end.getEndMonth();
+            Integer ed = end.getStartDay() != null ? end.getStartDay() : end.getEndDay();
+            if (ey != null) {
+                endStr = formatSingleDatePrefix(ey, em, ed);
+            }
+        }
+
+        if (!startStr.isEmpty() && !endStr.isEmpty()) {
+            if (startStr.equals(endStr)) {
+                return startStr;
+            }
+            return startStr + "-" + endStr;
+        }
+        if (!startStr.isEmpty()) {
+            return startStr;
+        }
+        return endStr;
+    }
+
+    private void applyCollectionDateDescriptors(MediaCollection col, SaveMediaCollectionRequestDto req) {
+        boolean isDated = Boolean.TRUE.equals(req.getDatedCollection());
+        col.setIsDatedCollection(isDated);
+
+        if (!isDated) {
+            col.setStartDate(null);
+            col.setEndDate(null);
+            col.setStartYear(null);
+            col.setEndYear(null);
+            return;
+        }
+
+        if (req.getStartYear() == null) {
+            throw new IllegalArgumentException("Kolekcja datowana wymaga podania roku początkowego.");
+        }
+
+        DateDescriptor startDd = col.getStartDate() != null ? col.getStartDate() : new DateDescriptor();
+        boolean isBetween = Boolean.TRUE.equals(req.getIsRange())
+                && (req.getEndYear() != null || req.getEndHour() != null);
+
+        startDd.setDateType(isBetween ? DateType.RANGE : DateType.SINGLE);
+        startDd.setStartQualifier(parseQualifier(req.getStartQualifier()));
+        startDd.setStartYear(req.getStartYear());
+        startDd.setStartMonth(req.getStartMonth());
+        startDd.setStartDay(req.getStartDay());
+        startDd.setStartTimeQualifier(req.getStartHour() != null ? parseQualifier(req.getStartTimeQualifier()) : null);
+        startDd.setStartHour(req.getStartHour());
+        startDd.setStartMinute(req.getStartMinute());
+        startDd.setStartSecond(req.getStartSecond());
+
+        if (isBetween) {
+            Integer rEndYear = req.getEndYear() != null ? req.getEndYear() : req.getStartYear();
+            Integer rEndMonth = req.getEndMonth() != null ? req.getEndMonth() : (Objects.equals(rEndYear, req.getStartYear()) ? req.getStartMonth() : null);
+            Integer rEndDay = req.getEndDay() != null ? req.getEndDay() : (Objects.equals(rEndMonth, req.getStartMonth()) ? req.getStartDay() : null);
+
+            startDd.setEndQualifier(parseQualifier(req.getEndQualifier()));
+            startDd.setEndYear(rEndYear);
+            startDd.setEndMonth(rEndMonth);
+            startDd.setEndDay(rEndDay);
+            startDd.setEndTimeQualifier(req.getEndHour() != null ? parseQualifier(req.getEndTimeQualifier()) : null);
+            startDd.setEndHour(req.getEndHour());
+            startDd.setEndMinute(req.getEndMinute());
+            startDd.setEndSecond(req.getEndSecond());
+        } else {
+            startDd.setEndQualifier(null);
+            startDd.setEndYear(null);
+            startDd.setEndMonth(null);
+            startDd.setEndDay(null);
+            startDd.setEndTimeQualifier(null);
+            startDd.setEndHour(null);
+            startDd.setEndMinute(null);
+            startDd.setEndSecond(null);
+        }
+
+        startDd.recalculateSortDates();
+        col.setStartDate(startDd);
+        col.setStartYear(startDd.getStartYear());
+        col.setEndYear(startDd.getEndYear());
+    }
+
     private String extractDirectoryPath(String relativePath) {
         if (relativePath == null || !relativePath.contains("/")) {
-            return "undated/other_family_photos";
+            return "collections/misc";
         }
         return relativePath.substring(0, relativePath.lastIndexOf('/'));
     }
@@ -1758,7 +2065,7 @@ public class MediaService {
             int dec = (rootCol.getStartYear() / 10) * 10;
             sb.append(String.format("dated/%ds/%d/%s", dec, rootCol.getStartYear(), rootCol.getSlug()));
         } else {
-            sb.append("undated/collections/").append(rootCol.getSlug());
+            sb.append("collections/").append(rootCol.getSlug());
         }
 
         for (int i = 1; i < chain.size(); i++) {
@@ -1790,7 +2097,7 @@ public class MediaService {
             int decade = (rootYear / 10) * 10;
             pathBuilder.append(String.format("dated/%ds/%d/%s", decade, rootYear, rootSlug));
         } else {
-            pathBuilder.append("undated/events/").append(rootSlug);
+            pathBuilder.append("collections/events/").append(rootSlug);
         }
 
         for (int i = 1; i < chain.size(); i++) {
@@ -1805,10 +2112,26 @@ public class MediaService {
     }
 
     private String resolveEffectiveEventFolderSlug(Event evt, Integer yearOverride) {
+        String basePart;
         if (evt.getFolderSlug() != null && !evt.getFolderSlug().isBlank()) {
-            return storageService.toSnakeCase(evt.getFolderSlug());
+            basePart = storageService.toSnakeCase(evt.getFolderSlug());
+            basePart = basePart.replaceFirst("^\\d{4}(_\\d{2})*(_\\d{2})*(-_)?(\\d{4}(_\\d{2})*(_\\d{2})*_)?", "");
+            basePart = basePart.replaceFirst("^_", "");
+            if (basePart.isBlank()) {
+                basePart = storageService.toSnakeCase(evt.getTitle() != null ? evt.getTitle() : evt.getEventType().getCode());
+            }
+        } else {
+            basePart = buildEventFolderSlug(evt, yearOverride);
+            basePart = basePart.replaceFirst("^\\d{4}(_\\d{2})*(_\\d{2})*(-_)?(\\d{4}(_\\d{2})*(_\\d{2})*_)?", "");
+            basePart = basePart.replaceFirst("^_", "");
         }
-        return buildEventFolderSlug(evt, yearOverride);
+
+        String datePrefix = buildDatePrefix(evt.getStartDate(), evt.getEndDate());
+        if (datePrefix.isEmpty() && yearOverride != null) {
+            datePrefix = String.valueOf(yearOverride);
+        }
+
+        return datePrefix.isEmpty() ? basePart : datePrefix + "_" + basePart;
     }
 
     private String resolveDirectoryForContext(
@@ -1830,7 +2153,7 @@ public class MediaService {
                     cemeterySlug = storageService.toSnakeCase(g.getCemetery().getName());
                 }
             }
-            return "undated/graves/" + cemeterySlug;
+            return "collections/graves/" + cemeterySlug;
         }
 
         MediaCollection col = collectionId != null
@@ -1842,19 +2165,22 @@ public class MediaService {
                 ? "portraits/group"
                 : "portraits/single";
 
-        // Point 22: Event media (dated event -> dated/<dec>s/<year>/<evt>; undated event with collection -> <col>/events/<evt>)
+        // Event media (dated event -> dated/<dec>s/<year>/<evt>; undated event with collection -> collections/<col>/events/<evt>)
         if (context == MediaPrimaryContext.EVENT && eventId != null) {
             Event evt = eventRepository.findById(eventId).orElse(null);
             if (evt != null) {
                 Integer evtYear = extractYearFromEvent(evt);
-                if (evtYear == null && col != null) {
+                if (evtYear == null) {
+                    if (col == null) {
+                        throw new IllegalArgumentException("Wybierz istniejącą kolekcję dla wydarzenia bez ustalonej daty.");
+                    }
                     return resolveCollectionDirectoryPath(col) + "/events/" + resolveEffectiveEventFolderSlug(evt, null);
                 }
                 return resolveEventDirectoryPath(evt, null);
             }
         }
 
-        // Point 22: Collection-based media (including portraits, unknown media, dated collections, and sub-collections)
+        // Collection-based media (including portraits, unknown media, dated collections, and sub-collections)
         if (col != null) {
             String colDir = resolveCollectionDirectoryPath(col);
             if (isPortrait) {
@@ -1866,13 +2192,13 @@ public class MediaService {
             return colDir;
         }
 
-        // Point 22: Portrait without explicit collectionId (fallback to person's collection folder)
-        if (isPortrait && personId != null) {
-            Person p = personRepository.findById(personId).orElse(null);
-            if (p != null) {
-                String personSlug = buildPersonSlug(p);
-                return "undated/collections/" + personSlug;
+        // Portrait without collection
+        if (isPortrait) {
+            if (customYear != null && customYear >= 1000 && customYear <= 2999) {
+                int decade = (customYear / 10) * 10;
+                return String.format("dated/%ds/%d/misc_%d", decade, customYear, customYear);
             }
+            throw new IllegalArgumentException("Wybierz istniejącą kolekcję dla portretu bez ustalonej daty.");
         }
 
         if (customYear != null && customYear >= 1000 && customYear <= 2999) {
@@ -1881,13 +2207,13 @@ public class MediaService {
         }
 
         if (context == MediaPrimaryContext.HEIRLOOM) {
-            return "undated/heirlooms";
+            return "collections/heirlooms";
         }
         if (context == MediaPrimaryContext.LOCATION) {
-            return "undated/locations";
+            return "collections/places";
         }
 
-        return "undated/other_family_photos";
+        throw new IllegalArgumentException("Wybierz istniejącą kolekcję dla plików bez ustalonej daty.");
     }
 
     private String buildDefaultBaseName(
@@ -2089,6 +2415,10 @@ public class MediaService {
                 .findFirst()
                 .orElse(null);
 
+        DateDescriptor startDd = col.getStartDate();
+        DateDescriptor endDd = col.getEndDate();
+        String dateText = EventTimelineService.formatEventDates(startDd, endDd);
+
         return MediaCollectionDto.builder()
                 .id(col.getId())
                 .name(col.getName())
@@ -2097,8 +2427,23 @@ public class MediaService {
                 .parentCollectionId(parent != null ? parent.getId() : null)
                 .parentCollectionName(parent != null ? parent.getName() : null)
                 .datedCollection(Boolean.TRUE.equals(col.getIsDatedCollection()))
-                .startYear(col.getStartYear())
-                .endYear(col.getEndYear())
+                .dateText(dateText)
+                .startYear(startDd != null ? startDd.getStartYear() : col.getStartYear())
+                .startMonth(startDd != null ? startDd.getStartMonth() : null)
+                .startDay(startDd != null ? startDd.getStartDay() : null)
+                .startTimeQualifier(startDd != null && startDd.getStartTimeQualifier() != null ? startDd.getStartTimeQualifier().name() : null)
+                .startHour(startDd != null ? startDd.getStartHour() : null)
+                .startMinute(startDd != null ? startDd.getStartMinute() : null)
+                .startSecond(startDd != null ? startDd.getStartSecond() : null)
+                .isRange(startDd != null && startDd.getDateType() == DateType.RANGE)
+                .endQualifier(endDd != null && endDd.getStartQualifier() != null ? endDd.getStartQualifier().name() : (startDd != null && startDd.getEndQualifier() != null ? startDd.getEndQualifier().name() : null))
+                .endYear(endDd != null ? endDd.getStartYear() : (startDd != null ? startDd.getEndYear() : col.getEndYear()))
+                .endMonth(endDd != null ? endDd.getStartMonth() : (startDd != null ? startDd.getEndMonth() : null))
+                .endDay(endDd != null ? endDd.getStartDay() : (startDd != null ? startDd.getEndDay() : null))
+                .endTimeQualifier(endDd != null && endDd.getStartTimeQualifier() != null ? endDd.getStartTimeQualifier().name() : (startDd != null && startDd.getEndTimeQualifier() != null ? startDd.getEndTimeQualifier().name() : null))
+                .endHour(endDd != null ? endDd.getStartHour() : (startDd != null ? startDd.getEndHour() : null))
+                .endMinute(endDd != null ? endDd.getStartMinute() : (startDd != null ? startDd.getEndMinute() : null))
+                .endSecond(endDd != null ? endDd.getStartSecond() : (startDd != null ? startDd.getEndSecond() : null))
                 .founderPersonId(f != null ? f.getId() : null)
                 .founderPersonName(founderName)
                 .previewMediaId(previewMediaId)

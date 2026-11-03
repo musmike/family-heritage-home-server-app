@@ -353,6 +353,8 @@ public class EventTimelineService {
         Event evt = eventRepository.findById(eventId)
                 .orElseThrow(() -> new IllegalArgumentException("Event not found: " + eventId));
 
+        mediaService.prepareEventDeletion(eventId);
+
         eventRepository.delete(evt);
         eventRepository.flush();
         locationRepository.deleteOrphanLocations();
@@ -864,9 +866,9 @@ public class EventTimelineService {
             String pParts = pEvt.getParticipants().stream()
                     .map(ep -> ep.getParticipantText() != null
                             ? ep.getParticipantText()
-                            : ((ep.getPerson() != null && ep.getPerson().getCachedSurname() != null ? ep.getPerson().getCachedSurname() : "")
+                            : ((ep.getPerson() != null && ep.getPerson().getCachedGivenName() != null ? ep.getPerson().getCachedGivenName() : "")
                             + " "
-                            + (ep.getPerson() != null && ep.getPerson().getCachedGivenName() != null ? ep.getPerson().getCachedGivenName() : "")).trim())
+                            + (ep.getPerson() != null && ep.getPerson().getCachedSurname() != null ? ep.getPerson().getCachedSurname() : "")).trim())
                     .filter(s -> !s.isEmpty())
                     .collect(Collectors.joining(" & "));
 
@@ -962,20 +964,9 @@ public class EventTimelineService {
     }
 
     public String buildDefaultEventFolderSlug(Event evt, Integer yearOverride) {
-        DateDescriptor dd = evt.getStartDate();
-        Integer y = yearOverride != null ? yearOverride : (dd != null ? dd.getStartYear() : null);
-        Integer m = dd != null ? dd.getStartMonth() : null;
-        Integer d = dd != null ? dd.getStartDay() : null;
-
-        StringBuilder datePrefix = new StringBuilder();
-        if (y != null) {
-            datePrefix.append(y);
-            if (m != null) {
-                datePrefix.append(String.format("_%02d", m));
-                if (d != null) {
-                    datePrefix.append(String.format("_%02d", d));
-                }
-            }
+        String datePrefix = MediaService.buildDatePrefix(evt.getStartDate(), evt.getEndDate());
+        if (datePrefix.isEmpty() && yearOverride != null) {
+            datePrefix = String.valueOf(yearOverride);
         }
 
         String namePart = (evt.getTitle() != null && !evt.getTitle().isBlank())
@@ -1100,8 +1091,8 @@ public class EventTimelineService {
     }
 
     private String formatParentName(Person p) {
-        return ((p.getCachedSurname() != null ? p.getCachedSurname() : "") + " "
-                + (p.getCachedGivenName() != null ? p.getCachedGivenName() : "")).trim();
+        return ((p.getCachedGivenName() != null ? p.getCachedGivenName() : "") + " "
+                + (p.getCachedSurname() != null ? p.getCachedSurname() : "")).trim();
     }
 
     public static String resolveEventTypeLabel(UserCode uc, Map<Long, String> translations) {

@@ -109,17 +109,50 @@ const renderSectionBody = (lines: string[], sectionKey: string): ReactNode[] => 
       continue;
     }
 
-    const mediaMatch = /^!\[([^\]]*)\]\(media:(\d+)\)$/.exec(trimmed);
-    if (mediaMatch) {
-      const caption = mediaMatch[1];
-      const mediaId = Number(mediaMatch[2]);
+    const mediaMatch = /^!\[([^\]]*)\]\((media|video):(\d+)\)$/.exec(trimmed);
+    if (mediaMatch?.[2] && mediaMatch[3]) {
+      const rawCaption = mediaMatch[1];
+      const kind = mediaMatch[2];
+      const mediaId = Number(mediaMatch[3]);
+
+      let align: 'left' | 'right' | 'center' = 'right';
+      let caption = rawCaption.trim();
+
+      const alignMatch = /^(left|right|center)\s*\|(.*)$/i.exec(caption);
+      if (alignMatch?.[1] && alignMatch[2]) {
+        align = alignMatch[1].toLowerCase() as 'left' | 'right' | 'center';
+        caption = alignMatch[2].trim();
+      } else if (/^(left|right|center)$/i.test(caption)) {
+        align = caption.toLowerCase() as 'left' | 'right' | 'center';
+        caption = '';
+      }
+
+      const alignClass =
+        align === 'left'
+          ? styles.wikiMediaLeft
+          : align === 'center'
+            ? styles.wikiMediaCenter
+            : styles.wikiMediaRight;
+
       elements.push(
-        <figure key={`${sectionKey}-media-${String(i)}`} className={styles.wikiMediaFigure}>
-          <img
-            src={mediaApi.getFileUrl(mediaId)}
-            alt={caption}
-            className={styles.wikiMediaImg}
-          />
+        <figure
+          key={`${sectionKey}-media-${String(i)}`}
+          className={`${styles.wikiMediaFigure} ${alignClass}`}
+          data-testid={`embedded-media-figure-${String(mediaId)}`}
+        >
+          {kind === 'video' ? (
+            <video
+              src={mediaApi.getFileUrl(mediaId)}
+              controls
+              className={styles.wikiMediaImg}
+            />
+          ) : (
+            <img
+              src={mediaApi.getFileUrl(mediaId)}
+              alt={caption}
+              className={styles.wikiMediaImg}
+            />
+          )}
           {caption && (
             <figcaption className={styles.wikiMediaCaption}>{caption}</figcaption>
           )}
@@ -129,10 +162,45 @@ const renderSectionBody = (lines: string[], sectionKey: string): ReactNode[] => 
       continue;
     }
 
+    // Text alignment directive: :::left, :::center, :::right, :::justify
+    const alignBlockMatch = /^:::(left|center|right|justify)$/i.exec(trimmed);
+    if (alignBlockMatch?.[1]) {
+      const alignType = alignBlockMatch[1].toLowerCase();
+      i++;
+      const blockLines: string[] = [];
+      while (i < lines.length && lines[i]?.trim() !== ':::') {
+        blockLines.push(lines[i] ?? '');
+        i++;
+      }
+      if (i < lines.length && lines[i]?.trim() === ':::') {
+        i++;
+      }
+
+      const alignStyleClass =
+        alignType === 'center'
+          ? styles.wikiTextAlignCenter
+          : alignType === 'right'
+            ? styles.wikiTextAlignRight
+            : alignType === 'justify'
+              ? styles.wikiTextAlignJustify
+              : styles.wikiTextAlignLeft;
+
+      elements.push(
+        <div
+          key={`${sectionKey}-align-${String(i)}`}
+          className={alignStyleClass}
+          data-testid={`wiki-event-align-${alignType}`}
+        >
+          {renderSectionBody(blockLines, `${sectionKey}-al-${String(i)}`)}
+        </div>
+      );
+      continue;
+    }
+
     if (trimmed.startsWith('>')) {
       const quoteLines: string[] = [];
-      while (i < lines.length && lines[i].trim().startsWith('>')) {
-        quoteLines.push(lines[i].trim().replace(/^>\s?/, ''));
+      while (i < lines.length && (lines[i]?.trim().startsWith('>') ?? false)) {
+        quoteLines.push(lines[i]?.trim().replace(/^>\s?/, '') ?? '');
         i++;
       }
       elements.push(
@@ -153,8 +221,8 @@ const renderSectionBody = (lines: string[], sectionKey: string): ReactNode[] => 
 
     if (/^[-*]\s+/.test(trimmed)) {
       const listItems: string[] = [];
-      while (i < lines.length && /^[-*]\s+/.test(lines[i].trim())) {
-        listItems.push(lines[i].trim().replace(/^[-*]\s+/, ''));
+      while (i < lines.length && /^[-*]\s+/.test(lines[i]?.trim() ?? '')) {
+        listItems.push(lines[i]?.trim().replace(/^[-*]\s+/, '') ?? '');
         i++;
       }
       elements.push(
@@ -172,12 +240,15 @@ const renderSectionBody = (lines: string[], sectionKey: string): ReactNode[] => 
     const paraLines: string[] = [];
     while (
       i < lines.length &&
-      lines[i].trim() !== '' &&
-      !lines[i].trim().startsWith('>') &&
-      !/^[-*]\s+/.test(lines[i].trim()) &&
-      !HEADING_REGEX.test(lines[i].trim())
+      lines[i]?.trim() !== '' &&
+      !lines[i]?.trim().startsWith('>') &&
+      !/^[-*]\s+/.test(lines[i]?.trim() ?? '') &&
+      !/^!\[([^\]]*)\]\((media|video):(\d+)\)$/.test(lines[i]?.trim() ?? '') &&
+      !/^:::(left|center|right|justify)$/i.test(lines[i]?.trim() ?? '') &&
+      lines[i]?.trim() !== ':::' &&
+      !HEADING_REGEX.test(lines[i]?.trim() ?? '')
     ) {
-      paraLines.push(lines[i].trim());
+      paraLines.push(lines[i]?.trim() ?? '');
       i++;
     }
 
@@ -294,6 +365,25 @@ export default function WikiEventDescriptionSection({
       const prefix = before.endsWith('\n') || before === '' ? '' : '\n';
       replacement = `${prefix}${lines.map(l => `> ${l.replace(/^>\s?/, '')}`).join('\n')}\n`;
     }
+
+    const nextText = before + replacement + after;
+    setDraftText(nextText);
+    el.focus();
+  };
+
+  const applyAlignment = (align: 'left' | 'center' | 'right' | 'justify') => {
+    const el = textareaRef.current;
+    if (!el) return;
+
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const selected = draftText.slice(start, end);
+    const before = draftText.slice(0, start);
+    const after = draftText.slice(end);
+
+    const prefix = before.endsWith('\n') || before === '' ? '' : '\n';
+    const content = selected.trim() || 'Wpisz tekst tutaj...';
+    const replacement = `${prefix}:::${align}\n${content}\n:::\n`;
 
     const nextText = before + replacement + after;
     setDraftText(nextText);
@@ -452,6 +542,55 @@ export default function WikiEventDescriptionSection({
         >
           „” Cytat w ramce
         </button>
+
+        {/* Text Alignment Toolbar Group */}
+        <div style={{ display: 'inline-flex', borderRadius: '6px', border: '1px solid #cbd5e1', overflow: 'hidden' }}>
+          <button
+            type="button"
+            title="Wyrównaj tekst do lewej (:::left)"
+            onClick={() => {
+              applyAlignment('left');
+            }}
+            className={styles.toolBtn}
+            style={{ borderRadius: 0, border: 'none', borderRight: '1px solid #cbd5e1' }}
+          >
+            ⬅️ Lewa
+          </button>
+          <button
+            type="button"
+            title="Wyśrodkuj tekst (:::center)"
+            onClick={() => {
+              applyAlignment('center');
+            }}
+            className={styles.toolBtn}
+            style={{ borderRadius: 0, border: 'none', borderRight: '1px solid #cbd5e1' }}
+          >
+            ↔️ Środek
+          </button>
+          <button
+            type="button"
+            title="Wyrównaj tekst do prawej (:::right)"
+            onClick={() => {
+              applyAlignment('right');
+            }}
+            className={styles.toolBtn}
+            style={{ borderRadius: 0, border: 'none', borderRight: '1px solid #cbd5e1' }}
+          >
+            ➡️ Prawa
+          </button>
+          <button
+            type="button"
+            title="Wyjustuj tekst (:::justify)"
+            onClick={() => {
+              applyAlignment('justify');
+            }}
+            className={styles.toolBtn}
+            style={{ borderRadius: 0, border: 'none' }}
+          >
+            ≡ Justuj
+          </button>
+        </div>
+
         <button
           type="button"
           onClick={handleOpenLinkPicker}

@@ -192,11 +192,34 @@ public class PersonBiographyService {
         person.setBiographyContent(normalized);
         personRepository.saveAndFlush(person);
 
-        String fullName = ((person.getCachedSurname() != null ? person.getCachedSurname() : "") + " "
-                + (person.getCachedGivenName() != null ? person.getCachedGivenName() : "")).trim();
+        String fullName = ((person.getCachedGivenName() != null ? person.getCachedGivenName() : "") + " "
+                + (person.getCachedSurname() != null ? person.getCachedSurname() : "")).trim();
         activityLogService.logActivity(
                 ActivityActionType.PERSON_UPDATED,
                 "Zaktualizowano życiorys osoby: " + fullName,
+                "PERSON",
+                person.getId()
+        );
+
+        return getBiography(personId, isAdmin);
+    }
+
+    @Transactional
+    public PersonBiographyDto removePersonAvatar(Long personId, boolean isAdmin) {
+        Person person = personRepository.findById(personId)
+                .orElseThrow(() -> new IllegalArgumentException("Person not found: " + personId));
+
+        person.setAvatarMedia(null);
+        person.setAvatarCropX(null);
+        person.setAvatarCropY(null);
+        person.setAvatarCropZoom(null);
+        personRepository.saveAndFlush(person);
+
+        String fullName = ((person.getCachedGivenName() != null ? person.getCachedGivenName() : "") + " "
+                + (person.getCachedSurname() != null ? person.getCachedSurname() : "")).trim();
+        activityLogService.logActivity(
+                ActivityActionType.PERSON_UPDATED,
+                "Usunięto portret profilu osoby: " + fullName,
                 "PERSON",
                 person.getId()
         );
@@ -640,8 +663,8 @@ public class PersonBiographyService {
         target.setIsDefaultProband(true);
         target = personRepository.saveAndFlush(target);
 
-        String fullName = ((target.getCachedSurname() != null ? target.getCachedSurname() : "") + " "
-                + (target.getCachedGivenName() != null ? target.getCachedGivenName() : "")).trim();
+        String fullName = ((target.getCachedGivenName() != null ? target.getCachedGivenName() : "") + " "
+                + (target.getCachedSurname() != null ? target.getCachedSurname() : "")).trim();
         activityLogService.logActivity(
                 ActivityActionType.DEFAULT_PROBAND_SET,
                 "Ustawiono głównego probanta drzewa: " + fullName,

@@ -224,6 +224,28 @@ public class MediaStorageService {
         }
     }
 
+    public void deleteDirectoryRecursively(String relativeDirPath) {
+        if (relativeDirPath == null || relativeDirPath.isBlank()) {
+            return;
+        }
+        try {
+            Path dirPath = resolveMediaFilePath(relativeDirPath);
+            if (Files.exists(dirPath)) {
+                try (Stream<Path> walk = Files.walk(dirPath)) {
+                    walk.sorted(Comparator.reverseOrder())
+                            .forEach(p -> {
+                                try {
+                                    Files.deleteIfExists(p);
+                                } catch (IOException ignored) {
+                                }
+                            });
+                }
+                cleanUpEmptyParentDirectories(dirPath.getParent());
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
     public void deleteAllMediaFilesOnDisk() {
         Path root = getRootDirectory();
         if (!Files.exists(root)) {
@@ -313,18 +335,18 @@ public class MediaStorageService {
                         ny = x;
                     }
                     case 6 -> {
-                        // Rotate 90 degrees CW
-                        nx = h - 1 - y;
-                        ny = x;
+                        // Rotate 270 degrees CW (90 CCW) to correct standard phone portrait orientation
+                        nx = y;
+                        ny = w - 1 - x;
                     }
                     case 7 -> {
                         nx = h - 1 - y;
                         ny = w - 1 - x;
                     }
                     case 8 -> {
-                        // Rotate 270 degrees CW (90 CCW)
-                        nx = y;
-                        ny = w - 1 - x;
+                        // Rotate 90 degrees CW to correct inverted phone portrait orientation
+                        nx = h - 1 - y;
+                        ny = x;
                     }
                     default -> {
                     }

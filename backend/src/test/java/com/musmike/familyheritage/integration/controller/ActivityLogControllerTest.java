@@ -63,7 +63,7 @@ class ActivityLogControllerTest extends AbstractIntegrationTest {
             """;
         importService.importGedcom(new ByteArrayInputStream(gedcom.getBytes(StandardCharsets.UTF_8)));
 
-        // Link user "admin" to Person "Jan Kowalski" to test "Kowalski Jan (admin)" formatting
+        // Link user "admin" to Person "Jan Kowalski" to test "Jan Kowalski (admin)" formatting
         Person jan = personRepository.findByExternalIdsUidValue("act-uid-1").orElseThrow();
         User adminUser = userRepository.findByUsername("admin").orElseGet(() -> {
             User u = new User();
@@ -100,7 +100,7 @@ class ActivityLogControllerTest extends AbstractIntegrationTest {
                         "USER_CREATED"
                 )))
                 .andExpect(jsonPath("$.content[?(@.actionType=='USER_LOGIN')].ipAddress").value(hasItem("192.168.100.55")))
-                .andExpect(jsonPath("$.content[?(@.actorUsername=='admin')].actorDisplayName").value(hasItem("Kowalski Jan (admin)")));
+                .andExpect(jsonPath("$.content[?(@.actorUsername=='admin')].actorDisplayName").value(hasItem("Jan Kowalski (admin)")));
 
         // Reset tree -> preserves previous activities and adds TREE_RESET!
         sessionService.resetTreeData();

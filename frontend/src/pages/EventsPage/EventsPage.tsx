@@ -52,7 +52,7 @@ export const formatParticipantsSummary = (evt: TimelineEventDto): string => {
   return evt.participants
     .map(p => {
       if (p.participantText) return p.participantText;
-      return `${p.surname ?? ''} ${p.givenName ?? ''}`.trim();
+      return `${p.givenName ?? ''} ${p.surname ?? ''}`.trim();
     })
     .filter(Boolean)
     .join(' & ');
@@ -379,7 +379,7 @@ export default function EventsPage() {
   };
 
   const handleAddDbPersonParticipant = (p: PersonListItemDto) => {
-    const label = `${p.surname ?? ''} ${p.givenName ?? ''}`.trim();
+    const label = `${p.givenName ?? ''} ${p.surname ?? ''}`.trim();
     setFormParticipants(prev => [
       ...prev,
       {
@@ -1329,7 +1329,7 @@ export default function EventsPage() {
                       }}
                       className={styles.btnSecondary}
                     >
-                      + Wybierz: {p.surname} {p.givenName} ({p.birthYear ?? '?'})
+                      + Wybierz: {p.givenName} {p.surname} ({p.birthYear ?? '?'})
                     </button>
                   ))}
                 </div>
@@ -1406,7 +1406,7 @@ export default function EventsPage() {
             />
           </div>
 
-          <div className={styles.filterField}>
+          <div className={`${styles.filterField} ${styles.filterFieldTypes}`}>
             <span className={styles.filterLabel}>Typy wydarzeń</span>
             <button
               type="button"
@@ -1416,7 +1416,7 @@ export default function EventsPage() {
               }}
               className={styles.multiSelectTrigger}
             >
-              <span>
+              <span className={styles.multiSelectTriggerText}>
                 {selectedTypes.length === 0
                   ? 'Wszystkie typy (kliknij, aby filtrować)'
                   : `Wybrano typów: ${String(selectedTypes.length)}`}

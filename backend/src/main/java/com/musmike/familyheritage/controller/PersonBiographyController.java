@@ -53,6 +53,14 @@ public class PersonBiographyController {
         );
     }
 
+    @DeleteMapping("/{personId}/avatar")
+    public ResponseEntity<PersonBiographyDto> removeAvatar(@PathVariable Long personId) {
+        if (!isCurrentUserAdmin()) {
+            throw new AccessDeniedException("Only ADMIN can remove person avatar.");
+        }
+        return ResponseEntity.ok(biographyService.removePersonAvatar(personId, true));
+    }
+
     @GetMapping("/{personId}/ancestor-tree")
     public ResponseEntity<AncestorTreeNodeDto> getAncestorTree(
             @PathVariable Long personId,

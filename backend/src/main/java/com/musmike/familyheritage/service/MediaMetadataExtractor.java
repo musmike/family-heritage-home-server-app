@@ -195,9 +195,22 @@ public class MediaMetadataExtractor {
 
             int tag = buf.getShort(pos) & 0xFFFF;
             if (tag == TAG_ORIENTATION) {
+                int type = buf.getShort(pos + 2) & 0xFFFF;
                 int val = buf.getShort(pos + 8) & 0xFFFF;
                 if (val >= 1 && val <= 8) {
                     return val;
+                }
+                if (pos + 10 <= buf.limit() - 2) {
+                    int valAlt = buf.getShort(pos + 10) & 0xFFFF;
+                    if (valAlt >= 1 && valAlt <= 8) {
+                        return valAlt;
+                    }
+                }
+                if (type == 4) {
+                    int valLong = buf.getInt(pos + 8);
+                    if (valLong >= 1 && valLong <= 8) {
+                        return valLong;
+                    }
                 }
             }
         }

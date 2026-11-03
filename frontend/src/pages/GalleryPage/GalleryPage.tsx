@@ -1,14 +1,18 @@
 import { useState, useEffect, useId, useMemo, use } from 'react';
+import axios from 'axios';
 import { mediaApi } from '../../api/mediaApi';
 import { biographyApi } from '../../api/biographyApi';
 import { AuthContext } from '../../context/AuthContext';
 import Loader from '../../components/Loader/Loader';
+import { Pagination } from '../../components/Pagination/Pagination';
 import styles from './GalleryPage.module.css';
 import type {
   MediaCollectionDto,
   MediaGalleryPageDto,
   MediaItemDto,
   MediaPrimaryContext,
+  MediaType,
+  UpdateMediaItemRequestDto,
 } from '../../types/media';
 import type { PersonListItemDto } from '../../types/biography';
 
@@ -17,11 +21,46 @@ interface FolderTileItem {
   title: string;
   subtitle?: string;
   count: number;
-  previewMediaId: number | null;
+  previewItems?: { id: number; mediaType: MediaType }[];
+  previewMediaId?: number | null;
   isTextPerson?: boolean;
   collectionId?: number;
   onClick: () => void;
 }
+
+const getTopPreviewItems = (list: MediaItemDto[]): { id: number; mediaType: MediaType }[] =>
+  list.slice(0, 3).map(m => ({ id: m.id, mediaType: m.mediaType }));
+
+const getPolishWeekdayLabel = (y: string, m: string, d: string): string | null => {
+  const yNum = Number(y);
+  const mNum = Number(m);
+  const dNum = Number(d);
+  if (!yNum || !mNum || !dNum || mNum < 1 || mNum > 12 || dNum < 1 || dNum > 31) {
+    return null;
+  }
+  const date = new Date(Date.UTC(yNum, mNum - 1, dNum, 12, 0, 0));
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return new Intl.DateTimeFormat('pl-PL', { weekday: 'long' }).format(date);
+};
+
+const toIsoDateInputValue = (y: string, m: string, d: string): string => {
+  const yNum = Number(y);
+  const mNum = Number(m);
+  const dNum = Number(d);
+  if (!yNum || !mNum || !dNum || mNum < 1 || mNum > 12 || dNum < 1 || dNum > 31) {
+    return '';
+  }
+  return `${String(yNum).padStart(4, '0')}-${String(mNum).padStart(2, '0')}-${String(dNum).padStart(2, '0')}`;
+};
+
+const QUALIFIER_OPTIONS = [
+  { value: 'EXACT', label: 'Dokładna data' },
+  { value: 'APPROXIMATE', label: 'Około (w przybliżeniu)' },
+  { value: 'BEFORE', label: 'Przed' },
+  { value: 'AFTER', label: 'Po' },
+];
 
 interface UploadDateRibbonBucket {
   key: string;
@@ -81,30 +120,75 @@ export default function GalleryPage() {
   const [personQuery, setPersonQuery] = useState<string>('');
   const [personResults, setPersonResults] = useState<PersonListItemDto[]>([]);
 
-  // Admin Create Collection / Sub-collection / Dated Collection Form
+  // Admin Create / Edit Collection / Sub-collection / Dated Collection Form
   const [showCreateCollection, setShowCreateCollection] = useState<boolean>(false);
+  const [editingCollectionId, setEditingCollectionId] = useState<number | null>(null);
   const [colName, setColName] = useState<string>('');
   const [colSlug, setColSlug] = useState<string>('');
   const [colDesc, setColDesc] = useState<string>('');
   const [colParentId, setColParentId] = useState<string>('');
   const [colIsDated, setColIsDated] = useState<boolean>(false);
+  const [colIsRange, setColIsRange] = useState<boolean>(false);
+  const [colStartQual, setColStartQual] = useState<string>('EXACT');
   const [colStartYear, setColStartYear] = useState<string>('');
+  const [colStartMonth, setColStartMonth] = useState<string>('');
+  const [colStartDay, setColStartDay] = useState<string>('');
+  const [colStartTimeQual, setColStartTimeQual] = useState<string>('EXACT');
+  const [colStartHour, setColStartHour] = useState<string>('');
+  const [colStartMinute, setColStartMinute] = useState<string>('');
+  const [colEndQual, setColEndQual] = useState<string>('EXACT');
   const [colEndYear, setColEndYear] = useState<string>('');
+  const [colEndMonth, setColEndMonth] = useState<string>('');
+  const [colEndDay, setColEndDay] = useState<string>('');
+  const [colEndTimeQual, setColEndTimeQual] = useState<string>('EXACT');
+  const [colEndHour, setColEndHour] = useState<string>('');
+  const [colEndMinute, setColEndMinute] = useState<string>('');
 
-  // Admin Single & Batch Upload Form
+  // Admin Single & Batch Upload Form (with Advanced Date/Time/Calendar & Portrait Single/Group)
   const [showUploadForm, setShowUploadForm] = useState<boolean>(false);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const uploadContext: MediaPrimaryContext = 'COLLECTION';
   const [uploadCollectionId, setUploadCollectionId] = useState<string>('');
   const [uploadIsPortrait, setUploadIsPortrait] = useState<boolean>(false);
+  const [uploadPortraitType, setUploadPortraitType] = useState<'SINGLE' | 'GROUP'>('SINGLE');
   const [uploadIsUnknown, setUploadIsUnknown] = useState<boolean>(false);
+  const [uploadIsRange, setUploadIsRange] = useState<boolean>(false);
+  const [uploadDateQual, setUploadDateQual] = useState<string>('EXACT');
   const [uploadYear, setUploadYear] = useState<string>('');
   const [uploadMonth, setUploadMonth] = useState<string>('');
   const [uploadDay, setUploadDay] = useState<string>('');
+  const uploadTimeQual = 'EXACT';
   const [uploadHour, setUploadHour] = useState<string>('');
   const [uploadMinute, setUploadMinute] = useState<string>('');
+  const [uploadRangeEndQual, setUploadRangeEndQual] = useState<string>('EXACT');
+  const [uploadRangeEndYear, setUploadRangeEndYear] = useState<string>('');
+  const [uploadRangeEndMonth, setUploadRangeEndMonth] = useState<string>('');
+  const [uploadRangeEndDay, setUploadRangeEndDay] = useState<string>('');
+  const uploadRangeEndTimeQual = 'EXACT';
+  const [uploadRangeEndHour, setUploadRangeEndHour] = useState<string>('');
+  const [uploadRangeEndMinute, setUploadRangeEndMinute] = useState<string>('');
   const [uploadCustomName, setUploadCustomName] = useState<string>('');
   const [uploadTitle, setUploadTitle] = useState<string>('');
+
+  // Admin In-Gallery Media Metadata Editing State
+  const [isEditingMediaItem, setIsEditingMediaItem] = useState<boolean>(false);
+  const [editMediaId, setEditMediaId] = useState<number | null>(null);
+  const [editTitle, setEditTitle] = useState<string>('');
+  const [editDescription, setEditDescription] = useState<string>('');
+  const [editInscription, setEditInscription] = useState<string>('');
+  const [editSourceText, setEditSourceText] = useState<string>('');
+  const [editIsRange, setEditIsRange] = useState<boolean>(false);
+  const [editDateQual, setEditDateQual] = useState<string>('EXACT');
+  const [editYear, setEditYear] = useState<string>('');
+  const [editMonth, setEditMonth] = useState<string>('');
+  const [editDay, setEditDay] = useState<string>('');
+  const [editTimeQual, setEditTimeQual] = useState<string>('EXACT');
+  const [editHour, setEditHour] = useState<string>('');
+  const [editMinute, setEditMinute] = useState<string>('');
+  const [editRangeEndQual, setEditRangeEndQual] = useState<string>('EXACT');
+  const [editRangeEndYear, setEditRangeEndYear] = useState<string>('');
+  const [editRangeEndMonth, setEditRangeEndMonth] = useState<string>('');
+  const [editRangeEndDay, setEditRangeEndDay] = useState<string>('');
 
   // Fullscreen Lightbox state
   const [activeLightboxList, setActiveLightboxList] = useState<MediaItemDto[]>([]);
@@ -227,6 +311,7 @@ export default function GalleryPage() {
           title: `Lata ${String(dec)}–${String(dec + 9)}`,
           subtitle: 'Kliknij, aby wybrać rok',
           count: list.length,
+          previewItems: getTopPreviewItems(list),
           previewMediaId: getFirstMediaId(list),
           onClick: () => {
             setSelectedDecade(dec);
@@ -239,6 +324,7 @@ export default function GalleryPage() {
           title: 'Wydarzenia bez daty',
           subtitle: 'Wydarzenia bez ustalonego roku',
           count: undatedEventItems.length,
+          previewItems: getTopPreviewItems(undatedEventItems),
           previewMediaId: getFirstMediaId(undatedEventItems),
           onClick: () => {
             setSelectedDecade('UNDATED_EVENTS');
@@ -270,6 +356,7 @@ export default function GalleryPage() {
           title: data.label,
           subtitle: 'Wydarzenie bez daty',
           count: data.list.length,
+          previewItems: getTopPreviewItems(data.list),
           previewMediaId: getFirstMediaId(data.list),
           onClick: () => {
             setSelectedYearBucketKey(`UEVT_${String(eId)}`);
@@ -314,6 +401,7 @@ export default function GalleryPage() {
           title: `Rok ${String(yr)}`,
           subtitle: 'Wydarzenia, kolekcje datowane i inne',
           count: list.length,
+          previewItems: getTopPreviewItems(list),
           previewMediaId: getFirstMediaId(list),
           onClick: () => {
             setSelectedYear(yr);
@@ -384,6 +472,7 @@ export default function GalleryPage() {
           title: data.title,
           subtitle: data.subtitle,
           count: data.list.length,
+          previewItems: getTopPreviewItems(data.list),
           previewMediaId: getFirstMediaId(data.list),
           onClick: () => {
             setSelectedYearBucketKey(bKey);
@@ -507,6 +596,9 @@ export default function GalleryPage() {
             ? '🏷️ Osoba spoza drzewa (wpis tekstowy)'
             : '👤 Osoba z drzewa genealogicznego',
           count: b.allPersonMedia.length,
+          previewItems: getTopPreviewItems(
+            b.singlePortraits.length > 0 ? b.singlePortraits : b.allPersonMedia
+          ),
           previewMediaId:
             getFirstMediaId(b.singlePortraits) ?? getFirstMediaId(b.allPersonMedia),
           isTextPerson: b.isTextPerson,
@@ -563,6 +655,7 @@ export default function GalleryPage() {
           title: c.title,
           subtitle: c.subtitle,
           count: c.list.length,
+          previewItems: getTopPreviewItems(c.list),
           previewMediaId: getFirstMediaId(c.list),
           onClick: () => {
             setSelectedPersonCategory(c.catKey);
@@ -661,6 +754,7 @@ export default function GalleryPage() {
             title: `🪦 ${cemName}`,
             subtitle: `Nagrobki ze zdjęciami: ${String(gravesMap.size)}`,
             count: allInCem.length,
+            previewItems: getTopPreviewItems(allInCem),
             previewMediaId: getFirstMediaId(allInCem),
             onClick: () => {
               setSelectedCemeteryName(cemName);
@@ -683,6 +777,7 @@ export default function GalleryPage() {
           title: gData.graveLabel,
           subtitle: selectedCemeteryName,
           count: gData.list.length,
+          previewItems: getTopPreviewItems(gData.list),
           previewMediaId: getFirstMediaId(gData.list),
           onClick: () => {
             setSelectedGraveId(gId);
@@ -738,6 +833,7 @@ export default function GalleryPage() {
           title: `📦 ${col.name}`,
           subtitle: col.description ?? `Folder: ${col.slug}`,
           count: treeMedia.length,
+          previewItems: getTopPreviewItems(treeMedia),
           previewMediaId: col.previewMediaId ?? getFirstMediaId(treeMedia),
           collectionId: col.id,
           onClick: () => {
@@ -784,6 +880,7 @@ export default function GalleryPage() {
           title: `📂 Podkolekcja: ${ch.name}`,
           subtitle: ch.description ?? `Podfolder: ${ch.slug}`,
           count: chMedia.length,
+          previewItems: getTopPreviewItems(chMedia),
           previewMediaId: ch.previewMediaId ?? getFirstMediaId(chMedia),
           collectionId: ch.id,
           onClick: () => {
@@ -798,6 +895,7 @@ export default function GalleryPage() {
           title: '👤 Portrety jednoosobowe',
           subtitle: 'Podfolder: portraits/single',
           count: singlePortraits.length,
+          previewItems: getTopPreviewItems(singlePortraits),
           previewMediaId: getFirstMediaId(singlePortraits),
           onClick: () => {
             setSelectedCollectionSubfolder('SINGLE_PORTRAIT');
@@ -811,6 +909,7 @@ export default function GalleryPage() {
           title: '👥 Portrety grupowe',
           subtitle: 'Podfolder: portraits/group',
           count: groupPortraits.length,
+          previewItems: getTopPreviewItems(groupPortraits),
           previewMediaId: getFirstMediaId(groupPortraits),
           onClick: () => {
             setSelectedCollectionSubfolder('GROUP_PORTRAIT');
@@ -824,6 +923,7 @@ export default function GalleryPage() {
           title: '❓ Nieznane (do identyfikacji)',
           subtitle: 'Podfolder: unknown',
           count: unknownMedia.length,
+          previewItems: getTopPreviewItems(unknownMedia),
           previewMediaId: getFirstMediaId(unknownMedia),
           onClick: () => {
             setSelectedCollectionSubfolder('UNKNOWN');
@@ -928,29 +1028,168 @@ export default function GalleryPage() {
     setPersonQuery('');
   };
 
-  const handleCreateCollection = async (e: React.SyntheticEvent<HTMLFormElement>) => {
+  const handleStartEditCollection = (col: MediaCollectionDto) => {
+    setEditingCollectionId(col.id);
+    setColName(col.name);
+    setColSlug(col.slug);
+    setColDesc(col.description ?? '');
+    setColParentId(col.parentCollectionId ? String(col.parentCollectionId) : '');
+    setColIsDated(Boolean(col.datedCollection));
+    setColIsRange(Boolean(col.isRange));
+    setColStartQual(col.startQualifier ?? 'EXACT');
+    setColStartYear(col.startYear ? String(col.startYear) : '');
+    setColStartMonth(col.startMonth ? String(col.startMonth) : '');
+    setColStartDay(col.startDay ? String(col.startDay) : '');
+    setColStartTimeQual(col.startTimeQualifier ?? 'EXACT');
+    setColStartHour(col.startHour !== null && col.startHour !== undefined ? String(col.startHour) : '');
+    setColStartMinute(col.startMinute !== null && col.startMinute !== undefined ? String(col.startMinute) : '');
+    setColEndQual(col.endQualifier ?? 'EXACT');
+    setColEndYear(col.endYear ? String(col.endYear) : '');
+    setColEndMonth(col.endMonth ? String(col.endMonth) : '');
+    setColEndDay(col.endDay ? String(col.endDay) : '');
+    setColEndTimeQual(col.endTimeQualifier ?? 'EXACT');
+    setColEndHour(col.endHour !== null && col.endHour !== undefined ? String(col.endHour) : '');
+    setColEndMinute(col.endMinute !== null && col.endMinute !== undefined ? String(col.endMinute) : '');
+    setShowCreateCollection(true);
+  };
+
+  const handleSaveCollection = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     try {
-      await mediaApi.createCollection({
+      const payload = {
         name: colName.trim(),
         customSlug: colSlug.trim() || null,
         description: colDesc.trim() || null,
         parentCollectionId: colParentId !== '' ? Number(colParentId) : null,
         datedCollection: colIsDated,
+        isRange: colIsDated ? colIsRange : false,
+        startQualifier: colIsDated ? colStartQual : null,
         startYear: colIsDated && colStartYear.trim() !== '' ? Number(colStartYear) : null,
-        endYear: colIsDated && colEndYear.trim() !== '' ? Number(colEndYear) : null,
-      });
+        startMonth: colIsDated && colStartMonth.trim() !== '' ? Number(colStartMonth) : null,
+        startDay: colIsDated && colStartDay.trim() !== '' ? Number(colStartDay) : null,
+        startTimeQualifier: colIsDated ? colStartTimeQual : null,
+        startHour: colIsDated && colStartHour.trim() !== '' ? Number(colStartHour) : null,
+        startMinute: colIsDated && colStartMinute.trim() !== '' ? Number(colStartMinute) : null,
+        endQualifier: colIsDated && colIsRange ? colEndQual : null,
+        endYear: colIsDated && colIsRange && colEndYear.trim() !== '' ? Number(colEndYear) : null,
+        endMonth: colIsDated && colIsRange && colEndMonth.trim() !== '' ? Number(colEndMonth) : null,
+        endDay: colIsDated && colIsRange && colEndDay.trim() !== '' ? Number(colEndDay) : null,
+        endTimeQualifier: colIsDated && colIsRange ? colEndTimeQual : null,
+        endHour: colIsDated && colIsRange && colEndHour.trim() !== '' ? Number(colEndHour) : null,
+        endMinute: colIsDated && colIsRange && colEndMinute.trim() !== '' ? Number(colEndMinute) : null,
+      };
+
+      if (editingCollectionId !== null) {
+        await mediaApi.updateCollection(editingCollectionId, payload);
+      } else {
+        await mediaApi.createCollection(payload);
+      }
+
+      setEditingCollectionId(null);
       setColName('');
       setColSlug('');
       setColDesc('');
       setColParentId('');
       setColIsDated(false);
+      setColIsRange(false);
       setColStartYear('');
+      setColStartMonth('');
+      setColStartDay('');
+      setColStartHour('');
+      setColStartMinute('');
       setColEndYear('');
+      setColEndMonth('');
+      setColEndDay('');
+      setColEndHour('');
+      setColEndMinute('');
       setShowCreateCollection(false);
       await fetchGallery();
-    } catch {
-      setErrorMessage('Nie udało się utworzyć kolekcji.');
+    } catch (err: unknown) {
+      if (axios.isAxiosError<{ message?: string }>(err) && err.response?.data.message) {
+        setErrorMessage(err.response.data.message);
+      } else {
+        setErrorMessage('Nie udało się zapisać kolekcji.');
+      }
+    }
+  };
+
+  const handleDeleteCollection = async (collectionId: number, collectionTitle: string) => {
+    if (
+      !window.confirm(
+        `Czy na pewno chcesz usunąć kolekcję „${collectionTitle}”?\nJeśli znajdują się w niej pliki przypisane wyłącznie do niej, musisz je najpierw przenieść lub usunąć.`
+      )
+    ) {
+      return;
+    }
+    try {
+      await mediaApi.deleteCollection(collectionId);
+      if (selectedCollectionId === collectionId) {
+        setSelectedCollectionId(null);
+        setSelectedCollectionSubfolder(null);
+      }
+      await fetchGallery();
+    } catch (err: unknown) {
+      if (axios.isAxiosError<{ message?: string }>(err) && err.response?.data.message) {
+        setErrorMessage(err.response.data.message);
+      } else {
+        setErrorMessage('Nie udało się usunąć kolekcji.');
+      }
+    }
+  };
+
+  const handleStartEditMedia = (item: MediaItemDto) => {
+    setEditMediaId(item.id);
+    setEditTitle(item.title ?? '');
+    setEditDescription(item.description ?? '');
+    setEditInscription(item.inscriptionText ?? '');
+    setEditSourceText(item.sourceText ?? '');
+    setEditIsRange(Boolean(item.betweenRange));
+    setEditDateQual(item.dateQualifier ?? 'EXACT');
+    setEditYear(item.year ? String(item.year) : '');
+    setEditMonth(item.month ? String(item.month) : '');
+    setEditDay(item.day ? String(item.day) : '');
+    setEditTimeQual(item.timeQualifier ?? 'EXACT');
+    setEditHour(item.hour !== null && item.hour !== undefined ? String(item.hour) : '');
+    setEditMinute(item.minute !== null && item.minute !== undefined ? String(item.minute) : '');
+    setEditRangeEndQual(item.rangeEndQualifier ?? 'EXACT');
+    setEditRangeEndYear(item.rangeEndYear ? String(item.rangeEndYear) : '');
+    setEditRangeEndMonth(item.rangeEndMonth ? String(item.rangeEndMonth) : '');
+    setEditRangeEndDay(item.rangeEndDay ? String(item.rangeEndDay) : '');
+    setIsEditingMediaItem(true);
+  };
+
+  const handleSaveMediaEdit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (editMediaId === null) return;
+    try {
+      const payload: UpdateMediaItemRequestDto = {
+        title: editTitle.trim() || null,
+        description: editDescription.trim() || null,
+        inscriptionText: editInscription.trim() || null,
+        sourceText: editSourceText.trim() || null,
+        isBetweenRange: editIsRange,
+        dateQualifier: editDateQual,
+        year: editYear.trim() !== '' ? Number(editYear) : null,
+        month: editMonth.trim() !== '' ? Number(editMonth) : null,
+        day: editDay.trim() !== '' ? Number(editDay) : null,
+        timeQualifier: editTimeQual,
+        hour: editHour.trim() !== '' ? Number(editHour) : null,
+        minute: editMinute.trim() !== '' ? Number(editMinute) : null,
+        rangeEndQualifier: editIsRange ? editRangeEndQual : null,
+        rangeEndYear: editIsRange && editRangeEndYear.trim() !== '' ? Number(editRangeEndYear) : null,
+        rangeEndMonth: editIsRange && editRangeEndMonth.trim() !== '' ? Number(editRangeEndMonth) : null,
+        rangeEndDay: editIsRange && editRangeEndDay.trim() !== '' ? Number(editRangeEndDay) : null,
+      };
+      await mediaApi.updateMedia(editMediaId, payload);
+      setIsEditingMediaItem(false);
+      setEditMediaId(null);
+      await fetchGallery();
+    } catch (err: unknown) {
+      if (axios.isAxiosError<{ message?: string }>(err) && err.response?.data.message) {
+        setErrorMessage(err.response.data.message);
+      } else {
+        setErrorMessage('Nie udało się zapisać zmian w pliku.');
+      }
     }
   };
 
@@ -963,7 +1202,7 @@ export default function GalleryPage() {
 
     if (!yearNum && colIdNum === undefined) {
       setErrorMessage(
-        'Dla zdjęć i filmów bez daty (lub portretów) wybierz kolekcję docelową, aby pliki nie trafiły luźno do folderu undated.'
+        'Dla zdjęć, filmów i nagrań audio bez daty (lub portretów) wybierz kolekcję docelową, aby pliki nie trafiły luźno do folderu undated.'
       );
       return;
     }
@@ -977,11 +1216,21 @@ export default function GalleryPage() {
           collectionId: colIdNum,
           portraitMedia: uploadIsPortrait,
           unknownMedia: uploadIsUnknown,
+          isBetweenRange: uploadIsRange,
+          dateQualifier: uploadDateQual,
           customYear: yearNum,
           customMonth: uploadMonth.trim() !== '' ? Number(uploadMonth) : undefined,
           customDay: uploadDay.trim() !== '' ? Number(uploadDay) : undefined,
+          timeQualifier: uploadTimeQual,
           customHour: uploadHour.trim() !== '' ? Number(uploadHour) : undefined,
           customMinute: uploadMinute.trim() !== '' ? Number(uploadMinute) : undefined,
+          rangeEndQualifier: uploadIsRange ? uploadRangeEndQual : undefined,
+          rangeEndYear: uploadIsRange && uploadRangeEndYear.trim() !== '' ? Number(uploadRangeEndYear) : undefined,
+          rangeEndMonth: uploadIsRange && uploadRangeEndMonth.trim() !== '' ? Number(uploadRangeEndMonth) : undefined,
+          rangeEndDay: uploadIsRange && uploadRangeEndDay.trim() !== '' ? Number(uploadRangeEndDay) : undefined,
+          rangeEndTimeQualifier: uploadIsRange ? uploadRangeEndTimeQual : undefined,
+          rangeEndHour: uploadIsRange && uploadRangeEndHour.trim() !== '' ? Number(uploadRangeEndHour) : undefined,
+          rangeEndMinute: uploadIsRange && uploadRangeEndMinute.trim() !== '' ? Number(uploadRangeEndMinute) : undefined,
           customFileName: uploadCustomName.trim() || undefined,
           title: uploadTitle.trim() || undefined,
           clientLastModifiedMs: single.lastModified || undefined,
@@ -1003,6 +1252,10 @@ export default function GalleryPage() {
           }),
           titles: uploadFiles.map(() => uploadTitle.trim()),
           customYears: uploadFiles.map(() => yearNum ?? null),
+          customMonths: uploadFiles.map(() => (uploadMonth.trim() !== '' ? Number(uploadMonth) : null)),
+          customDays: uploadFiles.map(() => (uploadDay.trim() !== '' ? Number(uploadDay) : null)),
+          customHours: uploadFiles.map(() => (uploadHour.trim() !== '' ? Number(uploadHour) : null)),
+          customMinutes: uploadFiles.map(() => (uploadMinute.trim() !== '' ? Number(uploadMinute) : null)),
           clientLastModifiedList: uploadFiles.map(f => f.lastModified || null),
           defaultYear: yearNum ?? null,
           personIds: selectedPersons.map(p => p.id),
@@ -1054,7 +1307,7 @@ export default function GalleryPage() {
             alt={item.title ?? ''}
             className={styles.thumbImg}
           />
-        ) : (
+        ) : item.mediaType === 'VIDEO' ? (
           <>
             <video
               src={`${mediaApi.getFileUrl(item.id)}#t=0.5`}
@@ -1065,6 +1318,11 @@ export default function GalleryPage() {
             />
             <span className={styles.videoPlayOverlay}>▶</span>
           </>
+        ) : (
+          <div className={styles.audioThumbBox}>
+            <span className={styles.audioThumbIcon}>🎵</span>
+            <span className={styles.audioThumbLabel}>Nagranie audio</span>
+          </div>
         )}
         {(item.dateText ?? item.year) && (
           <span className={styles.yearBadge}>{item.dateText ?? item.year}</span>
@@ -1089,40 +1347,125 @@ export default function GalleryPage() {
 
   const renderFolderTilesGrid = (tiles: FolderTileItem[]) => (
     <div className={styles.folderTilesGrid} data-testid="gallery-grouped-sections">
-      {tiles.map(tile => (
-        <button
-          key={tile.key}
-          type="button"
-          onClick={tile.onClick}
-          className={`${styles.folderTileCard} ${
-            tile.isTextPerson ? styles.folderTileTextPerson : ''
-          }`}
-        >
-          <div className={styles.folderThumbBox}>
-            {tile.previewMediaId !== null ? (
-              <img
-                src={mediaApi.getThumbnailUrl(tile.previewMediaId)}
-                alt=""
-                className={styles.thumbImg}
-              />
-            ) : (
-              <span style={{ fontSize: '2.2rem' }}>📁</span>
+      {tiles.map(tile => {
+        const previews =
+          tile.previewItems && tile.previewItems.length > 0
+            ? tile.previewItems
+            : tile.previewMediaId !== null
+            ? [{ id: tile.previewMediaId, mediaType: 'IMAGE' as MediaType }]
+            : [];
+
+        return (
+          <div key={tile.key} style={{ display: 'flex', flexDirection: 'column' }}>
+            <button
+              type="button"
+              onClick={tile.onClick}
+              className={`${styles.folderTileCard} ${
+                tile.isTextPerson ? styles.folderTileTextPerson : ''
+              }`}
+            >
+              <div className={styles.folderThumbBox}>
+                {previews.length > 1 ? (
+                  <div className={styles.stackedThumbContainer}>
+                    {previews.map((pv, idx) => (
+                      <div
+                        key={pv.id}
+                        className={`${styles.stackedThumbItem} ${
+                          idx === 0
+                            ? styles.stackedThumbItem0
+                            : idx === 1
+                            ? styles.stackedThumbItem1
+                            : styles.stackedThumbItem2
+                        }`}
+                      >
+                        {pv.mediaType === 'IMAGE' ? (
+                          <img
+                            src={mediaApi.getThumbnailUrl(pv.id)}
+                            alt=""
+                            className={styles.thumbImg}
+                          />
+                        ) : pv.mediaType === 'VIDEO' ? (
+                          <video
+                            src={`${mediaApi.getFileUrl(pv.id)}#t=0.5`}
+                            preload="metadata"
+                            muted
+                            playsInline
+                            className={styles.thumbImg}
+                          />
+                        ) : (
+                          <div className={styles.audioThumbBox}>
+                            <span className={styles.audioThumbIcon}>🎵</span>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : previews.length === 1 ? (
+                  previews[0].mediaType === 'IMAGE' ? (
+                    <img
+                      src={mediaApi.getThumbnailUrl(previews[0].id)}
+                      alt=""
+                      className={styles.thumbImg}
+                    />
+                  ) : previews[0].mediaType === 'VIDEO' ? (
+                    <video
+                      src={`${mediaApi.getFileUrl(previews[0].id)}#t=0.5`}
+                      preload="metadata"
+                      muted
+                      playsInline
+                      className={styles.thumbImg}
+                    />
+                  ) : (
+                    <div className={styles.audioThumbBox}>
+                      <span className={styles.audioThumbIcon}>🎵</span>
+                      <span className={styles.audioThumbLabel}>Nagranie audio</span>
+                    </div>
+                  )
+                ) : (
+                  <span style={{ fontSize: '2.2rem' }}>📁</span>
+                )}
+                {tile.isTextPerson && (
+                  <span className={styles.textPersonBadge}>Spoza drzewa</span>
+                )}
+                <span className={styles.folderCountBadge}>
+                  Pliki: {String(tile.count)}
+                </span>
+              </div>
+              <div className={styles.folderTileBody}>
+                <div className={styles.folderTileTitle}>{tile.title}</div>
+                {tile.subtitle && (
+                  <div className={styles.folderTileSub}>{tile.subtitle}</div>
+                )}
+              </div>
+            </button>
+            {isAdmin && tile.collectionId !== undefined && (
+              <div className={styles.colCardActions}>
+                <button
+                  type="button"
+                  onClick={e => {
+                    e.stopPropagation();
+                    const target = allCollections.find(c => c.id === tile.collectionId);
+                    if (target) handleStartEditCollection(target);
+                  }}
+                  className={styles.colActionBtn}
+                >
+                  ✏️ Edytuj kolekcję
+                </button>
+                <button
+                  type="button"
+                  onClick={e => {
+                    e.stopPropagation();
+                    void handleDeleteCollection(tile.collectionId, tile.title);
+                  }}
+                  className={`${styles.colActionBtn} ${styles.colActionBtnDanger}`}
+                >
+                  🗑️ Usuń kolekcję
+                </button>
+              </div>
             )}
-            {tile.isTextPerson && (
-              <span className={styles.textPersonBadge}>Spoza drzewa</span>
-            )}
-            <span className={styles.folderCountBadge}>
-              Pliki: {String(tile.count)}
-            </span>
           </div>
-          <div className={styles.folderTileBody}>
-            <div className={styles.folderTileTitle}>{tile.title}</div>
-            {tile.subtitle && (
-              <div className={styles.folderTileSub}>{tile.subtitle}</div>
-            )}
-          </div>
-        </button>
-      ))}
+        );
+      })}
     </div>
   );
 
@@ -1194,6 +1537,9 @@ export default function GalleryPage() {
             <div className={styles.statsBadge}>
               Zdjęcia: <strong>{pageData.totalImagesCount}</strong> • Filmy:{' '}
               <strong>{pageData.totalVideosCount}</strong>
+              {pageData.totalAudiosCount !== undefined && (
+                <> • Dźwięki: <strong>{pageData.totalAudiosCount}</strong></>
+              )}
             </div>
           )}
 
@@ -1207,12 +1553,29 @@ export default function GalleryPage() {
                 }}
                 className={styles.btnPrimary}
               >
-                + Wgraj zdjęcia lub filmy
+                + Wgraj zdjęcia, filmy lub dźwięki
               </button>
               <button
                 type="button"
                 data-testid="open-create-collection-button"
                 onClick={() => {
+                  setEditingCollectionId(null);
+                  setColName('');
+                  setColSlug('');
+                  setColDesc('');
+                  setColParentId('');
+                  setColIsDated(false);
+                  setColIsRange(false);
+                  setColStartYear('');
+                  setColStartMonth('');
+                  setColStartDay('');
+                  setColStartHour('');
+                  setColStartMinute('');
+                  setColEndYear('');
+                  setColEndMonth('');
+                  setColEndDay('');
+                  setColEndHour('');
+                  setColEndMinute('');
                   setShowCreateCollection(prev => !prev);
                 }}
                 className={styles.btnSecondary}
@@ -1224,20 +1587,22 @@ export default function GalleryPage() {
         </div>
       </div>
 
-      {/* Create Collection / Sub-collection / Dated Collection Form */}
+      {/* Create / Edit Collection / Sub-collection / Dated Collection Form */}
       {isAdmin && showCreateCollection && (
         <section className={styles.sectionCard} data-testid="create-collection-form">
           <h2 className={styles.groupTitle}>
-            Utwórz nową kolekcję archiwalną, podkolekcję lub kolekcję datowaną
+            {editingCollectionId !== null
+              ? 'Edytuj kolekcję archiwalną lub datowaną'
+              : 'Utwórz nową kolekcję archiwalną, podkolekcję lub kolekcję datowaną'}
           </h2>
           <form
             onSubmit={e => {
-              void handleCreateCollection(e);
+              void handleSaveCollection(e);
             }}
             style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}
           >
             <div className={styles.filtersRow}>
-              <div className={styles.filterField}>
+              <div className={styles.filterField} style={{ flex: '1 1 240px' }}>
                 <label htmlFor="col-name-input" className={styles.filterLabel}>
                   Nazwa kolekcji (np. Zbiór po babci Katarzynie / Zdjęcia z domu 2002) *
                 </label>
@@ -1254,7 +1619,7 @@ export default function GalleryPage() {
                 />
               </div>
 
-              <div className={styles.filterField}>
+              <div className={styles.filterField} style={{ flex: '1 1 200px' }}>
                 <label htmlFor="col-parent-select" className={styles.filterLabel}>
                   Kolekcja nadrzędna (dla podkolekcji, opcjonalnie)
                 </label>
@@ -1267,15 +1632,17 @@ export default function GalleryPage() {
                   className={styles.selectInput}
                 >
                   <option value="">— Brak (kolekcja główna) —</option>
-                  {allCollections.map(c => (
-                    <option key={c.id} value={String(c.id)}>
-                      {c.name}
-                    </option>
-                  ))}
+                  {allCollections
+                    .filter(c => editingCollectionId === null || c.id !== editingCollectionId)
+                    .map(c => (
+                      <option key={c.id} value={String(c.id)}>
+                        {c.name}
+                      </option>
+                    ))}
                 </select>
               </div>
 
-              <div className={styles.filterField}>
+              <div className={styles.filterField} style={{ flex: '1 1 200px' }}>
                 <label htmlFor="col-slug-input" className={styles.filterLabel}>
                   Nazwa folderu na dysku (snake_case, opcjonalnie)
                 </label>
@@ -1290,21 +1657,22 @@ export default function GalleryPage() {
                   className={styles.textInput}
                 />
               </div>
+            </div>
 
-              <div className={styles.filterField}>
-                <label htmlFor="col-desc-input" className={styles.filterLabel}>
-                  Opis kolekcji
-                </label>
-                <input
-                  id="col-desc-input"
-                  type="text"
-                  value={colDesc}
-                  onChange={e => {
-                    setColDesc(e.target.value);
-                  }}
-                  className={styles.textInput}
-                />
-              </div>
+            <div className={styles.filterField}>
+              <label htmlFor="col-desc-input" className={styles.filterLabel}>
+                Opis tekstowy kolekcji (zwykły tekst, pole rozwijalne)
+              </label>
+              <textarea
+                id="col-desc-input"
+                rows={4}
+                value={colDesc}
+                onChange={e => {
+                  setColDesc(e.target.value);
+                }}
+                className={styles.textareaInput}
+                placeholder="Wprowadź szczegółowy opis archiwalny lub wspomnienie dotyczące tej kolekcji..."
+              />
             </div>
 
             <div className={styles.filtersRow}>
@@ -1322,16 +1690,77 @@ export default function GalleryPage() {
               </label>
 
               {colIsDated && (
-                <>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.85rem', fontWeight: 600 }}>
+                  <input
+                    type="checkbox"
+                    checked={colIsRange}
+                    onChange={e => {
+                      setColIsRange(e.target.checked);
+                    }}
+                  />
+                  <span>Kolekcja obejmuje przedział czasu / zakres dat (od... do...)</span>
+                </label>
+              )}
+            </div>
+
+            {colIsDated && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', background: '#f8fafc', padding: '0.85rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <strong style={{ fontSize: '0.85rem', color: '#1e293b' }}>
+                  {colIsRange ? '📅 Data początkowa kolekcji' : '📅 Data kolekcji datowanej'}
+                </strong>
+                <div className={styles.dateRowGrid}>
                   <div className={styles.filterField}>
-                    <label htmlFor="col-start-year" className={styles.filterLabel}>
-                      Rok początkowy *
+                    <label htmlFor="col-start-qual" className={styles.filterLabel}>Kwalifikator daty</label>
+                    <select
+                      id="col-start-qual"
+                      value={colStartQual}
+                      onChange={e => {
+                        setColStartQual(e.target.value);
+                      }}
+                      className={styles.selectInput}
+                    >
+                      {QUALIFIER_OPTIONS.map(q => (
+                        <option key={q.value} value={q.value}>{q.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className={styles.filterField}>
+                    <label htmlFor="col-start-cal" className={styles.filterLabel}>
+                      Wybór z kalendarza
                     </label>
+                    <div className={styles.calendarPickerGroup}>
+                      <input
+                        id="col-start-cal"
+                        type="date"
+                        value={toIsoDateInputValue(colStartYear, colStartMonth, colStartDay)}
+                        onChange={e => {
+                          if (e.target.value) {
+                            const p = e.target.value.split('-');
+                            if (p.length === 3) {
+                              setColStartYear(String(Number(p[0])));
+                              setColStartMonth(String(Number(p[1])));
+                              setColStartDay(String(Number(p[2])));
+                            }
+                          }
+                        }}
+                        className={styles.textInput}
+                      />
+                      {getPolishWeekdayLabel(colStartYear, colStartMonth, colStartDay) && (
+                        <span className={styles.weekdayBadge}>
+                          📅 {getPolishWeekdayLabel(colStartYear, colStartMonth, colStartDay)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className={styles.filterField}>
+                    <label htmlFor="col-start-year" className={styles.filterLabel}>Rok *</label>
                     <input
                       id="col-start-year"
                       type="number"
                       required
-                      placeholder="np. 2002"
+                      placeholder="RRRR"
                       value={colStartYear}
                       onChange={e => {
                         setColStartYear(e.target.value);
@@ -1339,30 +1768,207 @@ export default function GalleryPage() {
                       className={styles.textInput}
                     />
                   </div>
+
                   <div className={styles.filterField}>
-                    <label htmlFor="col-end-year" className={styles.filterLabel}>
-                      Rok końcowy (opcjonalnie)
-                    </label>
+                    <label htmlFor="col-start-month" className={styles.filterLabel}>Miesiąc (1–12)</label>
                     <input
-                      id="col-end-year"
+                      id="col-start-month"
                       type="number"
-                      placeholder="np. 2003"
-                      value={colEndYear}
+                      min={1}
+                      max={12}
+                      placeholder="MM"
+                      value={colStartMonth}
                       onChange={e => {
-                        setColEndYear(e.target.value);
+                        setColStartMonth(e.target.value);
                       }}
                       className={styles.textInput}
                     />
                   </div>
-                </>
-              )}
-            </div>
+
+                  <div className={styles.filterField}>
+                    <label htmlFor="col-start-day" className={styles.filterLabel}>Dzień (1–31)</label>
+                    <input
+                      id="col-start-day"
+                      type="number"
+                      min={1}
+                      max={31}
+                      placeholder="DD"
+                      value={colStartDay}
+                      onChange={e => {
+                        setColStartDay(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                  </div>
+
+                  <div className={styles.filterField}>
+                    <label htmlFor="col-start-hour" className={styles.filterLabel}>Godzina (GG:MM)</label>
+                    <div style={{ display: 'flex', gap: '0.35rem' }}>
+                      <input
+                        id="col-start-hour"
+                        type="number"
+                        min={0}
+                        max={23}
+                        placeholder="GG"
+                        value={colStartHour}
+                        onChange={e => {
+                          setColStartHour(e.target.value);
+                        }}
+                        className={styles.textInput}
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        max={59}
+                        placeholder="MM"
+                        value={colStartMinute}
+                        onChange={e => {
+                          setColStartMinute(e.target.value);
+                        }}
+                        className={styles.textInput}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {colIsRange && (
+                  <>
+                    <strong style={{ fontSize: '0.85rem', color: '#1e293b', marginTop: '0.45rem' }}>
+                      📅 Data końcowa kolekcji (koniec zakresu)
+                    </strong>
+                    <div className={styles.dateRowGrid}>
+                      <div className={styles.filterField}>
+                        <label htmlFor="col-end-qual" className={styles.filterLabel}>Kwalifikator końca</label>
+                        <select
+                          id="col-end-qual"
+                          value={colEndQual}
+                          onChange={e => {
+                            setColEndQual(e.target.value);
+                          }}
+                          className={styles.selectInput}
+                        >
+                          {QUALIFIER_OPTIONS.map(q => (
+                            <option key={q.value} value={q.value}>{q.label}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className={styles.filterField}>
+                        <label htmlFor="col-end-cal" className={styles.filterLabel}>
+                          Wybór z kalendarza
+                        </label>
+                        <div className={styles.calendarPickerGroup}>
+                          <input
+                            id="col-end-cal"
+                            type="date"
+                            value={toIsoDateInputValue(colEndYear, colEndMonth, colEndDay)}
+                            onChange={e => {
+                              if (e.target.value) {
+                                const p = e.target.value.split('-');
+                                if (p.length === 3) {
+                                  setColEndYear(String(Number(p[0])));
+                                  setColEndMonth(String(Number(p[1])));
+                                  setColEndDay(String(Number(p[2])));
+                                }
+                              }
+                            }}
+                            className={styles.textInput}
+                          />
+                          {getPolishWeekdayLabel(colEndYear, colEndMonth, colEndDay) && (
+                            <span className={styles.weekdayBadge}>
+                              📅 {getPolishWeekdayLabel(colEndYear, colEndMonth, colEndDay)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className={styles.filterField}>
+                        <label htmlFor="col-end-year" className={styles.filterLabel}>Rok końcowy *</label>
+                        <input
+                          id="col-end-year"
+                          type="number"
+                          required
+                          placeholder="RRRR"
+                          value={colEndYear}
+                          onChange={e => {
+                            setColEndYear(e.target.value);
+                          }}
+                          className={styles.textInput}
+                        />
+                      </div>
+
+                      <div className={styles.filterField}>
+                        <label htmlFor="col-end-month" className={styles.filterLabel}>Miesiąc (1–12)</label>
+                        <input
+                          id="col-end-month"
+                          type="number"
+                          min={1}
+                          max={12}
+                          placeholder="MM"
+                          value={colEndMonth}
+                          onChange={e => {
+                            setColEndMonth(e.target.value);
+                          }}
+                          className={styles.textInput}
+                        />
+                      </div>
+
+                      <div className={styles.filterField}>
+                        <label htmlFor="col-end-day" className={styles.filterLabel}>Dzień (1–31)</label>
+                        <input
+                          id="col-end-day"
+                          type="number"
+                          min={1}
+                          max={31}
+                          placeholder="DD"
+                          value={colEndDay}
+                          onChange={e => {
+                            setColEndDay(e.target.value);
+                          }}
+                          className={styles.textInput}
+                        />
+                      </div>
+
+                      <div className={styles.filterField}>
+                        <label htmlFor="col-end-hour" className={styles.filterLabel}>Godzina (GG:MM)</label>
+                        <div style={{ display: 'flex', gap: '0.35rem' }}>
+                          <input
+                            id="col-end-hour"
+                            type="number"
+                            min={0}
+                            max={23}
+                            placeholder="GG"
+                            value={colEndHour}
+                            onChange={e => {
+                              setColEndHour(e.target.value);
+                            }}
+                            className={styles.textInput}
+                          />
+                          <input
+                            type="number"
+                            min={0}
+                            max={59}
+                            placeholder="MM"
+                            value={colEndMinute}
+                            onChange={e => {
+                              setColEndMinute(e.target.value);
+                            }}
+                            className={styles.textInput}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
               <button
                 type="button"
                 onClick={() => {
                   setShowCreateCollection(false);
+                  setEditingCollectionId(null);
                 }}
                 className={styles.btnSecondary}
               >
@@ -1373,7 +1979,7 @@ export default function GalleryPage() {
                 data-testid="submit-create-collection-button"
                 className={styles.btnPrimary}
               >
-                Utwórz kolekcję
+                {editingCollectionId !== null ? 'Zapisz zmiany w kolekcji' : 'Utwórz kolekcję'}
               </button>
             </div>
           </form>
@@ -1384,7 +1990,7 @@ export default function GalleryPage() {
       {isAdmin && showUploadForm && (
         <section className={styles.sectionCard} data-testid="gallery-upload-form">
           <h2 className={styles.groupTitle}>
-            Wgraj jedno lub wiele zdjęć i filmów do archiwum
+            Wgraj jedno lub wiele zdjęć, filmów lub plików audio do archiwum
           </h2>
           <form
             onSubmit={e => {
@@ -1403,7 +2009,7 @@ export default function GalleryPage() {
                     id={uploadInputId}
                     type="file"
                     multiple
-                    accept="image/*,video/*"
+                    accept="image/*,video/*,audio/*"
                     onChange={e => {
                       setUploadFiles(e.target.files ? Array.from(e.target.files) : []);
                     }}
@@ -1472,18 +2078,47 @@ export default function GalleryPage() {
               </div>
             </div>
 
-            <div className={styles.filtersRow}>
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.84rem', fontWeight: 600 }}>
-                <input
-                  type="checkbox"
-                  checked={uploadIsPortrait}
-                  onChange={e => {
-                    setUploadIsPortrait(e.target.checked);
-                    if (e.target.checked) setUploadIsUnknown(false);
-                  }}
-                />
-                <span>Portret (trafi do podfolderu portraits/single lub portraits/group w kolekcji)</span>
-              </label>
+            <div className={styles.filtersRow} style={{ alignItems: 'flex-start' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.84rem', fontWeight: 600 }}>
+                  <input
+                    type="checkbox"
+                    checked={uploadIsPortrait}
+                    onChange={e => {
+                      setUploadIsPortrait(e.target.checked);
+                      if (e.target.checked) setUploadIsUnknown(false);
+                    }}
+                  />
+                  <span>Portret (zdjęcie portretowe osoby)</span>
+                </label>
+
+                {uploadIsPortrait && (
+                  <div style={{ display: 'flex', gap: '1rem', marginLeft: '1.25rem', fontSize: '0.82rem', fontWeight: 600 }}>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <input
+                        type="radio"
+                        name="uploadPortraitType"
+                        checked={uploadPortraitType === 'SINGLE'}
+                        onChange={() => {
+                          setUploadPortraitType('SINGLE');
+                        }}
+                      />
+                      <span>Portret pojedynczy (portraits/single)</span>
+                    </label>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <input
+                        type="radio"
+                        name="uploadPortraitType"
+                        checked={uploadPortraitType === 'GROUP'}
+                        onChange={() => {
+                          setUploadPortraitType('GROUP');
+                        }}
+                      />
+                      <span>Portret grupowy (portraits/group)</span>
+                    </label>
+                  </div>
+                )}
+              </div>
 
               <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.84rem', fontWeight: 600 }}>
                 <input
@@ -1496,86 +2131,273 @@ export default function GalleryPage() {
                 />
                 <span>Oznacz jako nieznane (trafi do podfolderu unknown w kolekcji)</span>
               </label>
+
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.84rem', fontWeight: 600 }}>
+                <input
+                  type="checkbox"
+                  checked={uploadIsRange}
+                  onChange={e => {
+                    setUploadIsRange(e.target.checked);
+                  }}
+                />
+                <span>Wskaż przedział dat (od... do...)</span>
+              </label>
             </div>
 
-            <div className={styles.filtersRow}>
-              <div className={styles.filterField}>
-                <label htmlFor="gal-upload-year" className={styles.filterLabel}>
-                  Rok wykonania
-                </label>
-                <input
-                  id="gal-upload-year"
-                  type="number"
-                  placeholder="np. 2002"
-                  value={uploadYear}
-                  onChange={e => {
-                    setUploadYear(e.target.value);
-                  }}
-                  className={styles.textInput}
-                />
-              </div>
-
-              <div className={styles.filterField}>
-                <label htmlFor="gal-upload-month" className={styles.filterLabel}>
-                  Miesiąc (1–12)
-                </label>
-                <input
-                  id="gal-upload-month"
-                  type="number"
-                  min={1}
-                  max={12}
-                  value={uploadMonth}
-                  onChange={e => {
-                    setUploadMonth(e.target.value);
-                  }}
-                  className={styles.textInput}
-                />
-              </div>
-
-              <div className={styles.filterField}>
-                <label htmlFor="gal-upload-day" className={styles.filterLabel}>
-                  Dzień (1–31)
-                </label>
-                <input
-                  id="gal-upload-day"
-                  type="number"
-                  min={1}
-                  max={31}
-                  value={uploadDay}
-                  onChange={e => {
-                    setUploadDay(e.target.value);
-                  }}
-                  className={styles.textInput}
-                />
-              </div>
-
-              <div className={styles.filterField}>
-                <span className={styles.filterLabel}>Godzina (GG:MM)</span>
-                <div style={{ display: 'flex', gap: '0.4rem' }}>
-                  <input
-                    type="number"
-                    min={0}
-                    max={23}
-                    placeholder="GG"
-                    value={uploadHour}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', background: '#f8fafc', padding: '0.85rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <strong style={{ fontSize: '0.85rem', color: '#1e293b' }}>
+                {uploadIsRange ? '📅 Data początkowa (lub jedyna)' : '📅 Data wykonania'}
+              </strong>
+              <div className={styles.dateRowGrid}>
+                <div className={styles.filterField}>
+                  <label htmlFor="gal-upload-dqual" className={styles.filterLabel}>Kwalifikator</label>
+                  <select
+                    id="gal-upload-dqual"
+                    value={uploadDateQual}
                     onChange={e => {
-                      setUploadHour(e.target.value);
+                      setUploadDateQual(e.target.value);
                     }}
-                    className={styles.textInput}
-                  />
+                    className={styles.selectInput}
+                  >
+                    {QUALIFIER_OPTIONS.map(q => (
+                      <option key={q.value} value={q.value}>{q.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className={styles.filterField}>
+                  <label htmlFor="gal-upload-cal" className={styles.filterLabel}>
+                    Wybór z kalendarza
+                  </label>
+                  <div className={styles.calendarPickerGroup}>
+                    <input
+                      id="gal-upload-cal"
+                      type="date"
+                      value={toIsoDateInputValue(uploadYear, uploadMonth, uploadDay)}
+                      onChange={e => {
+                        if (e.target.value) {
+                          const p = e.target.value.split('-');
+                          if (p.length === 3) {
+                            setUploadYear(String(Number(p[0])));
+                            setUploadMonth(String(Number(p[1])));
+                            setUploadDay(String(Number(p[2])));
+                          }
+                        }
+                      }}
+                      className={styles.textInput}
+                    />
+                    {getPolishWeekdayLabel(uploadYear, uploadMonth, uploadDay) && (
+                      <span className={styles.weekdayBadge}>
+                        📅 {getPolishWeekdayLabel(uploadYear, uploadMonth, uploadDay)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className={styles.filterField}>
+                  <label htmlFor="gal-upload-year" className={styles.filterLabel}>Rok</label>
                   <input
+                    id="gal-upload-year"
                     type="number"
-                    min={0}
-                    max={59}
-                    placeholder="MM"
-                    value={uploadMinute}
+                    placeholder="RRRR"
+                    value={uploadYear}
                     onChange={e => {
-                      setUploadMinute(e.target.value);
+                      setUploadYear(e.target.value);
                     }}
                     className={styles.textInput}
                   />
                 </div>
+
+                <div className={styles.filterField}>
+                  <label htmlFor="gal-upload-month" className={styles.filterLabel}>Miesiąc (1–12)</label>
+                  <input
+                    id="gal-upload-month"
+                    type="number"
+                    min={1}
+                    max={12}
+                    placeholder="MM"
+                    value={uploadMonth}
+                    onChange={e => {
+                      setUploadMonth(e.target.value);
+                    }}
+                    className={styles.textInput}
+                  />
+                </div>
+
+                <div className={styles.filterField}>
+                  <label htmlFor="gal-upload-day" className={styles.filterLabel}>Dzień (1–31)</label>
+                  <input
+                    id="gal-upload-day"
+                    type="number"
+                    min={1}
+                    max={31}
+                    placeholder="DD"
+                    value={uploadDay}
+                    onChange={e => {
+                      setUploadDay(e.target.value);
+                    }}
+                    className={styles.textInput}
+                  />
+                </div>
+
+                <div className={styles.filterField}>
+                  <label htmlFor="gal-upload-hour" className={styles.filterLabel}>Godzina (GG:MM)</label>
+                  <div style={{ display: 'flex', gap: '0.35rem' }}>
+                    <input
+                      id="gal-upload-hour"
+                      type="number"
+                      min={0}
+                      max={23}
+                      placeholder="GG"
+                      value={uploadHour}
+                      onChange={e => {
+                        setUploadHour(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      max={59}
+                      placeholder="MM"
+                      value={uploadMinute}
+                      onChange={e => {
+                        setUploadMinute(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                  </div>
+                </div>
               </div>
+
+              {uploadIsRange && (
+                <>
+                  <strong style={{ fontSize: '0.85rem', color: '#1e293b', marginTop: '0.45rem' }}>
+                    📅 Data końcowa (koniec przedziału)
+                  </strong>
+                  <div className={styles.dateRowGrid}>
+                    <div className={styles.filterField}>
+                      <label htmlFor="gal-upload-rendqual" className={styles.filterLabel}>Kwalifikator końca</label>
+                      <select
+                        id="gal-upload-rendqual"
+                        value={uploadRangeEndQual}
+                        onChange={e => {
+                          setUploadRangeEndQual(e.target.value);
+                        }}
+                        className={styles.selectInput}
+                      >
+                        {QUALIFIER_OPTIONS.map(q => (
+                          <option key={q.value} value={q.value}>{q.label}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className={styles.filterField}>
+                      <label htmlFor="gal-upload-rendcal" className={styles.filterLabel}>
+                        Wybór z kalendarza
+                      </label>
+                      <div className={styles.calendarPickerGroup}>
+                        <input
+                          id="gal-upload-rendcal"
+                          type="date"
+                          value={toIsoDateInputValue(uploadRangeEndYear, uploadRangeEndMonth, uploadRangeEndDay)}
+                          onChange={e => {
+                            if (e.target.value) {
+                              const p = e.target.value.split('-');
+                              if (p.length === 3) {
+                                setUploadRangeEndYear(String(Number(p[0])));
+                                setUploadRangeEndMonth(String(Number(p[1])));
+                                setUploadRangeEndDay(String(Number(p[2])));
+                              }
+                            }
+                          }}
+                          className={styles.textInput}
+                        />
+                        {getPolishWeekdayLabel(uploadRangeEndYear, uploadRangeEndMonth, uploadRangeEndDay) && (
+                          <span className={styles.weekdayBadge}>
+                            📅 {getPolishWeekdayLabel(uploadRangeEndYear, uploadRangeEndMonth, uploadRangeEndDay)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className={styles.filterField}>
+                      <label htmlFor="gal-upload-rendyear" className={styles.filterLabel}>Rok końcowy</label>
+                      <input
+                        id="gal-upload-rendyear"
+                        type="number"
+                        placeholder="RRRR"
+                        value={uploadRangeEndYear}
+                        onChange={e => {
+                          setUploadRangeEndYear(e.target.value);
+                        }}
+                        className={styles.textInput}
+                      />
+                    </div>
+
+                    <div className={styles.filterField}>
+                      <label htmlFor="gal-upload-rendmonth" className={styles.filterLabel}>Miesiąc (1–12)</label>
+                      <input
+                        id="gal-upload-rendmonth"
+                        type="number"
+                        min={1}
+                        max={12}
+                        placeholder="MM"
+                        value={uploadRangeEndMonth}
+                        onChange={e => {
+                          setUploadRangeEndMonth(e.target.value);
+                        }}
+                        className={styles.textInput}
+                      />
+                    </div>
+
+                    <div className={styles.filterField}>
+                      <label htmlFor="gal-upload-rendday" className={styles.filterLabel}>Dzień (1–31)</label>
+                      <input
+                        id="gal-upload-rendday"
+                        type="number"
+                        min={1}
+                        max={31}
+                        placeholder="DD"
+                        value={uploadRangeEndDay}
+                        onChange={e => {
+                          setUploadRangeEndDay(e.target.value);
+                        }}
+                        className={styles.textInput}
+                      />
+                    </div>
+
+                    <div className={styles.filterField}>
+                      <label htmlFor="gal-upload-rendhour" className={styles.filterLabel}>Godzina (GG:MM)</label>
+                      <div style={{ display: 'flex', gap: '0.35rem' }}>
+                        <input
+                          id="gal-upload-rendhour"
+                          type="number"
+                          min={0}
+                          max={23}
+                          placeholder="GG"
+                          value={uploadRangeEndHour}
+                          onChange={e => {
+                            setUploadRangeEndHour(e.target.value);
+                          }}
+                          className={styles.textInput}
+                        />
+                        <input
+                          type="number"
+                          min={0}
+                          max={59}
+                          placeholder="MM"
+                          value={uploadRangeEndMinute}
+                          onChange={e => {
+                            setUploadRangeEndMinute(e.target.value);
+                          }}
+                          className={styles.textInput}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
@@ -1657,9 +2479,10 @@ export default function GalleryPage() {
               }}
               className={styles.selectInput}
             >
-              <option value="ALL">Zdjęcia i filmy</option>
+              <option value="ALL">Wszystkie typy mediów</option>
               <option value="IMAGE">Tylko zdjęcia</option>
               <option value="VIDEO">Tylko filmy</option>
+              <option value="AUDIO">Tylko nagrania dźwiękowe</option>
             </select>
           </div>
 
@@ -1784,34 +2607,13 @@ export default function GalleryPage() {
             ))}
           </div>
 
-          <div className={styles.paginationBar}>
-            <span className={styles.pageSubtitle}>
-              Łącznie plików: <strong>{pageData.totalElements}</strong> (strona{' '}
-              {pageData.totalPages === 0 ? 0 : pageData.page + 1} z {pageData.totalPages})
-            </span>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button
-                type="button"
-                disabled={page <= 0}
-                onClick={() => {
-                  setPage(prev => Math.max(0, prev - 1));
-                }}
-                className={styles.btnSecondary}
-              >
-                ← Poprzednia
-              </button>
-              <button
-                type="button"
-                disabled={page + 1 >= pageData.totalPages}
-                onClick={() => {
-                  setPage(prev => prev + 1);
-                }}
-                className={styles.btnSecondary}
-              >
-                Następna →
-              </button>
-            </div>
-          </div>
+          <Pagination
+            currentPage={page}
+            totalPages={pageData.totalPages}
+            totalElements={pageData.totalElements}
+            elementsLabel="Łącznie plików"
+            onPageChange={setPage}
+          />
         </>
       ) : viewMode === 'TIMELINE' ? (
         renderDrillDownSection(timelineViewContent)
@@ -1994,6 +2796,19 @@ export default function GalleryPage() {
                   controls
                   style={{ maxWidth: '94vw', maxHeight: '80vh', objectFit: 'contain' }}
                 />
+              ) : activeItem.mediaType === 'AUDIO' ? (
+                <div className={styles.lightboxAudioContainer}>
+                  <span className={styles.lightboxAudioIcon}>🎵</span>
+                  <div className={styles.lightboxAudioTitle}>
+                    {activeItem.title ?? activeItem.fileName}
+                  </div>
+                  <audio
+                    src={mediaApi.getFileUrl(activeItem.id)}
+                    controls
+                    autoPlay
+                    className={styles.lightboxAudioPlayer}
+                  />
+                </div>
               ) : (
                 <img
                   src={mediaApi.getFileUrl(activeItem.id)}
@@ -2056,7 +2871,16 @@ export default function GalleryPage() {
                 </div>
               )}
               {isAdmin && (
-                <div>
+                <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleStartEditMedia(activeItem);
+                    }}
+                    className={styles.btnSecondary}
+                  >
+                    ✏️ Edytuj metadane pliku
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -2070,6 +2894,328 @@ export default function GalleryPage() {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Edit Media Metadata Modal */}
+      {isAdmin && isEditingMediaItem && (
+        <div
+          className={styles.lightboxBackdrop}
+          style={{ zIndex: 60 }}
+          onClick={() => {
+            setIsEditingMediaItem(false);
+          }}
+        >
+          <div
+            className={styles.sectionCard}
+            style={{
+              maxWidth: '680px',
+              width: '92vw',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              backgroundColor: '#ffffff',
+              zIndex: 65,
+            }}
+            onClick={e => {
+              e.stopPropagation();
+            }}
+          >
+            <h2 className={styles.groupTitle}>Edytuj dane pliku multimedialnego</h2>
+            <form
+              onSubmit={e => {
+                void handleSaveMediaEdit(e);
+              }}
+              style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}
+            >
+              <div className={styles.filterField}>
+                <label htmlFor="edit-media-title" className={styles.filterLabel}>
+                  Tytuł / podpis
+                </label>
+                <input
+                  id="edit-media-title"
+                  type="text"
+                  value={editTitle}
+                  onChange={e => {
+                    setEditTitle(e.target.value);
+                  }}
+                  className={styles.textInput}
+                />
+              </div>
+
+              <div className={styles.filterField}>
+                <label htmlFor="edit-media-desc" className={styles.filterLabel}>
+                  Opis pliku (pole rozwijalne)
+                </label>
+                <textarea
+                  id="edit-media-desc"
+                  rows={4}
+                  value={editDescription}
+                  onChange={e => {
+                    setEditDescription(e.target.value);
+                  }}
+                  className={styles.textareaInput}
+                  placeholder="Opisz historię, kontekst lub szczegóły widoczne na zdjęciu/nagraniu..."
+                />
+              </div>
+
+              <div className={styles.filtersRow}>
+                <div className={styles.filterField}>
+                  <label htmlFor="edit-media-inscr" className={styles.filterLabel}>
+                    Napis / dedykacja z odwrotu
+                  </label>
+                  <input
+                    id="edit-media-inscr"
+                    type="text"
+                    value={editInscription}
+                    onChange={e => {
+                      setEditInscription(e.target.value);
+                    }}
+                    className={styles.textInput}
+                  />
+                </div>
+
+                <div className={styles.filterField}>
+                  <label htmlFor="edit-media-src" className={styles.filterLabel}>
+                    Źródło / pochodzenie
+                  </label>
+                  <input
+                    id="edit-media-src"
+                    type="text"
+                    value={editSourceText}
+                    onChange={e => {
+                      setEditSourceText(e.target.value);
+                    }}
+                    className={styles.textInput}
+                  />
+                </div>
+              </div>
+
+              <div className={styles.filtersRow}>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.84rem', fontWeight: 600 }}>
+                  <input
+                    type="checkbox"
+                    checked={editIsRange}
+                    onChange={e => {
+                      setEditIsRange(e.target.checked);
+                    }}
+                  />
+                  <span>Przedział dat (od... do...)</span>
+                </label>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', background: '#f8fafc', padding: '0.85rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <strong style={{ fontSize: '0.85rem', color: '#1e293b' }}>
+                  {editIsRange ? '📅 Data początkowa' : '📅 Data wykonania'}
+                </strong>
+                <div className={styles.dateRowGrid}>
+                  <div className={styles.filterField}>
+                    <label htmlFor="edit-date-qual" className={styles.filterLabel}>Kwalifikator</label>
+                    <select
+                      id="edit-date-qual"
+                      value={editDateQual}
+                      onChange={e => {
+                        setEditDateQual(e.target.value);
+                      }}
+                      className={styles.selectInput}
+                    >
+                      {QUALIFIER_OPTIONS.map(q => (
+                        <option key={q.value} value={q.value}>{q.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className={styles.filterField}>
+                    <label htmlFor="edit-cal" className={styles.filterLabel}>Wybór z kalendarza</label>
+                    <div className={styles.calendarPickerGroup}>
+                      <input
+                        id="edit-cal"
+                        type="date"
+                        value={toIsoDateInputValue(editYear, editMonth, editDay)}
+                        onChange={e => {
+                          if (e.target.value) {
+                            const p = e.target.value.split('-');
+                            if (p.length === 3) {
+                              setEditYear(String(Number(p[0])));
+                              setEditMonth(String(Number(p[1])));
+                              setEditDay(String(Number(p[2])));
+                            }
+                          }
+                        }}
+                        className={styles.textInput}
+                      />
+                      {getPolishWeekdayLabel(editYear, editMonth, editDay) && (
+                        <span className={styles.weekdayBadge}>
+                          📅 {getPolishWeekdayLabel(editYear, editMonth, editDay)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className={styles.filterField}>
+                    <label htmlFor="edit-year" className={styles.filterLabel}>Rok</label>
+                    <input
+                      id="edit-year"
+                      type="number"
+                      placeholder="RRRR"
+                      value={editYear}
+                      onChange={e => {
+                        setEditYear(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                  </div>
+
+                  <div className={styles.filterField}>
+                    <label htmlFor="edit-month" className={styles.filterLabel}>Miesiąc (1–12)</label>
+                    <input
+                      id="edit-month"
+                      type="number"
+                      min={1}
+                      max={12}
+                      placeholder="MM"
+                      value={editMonth}
+                      onChange={e => {
+                        setEditMonth(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                  </div>
+
+                  <div className={styles.filterField}>
+                    <label htmlFor="edit-day" className={styles.filterLabel}>Dzień (1–31)</label>
+                    <input
+                      id="edit-day"
+                      type="number"
+                      min={1}
+                      max={31}
+                      placeholder="DD"
+                      value={editDay}
+                      onChange={e => {
+                        setEditDay(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                  </div>
+                </div>
+
+                {editIsRange && (
+                  <>
+                    <strong style={{ fontSize: '0.85rem', color: '#1e293b', marginTop: '0.45rem' }}>
+                      📅 Data końcowa (koniec przedziału)
+                    </strong>
+                    <div className={styles.dateRowGrid}>
+                      <div className={styles.filterField}>
+                        <label htmlFor="edit-rend-qual" className={styles.filterLabel}>Kwalifikator końca</label>
+                        <select
+                          id="edit-rend-qual"
+                          value={editRangeEndQual}
+                          onChange={e => {
+                            setEditRangeEndQual(e.target.value);
+                          }}
+                          className={styles.selectInput}
+                        >
+                          {QUALIFIER_OPTIONS.map(q => (
+                            <option key={q.value} value={q.value}>{q.label}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className={styles.filterField}>
+                        <label htmlFor="edit-rend-cal" className={styles.filterLabel}>Wybór z kalendarza</label>
+                        <div className={styles.calendarPickerGroup}>
+                          <input
+                            id="edit-rend-cal"
+                            type="date"
+                            value={toIsoDateInputValue(editRangeEndYear, editRangeEndMonth, editRangeEndDay)}
+                            onChange={e => {
+                              if (e.target.value) {
+                                const p = e.target.value.split('-');
+                                if (p.length === 3) {
+                                  setEditRangeEndYear(String(Number(p[0])));
+                                  setEditRangeEndMonth(String(Number(p[1])));
+                                  setEditRangeEndDay(String(Number(p[2])));
+                                }
+                              }
+                            }}
+                            className={styles.textInput}
+                          />
+                          {getPolishWeekdayLabel(editRangeEndYear, editRangeEndMonth, editRangeEndDay) && (
+                            <span className={styles.weekdayBadge}>
+                              📅 {getPolishWeekdayLabel(editRangeEndYear, editRangeEndMonth, editRangeEndDay)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className={styles.filterField}>
+                        <label htmlFor="edit-rend-year" className={styles.filterLabel}>Rok końcowy</label>
+                        <input
+                          id="edit-rend-year"
+                          type="number"
+                          placeholder="RRRR"
+                          value={editRangeEndYear}
+                          onChange={e => {
+                            setEditRangeEndYear(e.target.value);
+                          }}
+                          className={styles.textInput}
+                        />
+                      </div>
+
+                      <div className={styles.filterField}>
+                        <label htmlFor="edit-rend-month" className={styles.filterLabel}>Miesiąc (1–12)</label>
+                        <input
+                          id="edit-rend-month"
+                          type="number"
+                          min={1}
+                          max={12}
+                          placeholder="MM"
+                          value={editRangeEndMonth}
+                          onChange={e => {
+                            setEditRangeEndMonth(e.target.value);
+                          }}
+                          className={styles.textInput}
+                        />
+                      </div>
+
+                      <div className={styles.filterField}>
+                        <label htmlFor="edit-rend-day" className={styles.filterLabel}>Dzień (1–31)</label>
+                        <input
+                          id="edit-rend-day"
+                          type="number"
+                          min={1}
+                          max={31}
+                          placeholder="DD"
+                          value={editRangeEndDay}
+                          onChange={e => {
+                            setEditRangeEndDay(e.target.value);
+                          }}
+                          className={styles.textInput}
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditingMediaItem(false);
+                  }}
+                  className={styles.btnSecondary}
+                >
+                  Anuluj
+                </button>
+                <button
+                  type="submit"
+                  className={styles.btnPrimary}
+                >
+                  Zapisz zmiany w pliku
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

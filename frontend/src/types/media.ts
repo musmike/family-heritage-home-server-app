@@ -1,6 +1,6 @@
 import type { PersonSex } from './biography';
 
-export type MediaType = 'IMAGE' | 'VIDEO';
+export type MediaType = 'IMAGE' | 'VIDEO' | 'AUDIO';
 
 export type MediaPrimaryContext =
   | 'GRAVE'
@@ -129,8 +129,25 @@ export interface MediaCollectionDto {
   parentCollectionId?: number | null;
   parentCollectionName?: string | null;
   datedCollection?: boolean;
+  dateText?: string | null;
   startYear?: number | null;
+  startMonth?: number | null;
+  startDay?: number | null;
+  startDateType?: string | null;
+  startQualifier?: string | null;
+  startTimeQualifier?: string | null;
+  startHour?: number | null;
+  startMinute?: number | null;
+  startSecond?: number | null;
+  isRange?: boolean;
   endYear?: number | null;
+  endMonth?: number | null;
+  endDay?: number | null;
+  endQualifier?: string | null;
+  endTimeQualifier?: string | null;
+  endHour?: number | null;
+  endMinute?: number | null;
+  endSecond?: number | null;
   founderPersonId: number | null;
   founderPersonName: string | null;
   previewMediaId?: number | null;
@@ -145,7 +162,23 @@ export interface SaveMediaCollectionRequestDto {
   parentCollectionId?: number | null;
   datedCollection?: boolean;
   startYear?: number | null;
+  startMonth?: number | null;
+  startDay?: number | null;
+  startDateType?: string | null;
+  startQualifier?: string | null;
+  startTimeQualifier?: string | null;
+  startHour?: number | null;
+  startMinute?: number | null;
+  startSecond?: number | null;
+  isRange?: boolean;
   endYear?: number | null;
+  endMonth?: number | null;
+  endDay?: number | null;
+  endQualifier?: string | null;
+  endTimeQualifier?: string | null;
+  endHour?: number | null;
+  endMinute?: number | null;
+  endSecond?: number | null;
   founderPersonId?: number | null;
 }
 
@@ -157,6 +190,7 @@ export interface MediaGalleryPageDto {
   totalPages: number;
   totalImagesCount: number;
   totalVideosCount: number;
+  totalAudiosCount?: number;
   collections: MediaCollectionDto[];
 }
 

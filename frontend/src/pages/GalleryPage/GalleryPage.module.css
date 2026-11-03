@@ -546,6 +546,197 @@
   overflow-wrap: anywhere;
 }
 
+/* Stacked Thumbnails (Sterta miniaturek dla kafelków grup/folderów) */
+.stackedThumbContainer {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stackedThumbItem {
+  position: absolute;
+  width: 82%;
+  height: 82%;
+  border-radius: 6px;
+  overflow: hidden;
+  background-color: #0f172a;
+  border: 2px solid #ffffff;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.28);
+  transition: transform 0.2s ease;
+}
+
+.stackedThumbItem0 {
+  transform: rotate(-6deg) scale(0.9);
+  z-index: 1;
+}
+
+.stackedThumbItem1 {
+  transform: rotate(5deg) scale(0.95);
+  z-index: 2;
+}
+
+.stackedThumbItem2 {
+  transform: rotate(0deg) scale(1);
+  z-index: 3;
+}
+
+.folderTileCard:hover .stackedThumbItem0 {
+  transform: rotate(-9deg) scale(0.92);
+}
+
+.folderTileCard:hover .stackedThumbItem1 {
+  transform: rotate(8deg) scale(0.97);
+}
+
+.folderTileCard:hover .stackedThumbItem2 {
+  transform: rotate(0deg) scale(1.03);
+}
+
+/* Audio card & Lightbox player */
+.audioThumbBox {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: linear-gradient(135deg, #312e81 0%, #4338ca 50%, #6366f1 100%);
+  color: #ffffff;
+  padding: 1rem;
+  text-align: center;
+}
+
+.audioThumbIcon {
+  font-size: 3rem;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.3));
+}
+
+.audioThumbLabel {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #e0e7ff;
+}
+
+.lightboxAudioContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  padding: 2.5rem;
+  background-color: rgba(15, 23, 42, 0.85);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  max-width: 90vw;
+  width: 480px;
+}
+
+.lightboxAudioIcon {
+  font-size: 4.5rem;
+  color: #818cf8;
+}
+
+.lightboxAudioTitle {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #ffffff;
+  text-align: center;
+  word-break: break-word;
+}
+
+.lightboxAudioPlayer {
+  width: 100%;
+  border-radius: 30px;
+}
+
+/* Collection Card Action Buttons (Edit / Delete) */
+.colCardActions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.colActionBtn {
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 0.25rem 0.55rem;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background-color: #f8fafc;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.colActionBtn:hover {
+  background-color: #e2e8f0;
+  color: #0f172a;
+}
+
+.colActionBtnDanger {
+  color: #b91c1c;
+  border-color: #fecaca;
+  background-color: #fef2f2;
+}
+
+.colActionBtnDanger:hover {
+  background-color: #fee2e2;
+  color: #991b1b;
+}
+
+/* Textarea input & Calendar components */
+.textareaInput {
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 0.85rem;
+  color: #1e293b;
+  background-color: #ffffff;
+  resize: vertical;
+}
+
+.textareaInput:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.dateRowGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.65rem;
+  align-items: flex-end;
+}
+
+.calendarPickerGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.weekdayBadge {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #1d4ed8;
+  background-color: #eff6ff;
+  border: 1px solid #bfdbfe;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  display: inline-block;
+  width: fit-content;
+}
+
 @media (max-width: 640px) {
   .pageHeader,
   .filterCard,

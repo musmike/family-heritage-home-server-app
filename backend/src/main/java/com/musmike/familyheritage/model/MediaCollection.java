@@ -39,6 +39,14 @@ public class MediaCollection {
     @Column(name = "end_year")
     private Integer endYear;
 
+    @OneToOne(cascade = CascadeType.ALL, orphanRemoval = true)
+    @JoinColumn(name = "start_date_id")
+    private DateDescriptor startDate;
+
+    @OneToOne(cascade = CascadeType.ALL, orphanRemoval = true)
+    @JoinColumn(name = "end_date_id")
+    private DateDescriptor endDate;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "founder_person_id")
     private Person founderPerson;

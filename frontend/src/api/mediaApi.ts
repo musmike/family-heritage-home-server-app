@@ -90,6 +90,17 @@ export const mediaApi = {
     return response.data;
   },
 
+  updateCollection: async (
+    collectionId: number,
+    payload: SaveMediaCollectionRequestDto
+  ): Promise<MediaCollectionDto> => {
+    const response = await api.put<MediaCollectionDto>(
+      `/media/collections/${String(collectionId)}`,
+      payload
+    );
+    return response.data;
+  },
+
   deleteCollection: async (collectionId: number): Promise<void> => {
     await api.delete(`/media/collections/${String(collectionId)}`);
   },

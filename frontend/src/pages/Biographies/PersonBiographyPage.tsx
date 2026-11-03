@@ -17,7 +17,7 @@ import type {
   PersonSex,
   RelatedPersonDto,
 } from '../../types/biography';
-import type { MediaItemDto } from '../../types/media';
+import type { MediaItemDto, MediaCollectionDto } from '../../types/media';
 
 const translateSex = (sex: PersonSex | null): string | null => {
   if (sex === 'MALE') return 'mężczyzna';
@@ -191,6 +191,8 @@ export default function PersonBiographyPage() {
   const [portraitUploadFile, setPortraitUploadFile] = useState<File | null>(null);
   const [portraitSearchQuery, setPortraitSearchQuery] = useState<string>('');
   const [portraitCandidates, setPortraitCandidates] = useState<MediaItemDto[]>([]);
+  const [availableCollections, setAvailableCollections] = useState<MediaCollectionDto[]>([]);
+  const [selectedPortraitCollectionId, setSelectedPortraitCollectionId] = useState<number | null>(null);
   const [isSubmittingPortrait, setIsSubmittingPortrait] = useState<boolean>(false);
 
   const fetchBio = async () => {
@@ -231,16 +233,35 @@ export default function PersonBiographyPage() {
     setPortraitSearchQuery('');
     setShowPortraitModal(true);
     void fetchGalleryPortraitCandidates('');
+    void (async () => {
+      try {
+        const cols = await mediaApi.getAllCollections();
+        setAvailableCollections(cols);
+        if (cols.length > 0 && selectedPortraitCollectionId === null) {
+          const firstCol = cols.at(0);
+          if (firstCol) {
+            setSelectedPortraitCollectionId(firstCol.id);
+          }
+        }
+      } catch {
+        // Ignore error
+      }
+    })();
   };
 
   const handleUploadNewPortrait = async () => {
     if (!bio || !portraitUploadFile) return;
+    if (!selectedPortraitCollectionId) {
+      setErrorMessage('Wybierz istniejącą kolekcję dla wgrywanego portretu.');
+      return;
+    }
     setIsSubmittingPortrait(true);
     try {
       await mediaApi.uploadMedia({
         file: portraitUploadFile,
         primaryContext: 'PERSON',
         personIds: [bio.id],
+        collectionId: selectedPortraitCollectionId,
         setAsPersonAvatar: true,
         clientLastModifiedMs: portraitUploadFile.lastModified || undefined,
       });
@@ -291,6 +312,26 @@ export default function PersonBiographyPage() {
       await fetchBio();
     } catch {
       setErrorMessage('Nie udało się zapisać wykadrowanego awatara.');
+    }
+  };
+
+  const handleRemoveAvatar = async () => {
+    if (!bio?.avatarMediaId) return;
+    const confirmed = window.confirm(
+      'Czy na pewno chcesz usunąć portret z profilu tej osoby? Plik multimedialny nadal pozostanie w galerii.'
+    );
+    if (!confirmed) return;
+
+    setIsSubmittingPortrait(true);
+    try {
+      await biographyApi.removeAvatar(bio.id);
+      setShowPortraitModal(false);
+      setShowCropperModal(false);
+      await fetchBio();
+    } catch {
+      setErrorMessage('Nie udało się usunąć portretu z profilu.');
+    } finally {
+      setIsSubmittingPortrait(false);
     }
   };
 
@@ -482,17 +523,31 @@ export default function PersonBiographyPage() {
                   📷 {bio.avatarMediaId ? 'Zmień portret' : 'Ustaw portret'}
                 </button>
                 {bio.avatarMediaId && (
-                  <button
-                    type="button"
-                    data-testid="open-infobox-cropper-button"
-                    onClick={() => {
-                      setShowCropperModal(true);
-                    }}
-                    className={styles.btnSecondary}
-                    style={{ padding: '0.32rem 0.7rem', fontSize: '0.78rem' }}
-                  >
-                    ✂️ Wykadruj kółko
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      data-testid="open-infobox-cropper-button"
+                      onClick={() => {
+                        setShowCropperModal(true);
+                      }}
+                      className={styles.btnSecondary}
+                      style={{ padding: '0.32rem 0.7rem', fontSize: '0.78rem' }}
+                    >
+                      ✂️ Wykadruj kółko
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="remove-infobox-portrait-button"
+                      onClick={() => {
+                        void handleRemoveAvatar();
+                      }}
+                      className={styles.btnSecondary}
+                      style={{ padding: '0.32rem 0.7rem', fontSize: '0.78rem', color: '#b91c1c' }}
+                      title="Usuń portret z profilu"
+                    >
+                      🗑️ Usuń portret
+                    </button>
+                  </>
                 )}
               </div>
             )}
@@ -754,6 +809,43 @@ export default function PersonBiographyPage() {
               </button>
             </div>
 
+            {bio.avatarMediaId && (
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '0.75rem 1rem',
+                  backgroundColor: '#fef2f2',
+                  border: '1px solid #fecaca',
+                  borderRadius: '8px',
+                  gap: '1rem',
+                  flexWrap: 'wrap',
+                }}
+              >
+                <span style={{ fontSize: '0.84rem', color: '#991b1b', fontWeight: 500 }}>
+                  Ta osoba ma obecnie ustawiony portret. Możesz go usunąć z profilu (plik pozostanie nienaruszony w galerii).
+                </span>
+                <button
+                  type="button"
+                  disabled={isSubmittingPortrait}
+                  onClick={() => {
+                    void handleRemoveAvatar();
+                  }}
+                  className={styles.btnSecondary}
+                  style={{
+                    backgroundColor: '#dc2626',
+                    color: '#ffffff',
+                    borderColor: '#b91c1c',
+                    fontSize: '0.82rem',
+                    flexShrink: 0,
+                  }}
+                >
+                  🗑️ Usuń portret z profilu
+                </button>
+              </div>
+            )}
+
             {/* Option 1: Upload from disk */}
             <div
               style={{
@@ -789,6 +881,30 @@ export default function PersonBiographyPage() {
                   {portraitUploadFile ? portraitUploadFile.name : 'Nie wybrano pliku'}
                 </span>
               </div>
+
+              {availableCollections.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%' }}>
+                  <label htmlFor="portrait-col-select" style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155' }}>
+                    Kolekcja docelowa:
+                  </label>
+                  <select
+                    id="portrait-col-select"
+                    value={selectedPortraitCollectionId ?? ''}
+                    onChange={e => {
+                      setSelectedPortraitCollectionId(e.target.value ? Number(e.target.value) : null);
+                    }}
+                    className={styles.selectInput}
+                    style={{ flex: 1, maxWidth: '300px' }}
+                  >
+                    <option value="">-- Wybierz kolekcję --</option>
+                    {availableCollections.map(col => (
+                      <option key={col.id} value={col.id}>
+                        📁 {col.name} {col.datedCollection ? `(${String(col.startYear ?? '')})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <button
                 type="button"

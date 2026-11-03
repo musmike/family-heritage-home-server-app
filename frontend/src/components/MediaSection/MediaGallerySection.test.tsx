@@ -26,11 +26,11 @@ vi.mock('../../api/mediaApi', () => ({
 describe('MediaGallerySection Component', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(mediaApi).getMediaByPerson.mockResolvedValue([
+    const mockItems = [
       {
         id: 50,
-        mediaType: 'IMAGE',
-        primaryContext: 'PERSON',
+        mediaType: 'IMAGE' as const,
+        primaryContext: 'PERSON' as const,
         relativePath: 'undated/collections/jan_kowalski/jan_kowalski_portrait_01.jpg',
         fileName: 'jan_kowalski_portrait_01.jpg',
         mimeType: 'image/jpeg',
@@ -45,8 +45,8 @@ describe('MediaGallerySection Component', () => {
       },
       {
         id: 51,
-        mediaType: 'VIDEO',
-        primaryContext: 'PERSON',
+        mediaType: 'VIDEO' as const,
+        primaryContext: 'PERSON' as const,
         relativePath: 'undated/collections/jan_kowalski/nagranie_01.mp4',
         fileName: 'nagranie_01.mp4',
         mimeType: 'video/mp4',
@@ -57,7 +57,10 @@ describe('MediaGallerySection Component', () => {
         personIds: [1],
         graveIds: [],
       },
-    ]);
+    ];
+    vi.mocked(mediaApi).getMediaByPerson.mockResolvedValue(mockItems);
+    vi.mocked(mediaApi).getMediaByGrave.mockResolvedValue(mockItems);
+    vi.mocked(mediaApi).getMediaByEvent.mockResolvedValue(mockItems);
   });
 
   it('should filter by image/video, open fullscreen lightbox, show metadata source tag, and allow linking existing gallery media', async () => {
@@ -140,5 +143,66 @@ describe('MediaGallerySection Component', () => {
         expect.objectContaining({ mediaIds: [99], personId: 1 })
       );
     });
+  });
+
+  it('should display primary photo badge for graves only when admin', async () => {
+    // 1. Non-admin on GRAVE context
+    const { unmount } = render(
+      <MediaGallerySection
+        context="GRAVE"
+        graveId={10}
+        primaryMediaId={50}
+        isAdmin={false}
+        sectionTitle="Zdjęcia nagrobka"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('media-tile-50')).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/⭐ Zdjęcie główne/i)).not.toBeInTheDocument();
+
+    unmount();
+
+    // 2. Admin on GRAVE context
+    render(
+      <MediaGallerySection
+        context="GRAVE"
+        graveId={10}
+        primaryMediaId={50}
+        isAdmin={true}
+        sectionTitle="Zdjęcia nagrobka"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('media-tile-50')).toBeInTheDocument();
+    });
+    expect(screen.getByText(/⭐ Zdjęcie główne/i)).toBeInTheDocument();
+  });
+
+  it('should render description as resizable textarea in edit modal', async () => {
+    render(
+      <MediaGallerySection
+        context="PERSON"
+        personId={1}
+        isAdmin={true}
+        sectionTitle="Zdjęcia i nagrania"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('media-tile-50')).toBeInTheDocument();
+    });
+
+    // Open lightbox
+    fireEvent.click(screen.getByTestId('media-tile-50'));
+
+    // Open details drawer and edit mode
+    fireEvent.click(screen.getByTestId('toggle-media-details-drawer'));
+    fireEvent.click(screen.getByTestId('start-edit-media-item-button'));
+
+    const descField = screen.getByLabelText(/Opis tekstowy \(zwykły tekst\)/i);
+    expect(descField.tagName.toLowerCase()).toBe('textarea');
   });
 });

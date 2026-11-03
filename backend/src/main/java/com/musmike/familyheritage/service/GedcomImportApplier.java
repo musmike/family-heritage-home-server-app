@@ -300,8 +300,8 @@ public class GedcomImportApplier {
         person = personRepository.save(person);
         updatePersonName(person, person.getCachedGivenName(), person.getCachedSurname());
 
-        String personFullName = ((person.getCachedSurname() != null ? person.getCachedSurname() : "") + " "
-                + (person.getCachedGivenName() != null ? person.getCachedGivenName() : "")).trim();
+        String personFullName = ((person.getCachedGivenName() != null ? person.getCachedGivenName() : "") + " "
+                + (person.getCachedSurname() != null ? person.getCachedSurname() : "")).trim();
         if (!isUpdate) {
             activityLogService.logActivity(
                     ActivityActionType.PERSON_CREATED,
@@ -605,9 +605,9 @@ public class GedcomImportApplier {
         boolean weddingDateEdited = isUpdate && isEventDateEdited(family.getPrimaryWedding(), oldRawWeddingDate);
         boolean weddingPlaceEdited = isUpdate && isEventPlaceEdited(family.getPrimaryWedding(), oldRawWeddingPlace);
         boolean hadWeddingBefore = family.getPrimaryWedding() != null;
-        String coupleNames = ((husband != null ? husband.getCachedSurname() + " " + husband.getCachedGivenName() : "")
+        String coupleNames = ((husband != null ? husband.getCachedGivenName() + " " + husband.getCachedSurname() : "")
                 + (husband != null && wife != null ? " & " : "")
-                + (wife != null ? wife.getCachedSurname() + " " + wife.getCachedGivenName() : "")).trim();
+                + (wife != null ? wife.getCachedGivenName() + " " + wife.getCachedSurname() : "")).trim();
 
         if (hasNewWedding || weddingDateEdited || weddingPlaceEdited) {
             raw.setRawWeddingDate(gedFam.getWeddingDate());
@@ -735,8 +735,8 @@ public class GedcomImportApplier {
         List<Person> absentPeople = personRepository.findAllById(absentIds);
         for (Person absentPerson : absentPeople) {
             AbsentPersonAction action = resolvedActions.get(absentPerson.getId());
-            String absentName = ((absentPerson.getCachedSurname() != null ? absentPerson.getCachedSurname() : "") + " "
-                    + (absentPerson.getCachedGivenName() != null ? absentPerson.getCachedGivenName() : "")).trim();
+            String absentName = ((absentPerson.getCachedGivenName() != null ? absentPerson.getCachedGivenName() : "") + " "
+                    + (absentPerson.getCachedSurname() != null ? absentPerson.getCachedSurname() : "")).trim();
             boolean wasAlreadyArchived = Boolean.TRUE.equals(absentPerson.getIsArchived());
 
             if (action == AbsentPersonAction.ARCHIVE) {

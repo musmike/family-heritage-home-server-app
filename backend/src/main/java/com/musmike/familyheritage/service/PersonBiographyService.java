@@ -459,34 +459,50 @@ public class PersonBiographyService {
         return full.contains(normSearch);
     }
 
+    private String blankToNull(String val) {
+        return (val == null || val.isBlank()) ? null : val.trim();
+    }
+
     private Comparator<PersonListItemDto> buildComparator(String sortBy) {
         String mode = sortBy != null ? sortBy.trim().toUpperCase() : "SURNAME_ASC";
-        Comparator<String> nullSafeStr = Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER);
+        Comparator<String> nullSafeStrAsc = Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER);
+        Comparator<String> nullSafeStrDesc = Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER.reversed());
         Comparator<Integer> nullSafeIntAsc = Comparator.nullsLast(Integer::compareTo);
         Comparator<Integer> nullSafeIntDesc = Comparator.nullsLast(Comparator.reverseOrder());
 
+        // People with neither surname nor givenName always go to the very end
+        Comparator<PersonListItemDto> unnamedLast = Comparator.comparingInt(
+                p -> (blankToNull(p.getSurname()) == null && blankToNull(p.getGivenName()) == null) ? 1 : 0
+        );
+
         return switch (mode) {
-            case "SURNAME_DESC" -> Comparator
-                    .comparing(PersonListItemDto::getSurname, Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER.reversed()))
-                    .thenComparing(PersonListItemDto::getGivenName, nullSafeStr);
-            case "GIVEN_NAME_ASC" -> Comparator
-                    .comparing(PersonListItemDto::getGivenName, nullSafeStr)
-                    .thenComparing(PersonListItemDto::getSurname, nullSafeStr);
+            case "SURNAME_DESC" -> unnamedLast
+                    .thenComparing(p -> blankToNull(p.getSurname()), nullSafeStrDesc)
+                    .thenComparing(p -> blankToNull(p.getGivenName()), nullSafeStrAsc)
+                    .thenComparingLong(PersonListItemDto::getId);
+            case "GIVEN_NAME_ASC" -> unnamedLast
+                    .thenComparing(p -> blankToNull(p.getGivenName()), nullSafeStrAsc)
+                    .thenComparing(p -> blankToNull(p.getSurname()), nullSafeStrAsc)
+                    .thenComparingLong(PersonListItemDto::getId);
             case "BIRTH_DATE_ASC" -> Comparator
                     .comparing(PersonListItemDto::getBirthYear, nullSafeIntAsc)
-                    .thenComparing(PersonListItemDto::getSurname, nullSafeStr);
+                    .thenComparing(p -> blankToNull(p.getSurname()), nullSafeStrAsc)
+                    .thenComparing(p -> blankToNull(p.getGivenName()), nullSafeStrAsc);
             case "BIRTH_DATE_DESC" -> Comparator
                     .comparing(PersonListItemDto::getBirthYear, nullSafeIntDesc)
-                    .thenComparing(PersonListItemDto::getSurname, nullSafeStr);
+                    .thenComparing(p -> blankToNull(p.getSurname()), nullSafeStrAsc)
+                    .thenComparing(p -> blankToNull(p.getGivenName()), nullSafeStrAsc);
             case "DEATH_DATE_ASC" -> Comparator
                     .comparing(PersonListItemDto::getDeathYear, nullSafeIntAsc)
-                    .thenComparing(PersonListItemDto::getSurname, nullSafeStr);
+                    .thenComparing(p -> blankToNull(p.getSurname()), nullSafeStrAsc)
+                    .thenComparing(p -> blankToNull(p.getGivenName()), nullSafeStrAsc);
             case "DEATH_DATE_DESC" -> Comparator
                     .comparing(PersonListItemDto::getDeathYear, nullSafeIntDesc)
-                    .thenComparing(PersonListItemDto::getSurname, nullSafeStr);
-            default -> Comparator
-                    .comparing(PersonListItemDto::getSurname, nullSafeStr)
-                    .thenComparing(PersonListItemDto::getGivenName, nullSafeStr)
+                    .thenComparing(p -> blankToNull(p.getSurname()), nullSafeStrAsc)
+                    .thenComparing(p -> blankToNull(p.getGivenName()), nullSafeStrAsc);
+            default -> unnamedLast
+                    .thenComparing(p -> blankToNull(p.getSurname()), nullSafeStrAsc)
+                    .thenComparing(p -> blankToNull(p.getGivenName()), nullSafeStrAsc)
                     .thenComparingLong(PersonListItemDto::getId);
         };
     }

@@ -114,9 +114,16 @@
   padding: 1.25rem 1.5rem;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
   display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.filterTopRow {
+  display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 1rem;
+  width: 100%;
 }
 
 .filterField {
@@ -182,26 +189,6 @@
   font-weight: 600;
   cursor: pointer;
   text-align: left;
-}
-
-.multiSelectPopover {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  right: 0;
-  width: 100%;
-  min-width: 240px;
-  max-width: 100%;
-  box-sizing: border-box;
-  background-color: #ffffff;
-  border: 1px solid #cbd5e1;
-  border-radius: 10px;
-  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.14);
-  z-index: 50;
-  padding: 0.75rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
 }
 
 .dualSliderContainer {
@@ -280,31 +267,6 @@
   cursor: pointer;
 }
 
-.popoverTypesList {
-  max-height: 220px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  border-top: 1px solid #f1f5f9;
-  padding-top: 0.45rem;
-}
-
-.typeCheckboxItem {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.85rem;
-  color: #1e293b;
-  padding: 0.25rem 0.35rem;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.typeCheckboxItem:hover {
-  background-color: #f8fafc;
-}
-
 .checkboxLabel {
   display: inline-flex;
   align-items: center;
@@ -366,7 +328,7 @@
 }
 
 .availableTypePillsGrid {
-  max-height: 155px;
+  max-height: 165px;
   overflow-y: auto;
   display: flex;
   flex-wrap: wrap;
@@ -482,7 +444,9 @@
   border: 1px solid #93c5fd;
 }
 
-/* Date & Time Range Builder Panels */
+/* ==========================================================================
+   DATE ROW + CALENDAR PICKER & SEPARATE TIME ROW (Point 7)
+   ========================================================================== */
 .dateSectionBox {
   background-color: #f8fafc;
   border: 1px solid #cbd5e1;
@@ -503,11 +467,37 @@
   padding-bottom: 0.55rem;
 }
 
-.dateSubGrid {
+.dateRowGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: minmax(150px, 1.1fr) minmax(185px, 1.3fr) minmax(90px, 0.8fr) minmax(90px, 0.8fr) minmax(90px, 0.8fr);
   gap: 0.75rem;
   align-items: end;
+}
+
+.timeRowGrid {
+  display: grid;
+  grid-template-columns: minmax(170px, 220px) minmax(240px, 340px);
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.calendarPickerGroup {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.weekdayBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #1d4ed8;
+  background-color: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  white-space: nowrap;
 }
 
 .timeTripletGroup {
@@ -524,17 +514,6 @@
   font-weight: 600;
   color: #1e293b;
   cursor: pointer;
-}
-
-.folderPreviewBanner {
-  background-color: #eff6ff;
-  border: 1px solid #bfdbfe;
-  border-radius: 8px;
-  padding: 0.6rem 0.9rem;
-  font-size: 0.81rem;
-  color: #1e3a8a;
-  word-break: break-all;
-  overflow-wrap: anywhere;
 }
 
 /* ==========================================================================
@@ -902,6 +881,13 @@
   color: #991b1b;
   font-size: 0.92rem;
   font-weight: 500;
+}
+
+@media (max-width: 900px) {
+  .dateRowGrid,
+  .timeRowGrid {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
 }
 
 @media (max-width: 640px) {

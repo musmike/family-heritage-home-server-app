@@ -22,6 +22,9 @@ public class BulkUpdateMediaRequestDto {
 
     // "NO_CHANGE", "MANUAL", "METADATA", "EVENT", "UNDATED"
     private String dateSourceMode;
+    private String selectedMetadataSourceTag;
+
+    private Boolean isBetweenRange;
     private String dateQualifier;
     private Integer year;
     private Integer month;
@@ -30,4 +33,13 @@ public class BulkUpdateMediaRequestDto {
     private Integer hour;
     private Integer minute;
     private Integer second;
+
+    private String rangeEndQualifier;
+    private Integer rangeEndYear;
+    private Integer rangeEndMonth;
+    private Integer rangeEndDay;
+    private String rangeEndTimeQualifier;
+    private Integer rangeEndHour;
+    private Integer rangeEndMinute;
+    private Integer rangeEndSecond;
 }

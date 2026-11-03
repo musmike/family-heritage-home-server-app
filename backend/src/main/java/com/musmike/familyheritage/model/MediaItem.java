@@ -8,7 +8,9 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 @Entity
@@ -29,6 +31,12 @@ public class MediaItem {
     @Column(name = "primary_context", nullable = false, length = 50)
     private MediaPrimaryContext primaryContext;
 
+    @Column(name = "is_portrait", nullable = false)
+    private Boolean isPortrait = false;
+
+    @Column(name = "is_unknown", nullable = false)
+    private Boolean isUnknown = false;
+
     @Column(name = "relative_path", nullable = false, unique = true, length = 700)
     private String relativePath;
 
@@ -43,8 +51,14 @@ public class MediaItem {
 
     private String title;
 
+    @Column(name = "inscription_text", columnDefinition = "TEXT")
+    private String inscriptionText;
+
     @Column(columnDefinition = "TEXT")
     private String description;
+
+    @Column(name = "source_text", length = 500)
+    private String sourceText;
 
     @OneToOne(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @JoinColumn(name = "date_descriptor_id")
@@ -71,6 +85,14 @@ public class MediaItem {
             inverseJoinColumns = @JoinColumn(name = "person_id")
     )
     private Set<Person> persons = new HashSet<>();
+
+    @OneToMany(mappedBy = "mediaItem", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("id ASC")
+    private List<MediaPersonLink> personLinks = new ArrayList<>();
+
+    @OneToMany(mappedBy = "mediaItem", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("id ASC")
+    private List<MediaVersion> versions = new ArrayList<>();
 
     @ManyToMany
     @JoinTable(

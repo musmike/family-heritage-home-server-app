@@ -10,8 +10,10 @@ import MediaGallerySection from '../../components/MediaSection/MediaGallerySecti
 import WikiEventDescriptionSection from '../../components/WikiEventDescription/WikiEventDescriptionSection';
 import {
   formatParticipantsSummary,
+  getPolishWeekdayLabel,
   QUALIFIER_OPTIONS,
   ROLE_LABELS,
+  toIsoDateInputValue,
 } from './EventsPage';
 import styles from './EventsPage.module.css';
 import type {
@@ -62,7 +64,6 @@ export default function EventDetailsPage() {
   const [titleInput, setTitleInput] = useState<string>('');
   const [descInput, setDescInput] = useState<string>('');
   const [locInput, setLocInput] = useState<string>('');
-  const [folderSlugInput, setFolderSlugInput] = useState<string>('');
 
   // Multi-Parent Events State
   const [parentEventIds, setParentEventIds] = useState<number[]>([]);
@@ -129,7 +130,6 @@ export default function EventDetailsPage() {
     setTitleInput(result.title ?? '');
     setDescInput(result.description ?? '');
     setLocInput(result.locationName ?? '');
-    setFolderSlugInput(result.folderSlug ?? '');
 
     if (result.parentEvents && result.parentEvents.length > 0) {
       setParentEventIds(result.parentEvents.map(p => p.eventId));
@@ -332,7 +332,6 @@ export default function EventDetailsPage() {
         typeCodes,
         title: titleInput.trim() || null,
         description: descInput.trim() || null,
-        folderSlug: folderSlugInput.trim() || null,
         locationName: locInput.trim() || null,
         parentEventIds,
 
@@ -402,6 +401,217 @@ export default function EventDetailsPage() {
     } catch {
       setErrorMessage('Nie udało się usunąć tego wydarzenia.');
     }
+  };
+
+  const applyCalendarPick = (
+    isoValue: string,
+    setY: (v: string) => void,
+    setM: (v: string) => void,
+    setD: (v: string) => void
+  ) => {
+    if (!isoValue) return;
+    const parts = isoValue.split('-');
+    if (parts.length === 3) {
+      setY(String(Number(parts[0])));
+      setM(String(Number(parts[1])));
+      setD(String(Number(parts[2])));
+    }
+  };
+
+  const renderDateAndTimeBlock = (params: {
+    idPrefix: string;
+    dateQualLabel: string;
+    dateQual: string;
+    setDateQual: (v: string) => void;
+    year: string;
+    setYear: (v: string) => void;
+    month: string;
+    setMonth: (v: string) => void;
+    day: string;
+    setDay: (v: string) => void;
+    timeQual: string;
+    setTimeQual: (v: string) => void;
+    hour: string;
+    setHour: (v: string) => void;
+    minute: string;
+    setMinute: (v: string) => void;
+    second: string;
+    setSecond: (v: string) => void;
+    yearPlaceholder?: string;
+  }) => {
+    const weekday = getPolishWeekdayLabel(params.year, params.month, params.day);
+    const isoVal = toIsoDateInputValue(params.year, params.month, params.day);
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        {/* Row 1: Date Qualifier + Calendar Picker (with weekday) + Year + Month + Day */}
+        <div className={styles.dateRowGrid}>
+          <div className={styles.formField}>
+            <label htmlFor={`${params.idPrefix}-dqual`} className={styles.filterLabel}>
+              {params.dateQualLabel}
+            </label>
+            <select
+              id={`${params.idPrefix}-dqual`}
+              value={params.dateQual}
+              onChange={e => {
+                params.setDateQual(e.target.value);
+              }}
+              className={styles.selectInput}
+            >
+              {QUALIFIER_OPTIONS.map(q => (
+                <option key={q.value} value={q.value}>
+                  {q.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className={styles.formField}>
+            <label htmlFor={`${params.idPrefix}-cal`} className={styles.filterLabel}>
+              Wybór z kalendarza {weekday ? `(${weekday})` : ''}
+            </label>
+            <div className={styles.calendarPickerGroup}>
+              <input
+                id={`${params.idPrefix}-cal`}
+                type="date"
+                value={isoVal}
+                onChange={e => {
+                  applyCalendarPick(
+                    e.target.value,
+                    params.setYear,
+                    params.setMonth,
+                    params.setDay
+                  );
+                }}
+                className={styles.textInput}
+              />
+              {weekday && <span className={styles.weekdayBadge}>📅 {weekday}</span>}
+            </div>
+          </div>
+
+          <div className={styles.formField}>
+            <label htmlFor={`${params.idPrefix}-year`} className={styles.filterLabel}>
+              Rok
+            </label>
+            <input
+              id={`${params.idPrefix}-year`}
+              type="number"
+              placeholder={params.yearPlaceholder ?? 'RRRR'}
+              value={params.year}
+              onChange={e => {
+                params.setYear(e.target.value);
+              }}
+              className={styles.textInput}
+            />
+          </div>
+
+          <div className={styles.formField}>
+            <label htmlFor={`${params.idPrefix}-month`} className={styles.filterLabel}>
+              Miesiąc (1–12)
+            </label>
+            <input
+              id={`${params.idPrefix}-month`}
+              type="number"
+              min={1}
+              max={12}
+              placeholder="MM"
+              value={params.month}
+              onChange={e => {
+                params.setMonth(e.target.value);
+              }}
+              className={styles.textInput}
+            />
+          </div>
+
+          <div className={styles.formField}>
+            <label htmlFor={`${params.idPrefix}-day`} className={styles.filterLabel}>
+              Dzień (1–31)
+            </label>
+            <input
+              id={`${params.idPrefix}-day`}
+              type="number"
+              min={1}
+              max={31}
+              placeholder="DD"
+              value={params.day}
+              onChange={e => {
+                params.setDay(e.target.value);
+              }}
+              className={styles.textInput}
+            />
+          </div>
+        </div>
+
+        {/* Row 2: Time Qualifier + Hour : Minute : Second */}
+        <div className={styles.timeRowGrid}>
+          <div className={styles.formField}>
+            <label htmlFor={`${params.idPrefix}-tqual`} className={styles.filterLabel}>
+              Kwalifikator czasu
+            </label>
+            <select
+              id={`${params.idPrefix}-tqual`}
+              value={params.timeQual}
+              onChange={e => {
+                params.setTimeQual(e.target.value);
+              }}
+              className={styles.selectInput}
+            >
+              {QUALIFIER_OPTIONS.map(q => (
+                <option key={q.value} value={q.value}>
+                  {q.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className={styles.formField}>
+            <span className={styles.filterLabel}>
+              Godzina, minuta, sekunda (GG : MM : SS)
+            </span>
+            <div className={styles.timeTripletGroup}>
+              <input
+                type="number"
+                min={0}
+                max={23}
+                placeholder="GG"
+                aria-label="Godzina"
+                value={params.hour}
+                onChange={e => {
+                  params.setHour(e.target.value);
+                }}
+                className={styles.textInput}
+              />
+              <span>:</span>
+              <input
+                type="number"
+                min={0}
+                max={59}
+                placeholder="MM"
+                aria-label="Minuta"
+                value={params.minute}
+                onChange={e => {
+                  params.setMinute(e.target.value);
+                }}
+                className={styles.textInput}
+              />
+              <span>:</span>
+              <input
+                type="number"
+                min={0}
+                max={59}
+                placeholder="SS"
+                aria-label="Sekunda"
+                value={params.second}
+                onChange={e => {
+                  params.setSecond(e.target.value);
+                }}
+                className={styles.textInput}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   if (isLoading) {
@@ -505,7 +715,7 @@ export default function EventDetailsPage() {
       {isAdmin && isEditing && (
         <section className={styles.detailsCard} data-testid="edit-event-details-form">
           <h2 className={styles.sectionSubtitle}>
-            Edycja typów, zakresów dat i czasu, folderu, uczestników oraz wydarzeń nadrzędnych
+            Edycja typów, zakresów dat i czasu, uczestników oraz wydarzeń nadrzędnych
           </h2>
           <form
             onSubmit={e => {
@@ -593,7 +803,7 @@ export default function EventDetailsPage() {
               </div>
             )}
 
-            {/* 2. Title, Location & Custom Folder Slug */}
+            {/* 2. Title & Location */}
             <div className={styles.detailsGrid}>
               <div className={styles.formField}>
                 <label htmlFor="evt-title-input" className={styles.filterLabel}>
@@ -626,25 +836,9 @@ export default function EventDetailsPage() {
                   className={styles.textInput}
                 />
               </div>
-
-              <div className={styles.formField}>
-                <label htmlFor="evt-folder-input" className={styles.filterLabel}>
-                  Nazwa folderu docelowego na dysku (snake_case)
-                </label>
-                <input
-                  id="evt-folder-input"
-                  type="text"
-                  placeholder={eventData.suggestedFolderSlug ?? 'np. 1948_06_10_slub'}
-                  value={folderSlugInput}
-                  onChange={e => {
-                    setFolderSlugInput(e.target.value);
-                  }}
-                  className={styles.textInput}
-                />
-              </div>
             </div>
 
-            {/* 3. Start Date & Time Section */}
+            {/* 3. Start Date & Time Section (Point 7: Date + Calendar row, separate Time row) */}
             <div className={styles.dateSectionBox}>
               <div className={styles.dateSectionHeader}>
                 <span className={styles.filterLabel}>
@@ -662,255 +856,50 @@ export default function EventDetailsPage() {
                 </label>
               </div>
 
-              <div className={styles.dateSubGrid}>
-                <div className={styles.formField}>
-                  <label htmlFor="edit-evt-qual" className={styles.filterLabel}>
-                    Kwalifikator daty
-                  </label>
-                  <select
-                    id="edit-evt-qual"
-                    value={startQual}
-                    onChange={e => {
-                      setStartQual(e.target.value);
-                    }}
-                    className={styles.selectInput}
-                  >
-                    {QUALIFIER_OPTIONS.map(q => (
-                      <option key={q.value} value={q.value}>
-                        {q.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className={styles.formField}>
-                  <label htmlFor="edit-evt-year" className={styles.filterLabel}>
-                    Rok
-                  </label>
-                  <input
-                    id="edit-evt-year"
-                    type="number"
-                    value={startYear}
-                    onChange={e => {
-                      setStartYear(e.target.value);
-                    }}
-                    className={styles.textInput}
-                  />
-                </div>
-
-                <div className={styles.formField}>
-                  <label htmlFor="edit-evt-month" className={styles.filterLabel}>
-                    Miesiąc (1–12)
-                  </label>
-                  <input
-                    id="edit-evt-month"
-                    type="number"
-                    min={1}
-                    max={12}
-                    value={startMonth}
-                    onChange={e => {
-                      setStartMonth(e.target.value);
-                    }}
-                    className={styles.textInput}
-                  />
-                </div>
-
-                <div className={styles.formField}>
-                  <label htmlFor="edit-evt-day" className={styles.filterLabel}>
-                    Dzień (1–31)
-                  </label>
-                  <input
-                    id="edit-evt-day"
-                    type="number"
-                    min={1}
-                    max={31}
-                    value={startDay}
-                    onChange={e => {
-                      setStartDay(e.target.value);
-                    }}
-                    className={styles.textInput}
-                  />
-                </div>
-
-                <div className={styles.formField}>
-                  <label htmlFor="edit-evt-tqual" className={styles.filterLabel}>
-                    Kwalifikator czasu
-                  </label>
-                  <select
-                    id="edit-evt-tqual"
-                    value={startTimeQual}
-                    onChange={e => {
-                      setStartTimeQual(e.target.value);
-                    }}
-                    className={styles.selectInput}
-                  >
-                    {QUALIFIER_OPTIONS.map(q => (
-                      <option key={q.value} value={q.value}>
-                        {q.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className={styles.formField} style={{ gridColumn: 'span 2' }}>
-                  <span className={styles.filterLabel}>Godzina (GG : MM : SS)</span>
-                  <div className={styles.timeTripletGroup}>
-                    <input
-                      type="number"
-                      min={0}
-                      max={23}
-                      placeholder="GG"
-                      value={startHour}
-                      onChange={e => {
-                        setStartHour(e.target.value);
-                      }}
-                      className={styles.textInput}
-                    />
-                    <span>:</span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={59}
-                      placeholder="MM"
-                      value={startMinute}
-                      onChange={e => {
-                        setStartMinute(e.target.value);
-                      }}
-                      className={styles.textInput}
-                    />
-                    <span>:</span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={59}
-                      placeholder="SS"
-                      value={startSecond}
-                      onChange={e => {
-                        setStartSecond(e.target.value);
-                      }}
-                      className={styles.textInput}
-                    />
-                  </div>
-                </div>
-              </div>
+              {renderDateAndTimeBlock({
+                idPrefix: 'edit-evt-start',
+                dateQualLabel: 'Kwalifikator daty',
+                dateQual: startQual,
+                setDateQual: setStartQual,
+                year: startYear,
+                setYear: setStartYear,
+                month: startMonth,
+                setMonth: setStartMonth,
+                day: startDay,
+                setDay: setStartDay,
+                timeQual: startTimeQual,
+                setTimeQual: setStartTimeQual,
+                hour: startHour,
+                setHour: setStartHour,
+                minute: startMinute,
+                setMinute: setStartMinute,
+                second: startSecond,
+                setSecond: setStartSecond,
+              })}
 
               {isStartBetween && (
-                <div className={styles.dateSubGrid} style={{ paddingTop: '0.6rem', borderTop: '1px dashed #cbd5e1' }}>
-                  <div className={styles.formField}>
-                    <span className={styles.filterLabel}>Druga granica („… a …”)</span>
-                    <select
-                      value={startRangeEndQual}
-                      onChange={e => {
-                        setStartRangeEndQual(e.target.value);
-                      }}
-                      className={styles.selectInput}
-                    >
-                      {QUALIFIER_OPTIONS.map(q => (
-                        <option key={q.value} value={q.value}>
-                          {q.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className={styles.formField}>
-                    <span className={styles.filterLabel}>Rok (do)</span>
-                    <input
-                      type="number"
-                      placeholder={startYear || 'RRRR'}
-                      value={startRangeEndYear}
-                      onChange={e => {
-                        setStartRangeEndYear(e.target.value);
-                      }}
-                      className={styles.textInput}
-                    />
-                  </div>
-
-                  <div className={styles.formField}>
-                    <span className={styles.filterLabel}>Miesiąc (do)</span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={12}
-                      value={startRangeEndMonth}
-                      onChange={e => {
-                        setStartRangeEndMonth(e.target.value);
-                      }}
-                      className={styles.textInput}
-                    />
-                  </div>
-
-                  <div className={styles.formField}>
-                    <span className={styles.filterLabel}>Dzień (do)</span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={31}
-                      value={startRangeEndDay}
-                      onChange={e => {
-                        setStartRangeEndDay(e.target.value);
-                      }}
-                      className={styles.textInput}
-                    />
-                  </div>
-
-                  <div className={styles.formField}>
-                    <span className={styles.filterLabel}>Kwalifikator czasu</span>
-                    <select
-                      value={startRangeEndTimeQual}
-                      onChange={e => {
-                        setStartRangeEndTimeQual(e.target.value);
-                      }}
-                      className={styles.selectInput}
-                    >
-                      {QUALIFIER_OPTIONS.map(q => (
-                        <option key={q.value} value={q.value}>
-                          {q.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className={styles.formField} style={{ gridColumn: 'span 2' }}>
-                    <span className={styles.filterLabel}>Godzina (do) (GG : MM : SS)</span>
-                    <div className={styles.timeTripletGroup}>
-                      <input
-                        type="number"
-                        min={0}
-                        max={23}
-                        placeholder="GG"
-                        value={startRangeEndHour}
-                        onChange={e => {
-                          setStartRangeEndHour(e.target.value);
-                        }}
-                        className={styles.textInput}
-                      />
-                      <span>:</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={59}
-                        placeholder="MM"
-                        value={startRangeEndMinute}
-                        onChange={e => {
-                          setStartRangeEndMinute(e.target.value);
-                        }}
-                        className={styles.textInput}
-                      />
-                      <span>:</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={59}
-                        placeholder="SS"
-                        value={startRangeEndSecond}
-                        onChange={e => {
-                          setStartRangeEndSecond(e.target.value);
-                        }}
-                        className={styles.textInput}
-                      />
-                    </div>
-                  </div>
+                <div style={{ paddingTop: '0.75rem', borderTop: '1px dashed #cbd5e1' }}>
+                  {renderDateAndTimeBlock({
+                    idPrefix: 'edit-evt-start-range-end',
+                    dateQualLabel: 'Druga granica („… a …”)',
+                    dateQual: startRangeEndQual,
+                    setDateQual: setStartRangeEndQual,
+                    year: startRangeEndYear,
+                    setYear: setStartRangeEndYear,
+                    month: startRangeEndMonth,
+                    setMonth: setStartRangeEndMonth,
+                    day: startRangeEndDay,
+                    setDay: setStartRangeEndDay,
+                    timeQual: startRangeEndTimeQual,
+                    setTimeQual: setStartRangeEndTimeQual,
+                    hour: startRangeEndHour,
+                    setHour: setStartRangeEndHour,
+                    minute: startRangeEndMinute,
+                    setMinute: setStartRangeEndMinute,
+                    second: startRangeEndSecond,
+                    setSecond: setStartRangeEndSecond,
+                    yearPlaceholder: startYear || 'RRRR',
+                  })}
                 </div>
               )}
 
@@ -947,240 +936,51 @@ export default function EventDetailsPage() {
                   </label>
                 </div>
 
-                <div className={styles.dateSubGrid}>
-                  <div className={styles.formField}>
-                    <span className={styles.filterLabel}>Kwalifikator daty końcowej</span>
-                    <select
-                      value={endQual}
-                      onChange={e => {
-                        setEndQual(e.target.value);
-                      }}
-                      className={styles.selectInput}
-                    >
-                      {QUALIFIER_OPTIONS.map(q => (
-                        <option key={q.value} value={q.value}>
-                          {q.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className={styles.formField}>
-                    <span className={styles.filterLabel}>Rok zakończenia</span>
-                    <input
-                      type="number"
-                      placeholder={startYear || 'RRRR'}
-                      value={endYear}
-                      onChange={e => {
-                        setEndYear(e.target.value);
-                      }}
-                      className={styles.textInput}
-                    />
-                  </div>
-
-                  <div className={styles.formField}>
-                    <span className={styles.filterLabel}>Miesiąc (1–12)</span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={12}
-                      value={endMonth}
-                      onChange={e => {
-                        setEndMonth(e.target.value);
-                      }}
-                      className={styles.textInput}
-                    />
-                  </div>
-
-                  <div className={styles.formField}>
-                    <span className={styles.filterLabel}>Dzień (1–31)</span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={31}
-                      value={endDay}
-                      onChange={e => {
-                        setEndDay(e.target.value);
-                      }}
-                      className={styles.textInput}
-                    />
-                  </div>
-
-                  <div className={styles.formField}>
-                    <span className={styles.filterLabel}>Kwalifikator czasu</span>
-                    <select
-                      value={endTimeQual}
-                      onChange={e => {
-                        setEndTimeQual(e.target.value);
-                      }}
-                      className={styles.selectInput}
-                    >
-                      {QUALIFIER_OPTIONS.map(q => (
-                        <option key={q.value} value={q.value}>
-                          {q.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className={styles.formField} style={{ gridColumn: 'span 2' }}>
-                    <span className={styles.filterLabel}>Godzina zakończenia (GG : MM : SS)</span>
-                    <div className={styles.timeTripletGroup}>
-                      <input
-                        type="number"
-                        min={0}
-                        max={23}
-                        placeholder="GG"
-                        value={endHour}
-                        onChange={e => {
-                          setEndHour(e.target.value);
-                        }}
-                        className={styles.textInput}
-                      />
-                      <span>:</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={59}
-                        placeholder="MM"
-                        value={endMinute}
-                        onChange={e => {
-                          setEndMinute(e.target.value);
-                        }}
-                        className={styles.textInput}
-                      />
-                      <span>:</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={59}
-                        placeholder="SS"
-                        value={endSecond}
-                        onChange={e => {
-                          setEndSecond(e.target.value);
-                        }}
-                        className={styles.textInput}
-                      />
-                    </div>
-                  </div>
-                </div>
+                {renderDateAndTimeBlock({
+                  idPrefix: 'edit-evt-end',
+                  dateQualLabel: 'Kwalifikator daty końcowej',
+                  dateQual: endQual,
+                  setDateQual: setEndQual,
+                  year: endYear,
+                  setYear: setEndYear,
+                  month: endMonth,
+                  setMonth: setEndMonth,
+                  day: endDay,
+                  setDay: setEndDay,
+                  timeQual: endTimeQual,
+                  setTimeQual: setEndTimeQual,
+                  hour: endHour,
+                  setHour: setEndHour,
+                  minute: endMinute,
+                  setMinute: setEndMinute,
+                  second: endSecond,
+                  setSecond: setEndSecond,
+                  yearPlaceholder: startYear || 'RRRR',
+                })}
 
                 {isEndBetween && (
-                  <div className={styles.dateSubGrid} style={{ paddingTop: '0.6rem', borderTop: '1px dashed #cbd5e1' }}>
-                    <div className={styles.formField}>
-                      <span className={styles.filterLabel}>Druga granica końca („… a …”)</span>
-                      <select
-                        value={endRangeEndQual}
-                        onChange={e => {
-                          setEndRangeEndQual(e.target.value);
-                        }}
-                        className={styles.selectInput}
-                      >
-                        {QUALIFIER_OPTIONS.map(q => (
-                          <option key={q.value} value={q.value}>
-                            {q.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className={styles.formField}>
-                      <span className={styles.filterLabel}>Rok (do)</span>
-                      <input
-                        type="number"
-                        value={endRangeEndYear}
-                        onChange={e => {
-                          setEndRangeEndYear(e.target.value);
-                        }}
-                        className={styles.textInput}
-                      />
-                    </div>
-
-                    <div className={styles.formField}>
-                      <span className={styles.filterLabel}>Miesiąc (do)</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={12}
-                        value={endRangeEndMonth}
-                        onChange={e => {
-                          setEndRangeEndMonth(e.target.value);
-                        }}
-                        className={styles.textInput}
-                      />
-                    </div>
-
-                    <div className={styles.formField}>
-                      <span className={styles.filterLabel}>Dzień (do)</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={31}
-                        value={endRangeEndDay}
-                        onChange={e => {
-                          setEndRangeEndDay(e.target.value);
-                        }}
-                        className={styles.textInput}
-                      />
-                    </div>
-
-                    <div className={styles.formField}>
-                      <span className={styles.filterLabel}>Kwalifikator czasu</span>
-                      <select
-                        value={endRangeEndTimeQual}
-                        onChange={e => {
-                          setEndRangeEndTimeQual(e.target.value);
-                        }}
-                        className={styles.selectInput}
-                      >
-                        {QUALIFIER_OPTIONS.map(q => (
-                          <option key={q.value} value={q.value}>
-                            {q.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className={styles.formField} style={{ gridColumn: 'span 2' }}>
-                      <span className={styles.filterLabel}>Godzina (do) (GG : MM : SS)</span>
-                      <div className={styles.timeTripletGroup}>
-                        <input
-                          type="number"
-                          min={0}
-                          max={23}
-                          placeholder="GG"
-                          value={endRangeEndHour}
-                          onChange={e => {
-                            setEndRangeEndHour(e.target.value);
-                          }}
-                          className={styles.textInput}
-                        />
-                        <span>:</span>
-                        <input
-                          type="number"
-                          min={0}
-                          max={59}
-                          placeholder="MM"
-                          value={endRangeEndMinute}
-                          onChange={e => {
-                            setEndRangeEndMinute(e.target.value);
-                          }}
-                          className={styles.textInput}
-                        />
-                        <span>:</span>
-                        <input
-                          type="number"
-                          min={0}
-                          max={59}
-                          placeholder="SS"
-                          value={endRangeEndSecond}
-                          onChange={e => {
-                            setEndRangeEndSecond(e.target.value);
-                          }}
-                          className={styles.textInput}
-                        />
-                      </div>
-                    </div>
+                  <div style={{ paddingTop: '0.75rem', borderTop: '1px dashed #cbd5e1' }}>
+                    {renderDateAndTimeBlock({
+                      idPrefix: 'edit-evt-end-range-end',
+                      dateQualLabel: 'Druga granica końca („… a …”)',
+                      dateQual: endRangeEndQual,
+                      setDateQual: setEndRangeEndQual,
+                      year: endRangeEndYear,
+                      setYear: setEndRangeEndYear,
+                      month: endRangeEndMonth,
+                      setMonth: setEndRangeEndMonth,
+                      day: endRangeEndDay,
+                      setDay: setEndRangeEndDay,
+                      timeQual: endRangeEndTimeQual,
+                      setTimeQual: setEndRangeEndTimeQual,
+                      hour: endRangeEndHour,
+                      setHour: setEndRangeEndHour,
+                      minute: endRangeEndMinute,
+                      setMinute: setEndRangeEndMinute,
+                      second: endRangeEndSecond,
+                      setSecond: setEndRangeEndSecond,
+                      yearPlaceholder: endYear || startYear || 'RRRR',
+                    })}
                   </div>
                 )}
               </div>
@@ -1189,7 +989,7 @@ export default function EventDetailsPage() {
             {/* 5. Multiple Parent Events Search & Picker */}
             <div className={styles.selectorPanel}>
               <span className={styles.filterLabel}>
-                Wydarzenia nadrzędne (pierwsze wydarzenie na liście określa folder macierzysty na dysku):
+                Wydarzenia nadrzędne (pierwsze wydarzenie na liście określa folder macierzysty dla zdjęć):
               </span>
 
               {parentEventIds.length > 0 && (
@@ -1212,7 +1012,7 @@ export default function EventDetailsPage() {
                             </span>
                             {idx === 0 && (
                               <span className={styles.primaryFolderBadge}>
-                                📁 Główny folder nadrzędny
+                                📁 Główny rodzic
                               </span>
                             )}
                           </div>
@@ -1473,7 +1273,7 @@ export default function EventDetailsPage() {
         </section>
       )}
 
-      {/* Main Info Card */}
+      {/* Main Info Card (Point 4: No "Folder wydarzenia na dysku" tile here) */}
       <section className={styles.detailsCard}>
         <div className={styles.detailsGrid}>
           <div className={styles.infoBox}>
@@ -1490,14 +1290,6 @@ export default function EventDetailsPage() {
             <div className={styles.infoBox}>
               <span className={styles.infoLabel}>Miejsce</span>
               <span className={styles.infoValue}>{eventData.locationName}</span>
-            </div>
-          )}
-          {isAdmin && (eventData.folderSlug ?? eventData.suggestedFolderSlug) && (
-            <div className={styles.infoBox}>
-              <span className={styles.infoLabel}>Folder wydarzenia na dysku</span>
-              <span className={styles.infoValue} style={{ fontSize: '0.84rem', fontFamily: 'monospace' }}>
-                {eventData.folderSlug ?? eventData.suggestedFolderSlug}
-              </span>
             </div>
           )}
           {eventData.attributes.map(attr => (
@@ -1528,7 +1320,7 @@ export default function EventDetailsPage() {
                   <span>↑ {pe.label}</span>
                   {pe.dateText ? <span>({pe.dateText})</span> : null}
                   {pe.primaryFolderParent && resolvedParentEvents.length > 1 && (
-                    <span className={styles.primaryFolderBadge}>Folder nadrzędny</span>
+                    <span className={styles.primaryFolderBadge}>Główny rodzic</span>
                   )}
                 </Link>
               ))}
@@ -1617,7 +1409,6 @@ export default function EventDetailsPage() {
         </div>
       </section>
 
-      {/* Point 5: Wiki Markdown Event Description Section */}
       <WikiEventDescriptionSection
         eventId={eventData.eventId}
         description={eventData.description}

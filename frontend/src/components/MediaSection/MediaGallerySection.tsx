@@ -1,17 +1,20 @@
 import { useState, useEffect, useId, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { mediaApi } from '../../api/mediaApi';
+import { biographyApi } from '../../api/biographyApi';
 import {
-  extractClientFileMetadata,
+  extractAllClientFileMetadata,
   type ClientExtractedMetadata,
 } from '../../utils/clientMetadataExtractor';
-import PersonAvatar from '../PersonAvatar/PersonAvatar';
+import InteractiveAvatarCropper from '../PersonAvatar/InteractiveAvatarCropper';
 import styles from './MediaGallerySection.module.css';
 import type {
   MediaItemDto,
   MediaPrimaryContext,
+  SaveMediaPersonLinkRequestDto,
   SubEventMediaGroupDto,
 } from '../../types/media';
+import type { PersonListItemDto, PersonSex } from '../../types/biography';
 
 interface MediaGallerySectionProps {
   context: MediaPrimaryContext;
@@ -36,12 +39,30 @@ interface StagedUploadFile {
   hour: string;
   minute: string;
   second: string;
-  metadata: ClientExtractedMetadata | null;
+  metadataOptions: ClientExtractedMetadata[];
+  selectedMetadataTag: string;
 }
 
 type DateSourceMode = 'EVENT_OR_MANUAL' | 'FILE_METADATA' | 'UNDATED';
 type SectionMediaTypeFilter = 'ALL' | 'IMAGE' | 'VIDEO';
 type SectionSortMode = 'DATE_ASC' | 'DATE_DESC' | 'NAME_ASC' | 'NEWEST_ADDED';
+
+const QUALIFIER_OPTIONS = [
+  { value: 'EXACT', label: 'Dokładnie' },
+  { value: 'ABOUT', label: 'Około (ok.)' },
+  { value: 'BEFORE', label: 'Przed' },
+  { value: 'AFTER', label: 'Po' },
+  { value: 'ESTIMATED', label: 'Szacunkowo' },
+];
+
+const PERSON_LINK_TYPE_LABELS: Record<
+  'DEPICTED' | 'RELATED' | 'AUTHOR',
+  string
+> = {
+  DEPICTED: '👁️ Na zdjęciu/filmie',
+  RELATED: '🔗 Powiązana',
+  AUTHOR: '📷 Autor',
+};
 
 const parseOptInt = (val: string): number | null => {
   const trimmed = val.trim();
@@ -66,26 +87,29 @@ export default function MediaGallerySection({
   onMediaChanged,
 }: MediaGallerySectionProps) {
   const fileInputId = useId();
+  const versionFileInputId = useId();
 
   const [items, setItems] = useState<MediaItemDto[]>([]);
   const [subEventGroups, setSubEventGroups] = useState<SubEventMediaGroupDto[]>([]);
   const [showUpload, setShowUpload] = useState<boolean>(false);
 
-  // Point 8: Filtering (All / Images / Videos) & Sorting in Event / Grave / Person sections
+  // Filtering (All / Images / Videos) & Sorting
   const [typeFilter, setTypeFilter] = useState<SectionMediaTypeFilter>('ALL');
   const [sortMode, setSortMode] = useState<SectionSortMode>('DATE_ASC');
 
-  // Batch & Single Upload Staging state (Points 2 & 7)
+  // Batch & Single Upload Staging state
   const [stagedFiles, setStagedFiles] = useState<StagedUploadFile[]>([]);
   const [customFolderName, setCustomFolderName] = useState<string>('');
   const [dateSourceMode, setDateSourceMode] = useState<DateSourceMode>(
     defaultEventYear ? 'EVENT_OR_MANUAL' : 'FILE_METADATA'
   );
+  const [manualBulkQual, setManualBulkQual] = useState<string>('EXACT');
   const [manualBulkYear, setManualBulkYear] = useState<string>(
     defaultEventYear ? String(defaultEventYear) : ''
   );
   const [manualBulkMonth, setManualBulkMonth] = useState<string>('');
   const [manualBulkDay, setManualBulkDay] = useState<string>('');
+  const [manualBulkTimeQual, setManualBulkTimeQual] = useState<string>('EXACT');
   const [manualBulkHour, setManualBulkHour] = useState<string>('');
   const [manualBulkMinute, setManualBulkMinute] = useState<string>('');
   const [manualBulkSecond, setManualBulkSecond] = useState<string>('');
@@ -95,7 +119,7 @@ export default function MediaGallerySection({
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Point 2 & 7: Post-Upload Bulk Edit Mode state
+  // Post-Upload Bulk Edit Mode state
   const [isBulkEditMode, setIsBulkEditMode] = useState<boolean>(false);
   const [selectedBulkIds, setSelectedBulkIds] = useState<number[]>([]);
   const [bulkEditFolder, setBulkEditFolder] = useState<string>('');
@@ -103,49 +127,94 @@ export default function MediaGallerySection({
   const [bulkEditDateMode, setBulkEditDateMode] = useState<
     'NO_CHANGE' | 'MANUAL' | 'METADATA' | 'EVENT' | 'UNDATED'
   >('NO_CHANGE');
+  const [bulkEditMetadataTag, setBulkEditMetadataTag] = useState<string>('');
+  const [bulkEditIsBetween, setBulkEditIsBetween] = useState<boolean>(false);
+  const [bulkEditDateQual, setBulkEditDateQual] = useState<string>('EXACT');
   const [bulkEditYear, setBulkEditYear] = useState<string>('');
   const [bulkEditMonth, setBulkEditMonth] = useState<string>('');
   const [bulkEditDay, setBulkEditDay] = useState<string>('');
+  const [bulkEditTimeQual, setBulkEditTimeQual] = useState<string>('EXACT');
   const [bulkEditHour, setBulkEditHour] = useState<string>('');
   const [bulkEditMinute, setBulkEditMinute] = useState<string>('');
   const [bulkEditSecond, setBulkEditSecond] = useState<string>('');
 
-  // Point 9: Link Existing Media from Gallery Modal state
+  const [bulkEditRangeEndQual, setBulkEditRangeEndQual] = useState<string>('EXACT');
+  const [bulkEditRangeEndYear, setBulkEditRangeEndYear] = useState<string>('');
+  const [bulkEditRangeEndMonth, setBulkEditRangeEndMonth] = useState<string>('');
+  const [bulkEditRangeEndDay, setBulkEditRangeEndDay] = useState<string>('');
+  const [bulkEditRangeEndTimeQual, setBulkEditRangeEndTimeQual] = useState<string>('EXACT');
+  const [bulkEditRangeEndHour, setBulkEditRangeEndHour] = useState<string>('');
+  const [bulkEditRangeEndMinute, setBulkEditRangeEndMinute] = useState<string>('');
+  const [bulkEditRangeEndSecond, setBulkEditRangeEndSecond] = useState<string>('');
+
+  // Link Existing Media from Gallery Modal state
   const [showLinkExistingModal, setShowLinkExistingModal] = useState<boolean>(false);
   const [gallerySearchQuery, setGallerySearchQuery] = useState<string>('');
   const [galleryTypeFilter, setGalleryTypeFilter] = useState<string>('ALL');
   const [galleryCandidates, setGalleryCandidates] = useState<MediaItemDto[]>([]);
   const [selectedExistingIds, setSelectedExistingIds] = useState<number[]>([]);
 
-  // Fullscreen Lightbox, Zoom/Pan, Prev/Next & Details Drawer state
+  // Fullscreen Lightbox state & Version Switcher (Points 15 & 17)
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const [selectedVersionId, setSelectedVersionId] = useState<number | null>(null);
   const [zoom, setZoom] = useState<number>(1);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   const [pinchStartDist, setPinchStartDist] = useState<number | null>(null);
   const [showDetailsDrawer, setShowDetailsDrawer] = useState<boolean>(false);
 
-  // Single Item Edit inside Lightbox
+  // Add Version / Reverse Side Form inside Lightbox
+  const [showVersionUpload, setShowVersionUpload] = useState<boolean>(false);
+  const [versionFile, setVersionFile] = useState<File | null>(null);
+  const [versionTypeInput, setVersionTypeInput] = useState<string>('RESTORED');
+  const [versionLabelInput, setVersionLabelInput] = useState<string>('');
+  const [versionSetAsMain, setVersionSetAsMain] = useState<boolean>(true);
+
+  // Single Item Edit inside Lightbox (Points 13, 14, 15)
   const [isEditingItem, setIsEditingItem] = useState<boolean>(false);
   const [editFileName, setEditFileName] = useState<string>('');
   const [editFolderName, setEditFolderName] = useState<string>('');
   const [editTitle, setEditTitle] = useState<string>('');
+  const [editInscription, setEditInscription] = useState<string>('');
   const [editDescription, setEditDescription] = useState<string>('');
+  const [editSourceText, setEditSourceText] = useState<string>('');
   const [editDateMode, setEditDateMode] = useState<
     'MANUAL' | 'METADATA' | 'EVENT' | 'UNDATED'
   >('MANUAL');
+  const [editSelectedMetadataTag, setEditSelectedMetadataTag] = useState<string>('');
+  const [editIsBetween, setEditIsBetween] = useState<boolean>(false);
+  const [editDateQual, setEditDateQual] = useState<string>('EXACT');
   const [editYear, setEditYear] = useState<string>('');
   const [editMonth, setEditMonth] = useState<string>('');
   const [editDay, setEditDay] = useState<string>('');
+  const [editTimeQual, setEditTimeQual] = useState<string>('EXACT');
   const [editHour, setEditHour] = useState<string>('');
   const [editMinute, setEditMinute] = useState<string>('');
   const [editSecond, setEditSecond] = useState<string>('');
 
-  // Square Avatar Cropper state
+  const [editRangeEndQual, setEditRangeEndQual] = useState<string>('EXACT');
+  const [editRangeEndYear, setEditRangeEndYear] = useState<string>('');
+  const [editRangeEndMonth, setEditRangeEndMonth] = useState<string>('');
+  const [editRangeEndDay, setEditRangeEndDay] = useState<string>('');
+  const [editRangeEndTimeQual, setEditRangeEndTimeQual] = useState<string>('EXACT');
+  const [editRangeEndHour, setEditRangeEndHour] = useState<string>('');
+  const [editRangeEndMinute, setEditRangeEndMinute] = useState<string>('');
+  const [editRangeEndSecond, setEditRangeEndSecond] = useState<string>('');
+
+  // Person Links in Edit Form (DEPICTED, RELATED, AUTHOR - DB or Text)
+  const [editPersonLinks, setEditPersonLinks] = useState<
+    (SaveMediaPersonLinkRequestDto & { displayLabel: string })[]
+  >([]);
+  const [linkRoleType, setLinkRoleType] = useState<'DEPICTED' | 'RELATED' | 'AUTHOR'>(
+    'DEPICTED'
+  );
+  const [linkPersonQuery, setLinkPersonQuery] = useState<string>('');
+  const [linkPersonResults, setLinkPersonResults] = useState<PersonListItemDto[]>([]);
+  const [linkTextInput, setLinkTextInput] = useState<string>('');
+  const [linkTextSex, setLinkTextSex] = useState<PersonSex>('UNKNOWN');
+
+  // Interactive Avatar Cropper state (Point 12)
   const [showCropper, setShowCropper] = useState<boolean>(false);
-  const [cropX, setCropX] = useState<number>(50);
-  const [cropY, setCropY] = useState<number>(50);
-  const [cropZoom, setCropZoom] = useState<number>(1.0);
 
   const filterAndSortList = (list: MediaItemDto[]): MediaItemDto[] => {
     const filtered = list.filter(item => {
@@ -250,6 +319,7 @@ export default function MediaGallerySection({
       } else if (e.key === 'ArrowLeft' && allViewableItems.length > 1) {
         setZoom(1);
         setPan({ x: 0, y: 0 });
+        setSelectedVersionId(null);
         setActiveIndex(prev =>
           prev !== null
             ? (prev - 1 + allViewableItems.length) % allViewableItems.length
@@ -258,6 +328,7 @@ export default function MediaGallerySection({
       } else if (e.key === 'ArrowRight' && allViewableItems.length > 1) {
         setZoom(1);
         setPan({ x: 0, y: 0 });
+        setSelectedVersionId(null);
         setActiveIndex(prev =>
           prev !== null ? (prev + 1) % allViewableItems.length : null
         );
@@ -303,15 +374,16 @@ export default function MediaGallerySection({
       setBulkBaseName(baseStem);
     }
 
-    const extractedList = await Promise.all(
-      filesArray.map(f => extractClientFileMetadata(f))
+    const extractedLists = await Promise.all(
+      filesArray.map(f => extractAllClientFileMetadata(f))
     );
 
     const staged: StagedUploadFile[] = filesArray.map((f, idx) => {
       const ext = f.name.includes('.')
         ? f.name.slice(f.name.lastIndexOf('.') + 1).toLowerCase()
         : 'jpg';
-      const meta = extractedList[idx];
+      const metaList = extractedLists.at(idx) ?? [];
+      const primaryMeta = metaList.at(0);
 
       let y = '';
       let m = '';
@@ -320,13 +392,13 @@ export default function MediaGallerySection({
       let min = '';
       let sec = '';
 
-      if (dateSourceMode === 'FILE_METADATA' && meta) {
-        y = String(meta.year);
-        m = String(meta.month);
-        d = String(meta.day);
-        h = String(meta.hour);
-        min = String(meta.minute);
-        sec = String(meta.second);
+      if (dateSourceMode === 'FILE_METADATA' && primaryMeta) {
+        y = String(primaryMeta.year);
+        m = String(primaryMeta.month);
+        d = String(primaryMeta.day);
+        h = String(primaryMeta.hour);
+        min = String(primaryMeta.minute);
+        sec = String(primaryMeta.second);
       } else if (dateSourceMode === 'EVENT_OR_MANUAL') {
         y = manualBulkYear;
         m = manualBulkMonth;
@@ -347,7 +419,8 @@ export default function MediaGallerySection({
         hour: h,
         minute: min,
         second: sec,
-        metadata: meta,
+        metadataOptions: metaList,
+        selectedMetadataTag: primaryMeta ? primaryMeta.sourceTag : '',
       };
     });
 
@@ -385,13 +458,17 @@ export default function MediaGallerySection({
         let min = '';
         let sec = '';
 
-        if (nextMode === 'FILE_METADATA' && item.metadata) {
-          y = String(item.metadata.year);
-          m = String(item.metadata.month);
-          d = String(item.metadata.day);
-          h = String(item.metadata.hour);
-          min = String(item.metadata.minute);
-          sec = String(item.metadata.second);
+        const chosenMeta =
+          item.metadataOptions.find(o => o.sourceTag === item.selectedMetadataTag) ??
+          item.metadataOptions.at(0);
+
+        if (nextMode === 'FILE_METADATA' && chosenMeta) {
+          y = String(chosenMeta.year);
+          m = String(chosenMeta.month);
+          d = String(chosenMeta.day);
+          h = String(chosenMeta.hour);
+          min = String(chosenMeta.minute);
+          sec = String(chosenMeta.second);
         } else if (nextMode === 'EVENT_OR_MANUAL') {
           y = nextY;
           m = nextM;
@@ -435,12 +512,15 @@ export default function MediaGallerySection({
           title: single.title,
           graveId,
           eventId,
+          dateQualifier: dateSourceMode === 'FILE_METADATA' ? 'EXACT' : manualBulkQual,
           customYear: parseOptInt(single.year) ?? undefined,
           customMonth: parseOptInt(single.month) ?? undefined,
           customDay: parseOptInt(single.day) ?? undefined,
+          timeQualifier: dateSourceMode === 'FILE_METADATA' ? 'EXACT' : manualBulkTimeQual,
           customHour: parseOptInt(single.hour) ?? undefined,
           customMinute: parseOptInt(single.minute) ?? undefined,
           customSecond: parseOptInt(single.second) ?? undefined,
+          selectedMetadataSourceTag: single.selectedMetadataTag || undefined,
           clientLastModifiedMs: single.file.lastModified || undefined,
           personIds: targetPersonIds,
           setAsPersonAvatar: context === 'PERSON' && setAsPrimary,
@@ -459,6 +539,9 @@ export default function MediaGallerySection({
           customHours: stagedFiles.map(s => parseOptInt(s.hour)),
           customMinutes: stagedFiles.map(s => parseOptInt(s.minute)),
           customSeconds: stagedFiles.map(s => parseOptInt(s.second)),
+          selectedMetadataSourceTags: stagedFiles.map(
+            s => s.selectedMetadataTag || null
+          ),
           clientLastModifiedList: stagedFiles.map(s => s.file.lastModified || null),
           graveId,
           eventId,
@@ -480,7 +563,6 @@ export default function MediaGallerySection({
     }
   };
 
-  // Point 9: Open Link Existing Media from Gallery Modal
   const fetchGalleryCandidates = async (queryStr: string, mType: string) => {
     try {
       const page = await mediaApi.getGalleryPage({
@@ -524,7 +606,6 @@ export default function MediaGallerySection({
     }
   };
 
-  // Point 2 & 7: Post-Upload Bulk Edit
   const handleApplyBulkEdit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (selectedBulkIds.length === 0) return;
@@ -537,12 +618,24 @@ export default function MediaGallerySection({
         customFolderName: bulkEditFolder.trim() || null,
         contextEventId: eventId ?? null,
         dateSourceMode: bulkEditDateMode,
+        selectedMetadataSourceTag: bulkEditMetadataTag || null,
+        isBetweenRange: bulkEditIsBetween,
+        dateQualifier: bulkEditDateQual,
         year: parseOptInt(bulkEditYear),
         month: parseOptInt(bulkEditMonth),
         day: parseOptInt(bulkEditDay),
+        timeQualifier: bulkEditTimeQual,
         hour: parseOptInt(bulkEditHour),
         minute: parseOptInt(bulkEditMinute),
         second: parseOptInt(bulkEditSecond),
+        rangeEndQualifier: bulkEditRangeEndQual,
+        rangeEndYear: parseOptInt(bulkEditRangeEndYear),
+        rangeEndMonth: parseOptInt(bulkEditRangeEndMonth),
+        rangeEndDay: parseOptInt(bulkEditRangeEndDay),
+        rangeEndTimeQualifier: bulkEditRangeEndTimeQual,
+        rangeEndHour: parseOptInt(bulkEditRangeEndHour),
+        rangeEndMinute: parseOptInt(bulkEditRangeEndMinute),
+        rangeEndSecond: parseOptInt(bulkEditRangeEndSecond),
       });
       setIsBulkEditMode(false);
       setSelectedBulkIds([]);
@@ -562,23 +655,72 @@ export default function MediaGallerySection({
     setEditFileName(item.fileName);
     setEditFolderName('');
     setEditTitle(item.title ?? '');
+    setEditInscription(item.inscriptionText ?? '');
     setEditDescription(item.description ?? '');
+    setEditSourceText(item.sourceText ?? '');
     setEditDateMode('MANUAL');
+    setEditSelectedMetadataTag(
+      item.metadataDateSource ?? item.availableMetadataDates?.[0]?.sourceTag ?? ''
+    );
+    setEditIsBetween(item.betweenRange === true);
+    setEditDateQual(item.dateQualifier ?? 'EXACT');
     setEditYear(numToStr(item.year));
     setEditMonth(numToStr(item.month));
     setEditDay(numToStr(item.day));
+    setEditTimeQual(item.timeQualifier ?? 'EXACT');
     setEditHour(numToStr(item.hour));
     setEditMinute(numToStr(item.minute));
     setEditSecond(numToStr(item.second));
+
+    setEditRangeEndQual(item.rangeEndQualifier ?? 'EXACT');
+    setEditRangeEndYear(numToStr(item.rangeEndYear));
+    setEditRangeEndMonth(numToStr(item.rangeEndMonth));
+    setEditRangeEndDay(numToStr(item.rangeEndDay));
+    setEditRangeEndTimeQual(item.rangeEndTimeQualifier ?? 'EXACT');
+    setEditRangeEndHour(numToStr(item.rangeEndHour));
+    setEditRangeEndMinute(numToStr(item.rangeEndMinute));
+    setEditRangeEndSecond(numToStr(item.rangeEndSecond));
+
+    const combinedLinks: (SaveMediaPersonLinkRequestDto & { displayLabel: string })[] = [];
+    for (const d of item.depictedPersons ?? []) {
+      combinedLinks.push({
+        personId: d.personId,
+        personText: d.personText,
+        personSex: d.sex,
+        linkType: 'DEPICTED',
+        displayLabel: `${PERSON_LINK_TYPE_LABELS.DEPICTED}: ${d.displayName}`,
+      });
+    }
+    for (const r of item.relatedPersons ?? []) {
+      combinedLinks.push({
+        personId: r.personId,
+        personText: r.personText,
+        personSex: r.sex,
+        linkType: 'RELATED',
+        displayLabel: `${PERSON_LINK_TYPE_LABELS.RELATED}: ${r.displayName}`,
+      });
+    }
+    for (const a of item.authors ?? []) {
+      combinedLinks.push({
+        personId: a.personId,
+        personText: a.personText,
+        personSex: a.sex,
+        linkType: 'AUTHOR',
+        displayLabel: `${PERSON_LINK_TYPE_LABELS.AUTHOR}: ${a.displayName}`,
+      });
+    }
+    setEditPersonLinks(combinedLinks);
   };
 
   const handleOpenLightbox = (item: MediaItemDto) => {
     const idx = allViewableItems.findIndex(m => m.id === item.id);
     setActiveIndex(idx >= 0 ? idx : 0);
+    setSelectedVersionId(null);
     setZoom(1);
     setPan({ x: 0, y: 0 });
     setShowDetailsDrawer(false);
     setShowCropper(false);
+    setShowVersionUpload(false);
     setIsEditingItem(false);
     syncSingleEditFields(item);
   };
@@ -589,11 +731,27 @@ export default function MediaGallerySection({
       (activeIndex + direction + allViewableItems.length) % allViewableItems.length;
     const nextItem = allViewableItems[nextIdx];
     setActiveIndex(nextIdx);
+    setSelectedVersionId(null);
     setZoom(1);
     setPan({ x: 0, y: 0 });
     setIsEditingItem(false);
     setShowCropper(false);
+    setShowVersionUpload(false);
     syncSingleEditFields(nextItem);
+  };
+
+  const handleSearchPersonForLink = async () => {
+    try {
+      const page = await biographyApi.listPeople({
+        search: linkPersonQuery,
+        includeArchived: true,
+        page: 0,
+        size: 6,
+      });
+      setLinkPersonResults(page.content);
+    } catch {
+      setErrorMessage('Nie udało się wyszukać osób.');
+    }
   };
 
   const handleSaveItemEdit = async () => {
@@ -604,15 +762,35 @@ export default function MediaGallerySection({
         fileName: editFileName,
         customFolderName: editFolderName.trim() || null,
         title: editTitle,
+        inscriptionText: editInscription,
         description: editDescription,
+        sourceText: editSourceText,
         dateSourceMode: editDateMode,
+        selectedMetadataSourceTag: editSelectedMetadataTag || null,
         contextEventId: eventId ?? null,
+        isBetweenRange: editIsBetween,
+        dateQualifier: editDateQual,
         year: parseOptInt(editYear),
         month: parseOptInt(editMonth),
         day: parseOptInt(editDay),
+        timeQualifier: editTimeQual,
         hour: parseOptInt(editHour),
         minute: parseOptInt(editMinute),
         second: parseOptInt(editSecond),
+        rangeEndQualifier: editRangeEndQual,
+        rangeEndYear: parseOptInt(editRangeEndYear),
+        rangeEndMonth: parseOptInt(editRangeEndMonth),
+        rangeEndDay: parseOptInt(editRangeEndDay),
+        rangeEndTimeQualifier: editRangeEndTimeQual,
+        rangeEndHour: parseOptInt(editRangeEndHour),
+        rangeEndMinute: parseOptInt(editRangeEndMinute),
+        rangeEndSecond: parseOptInt(editRangeEndSecond),
+        personLinks: editPersonLinks.map(l => ({
+          personId: l.personId,
+          personText: l.personText,
+          personSex: l.personSex,
+          linkType: l.linkType,
+        })),
       });
       setIsEditingItem(false);
       await loadMedia();
@@ -624,13 +802,66 @@ export default function MediaGallerySection({
     }
   };
 
-  const handleSetAsPrimaryWithCrop = async (item: MediaItemDto) => {
+  const handleUploadVersionSubmit = async () => {
+    if (!activeItem || !versionFile) return;
+    setIsSubmitting(true);
+    try {
+      await mediaApi.uploadMediaVersion({
+        mediaId: activeItem.id,
+        file: versionFile,
+        versionType: versionTypeInput,
+        versionLabel: versionLabelInput.trim() || undefined,
+        setAsMain: versionTypeInput !== 'REVERSE' && versionSetAsMain,
+      });
+      setShowVersionUpload(false);
+      setVersionFile(null);
+      setVersionLabelInput('');
+      setSelectedVersionId(null);
+      await loadMedia();
+      onMediaChanged?.();
+    } catch {
+      setErrorMessage('Nie udało się wgrać nowej wersji pliku.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSetVersionAsMain = async (versionId: number) => {
+    if (!activeItem) return;
+    try {
+      await mediaApi.setMainMediaVersion(activeItem.id, versionId);
+      setSelectedVersionId(null);
+      await loadMedia();
+      onMediaChanged?.();
+    } catch {
+      setErrorMessage('Nie udało się ustawić wybranej wersji jako głównej.');
+    }
+  };
+
+  const handleDeleteVersion = async (versionId: number) => {
+    if (!activeItem) return;
+    try {
+      await mediaApi.deleteMediaVersion(activeItem.id, versionId);
+      setSelectedVersionId(null);
+      await loadMedia();
+      onMediaChanged?.();
+    } catch {
+      setErrorMessage('Nie można usunąć tej wersji pliku.');
+    }
+  };
+
+  const handleSavePrimaryOrAvatarCrop = async (
+    item: MediaItemDto,
+    cx?: number,
+    cy?: number,
+    cz?: number
+  ) => {
     try {
       await mediaApi.updateMedia(item.id, {
         setAsAvatarForPersonId: personId ?? null,
-        avatarCropX: personId !== undefined ? cropX : null,
-        avatarCropY: personId !== undefined ? cropY : null,
-        avatarCropZoom: personId !== undefined ? cropZoom : null,
+        avatarCropX: personId !== undefined ? (cx ?? 50) : null,
+        avatarCropY: personId !== undefined ? (cy ?? 50) : null,
+        avatarCropZoom: personId !== undefined ? (cz ?? 1.0) : null,
         setAsPrimaryForGraveId: graveId ?? null,
       });
       setShowCropper(false);
@@ -753,6 +984,18 @@ export default function MediaGallerySection({
     </div>
   );
 
+  const activeVersions = activeItem?.versions ?? [];
+  const activeSelectedVersion =
+    selectedVersionId !== null
+      ? activeVersions.find(v => v.id === selectedVersionId) ?? null
+      : null;
+
+  const activeStageUrl = activeItem
+    ? activeSelectedVersion
+      ? mediaApi.getVersionFileUrl(activeItem.id, activeSelectedVersion.id)
+      : mediaApi.getFileUrl(activeItem.id)
+    : '';
+
   return (
     <section className={styles.sectionCard} data-testid="media-gallery-section">
       <div className={styles.headerRow}>
@@ -801,7 +1044,7 @@ export default function MediaGallerySection({
         )}
       </div>
 
-      {/* Point 8: Filter (All / Images / Videos) & Sort Toolbar */}
+      {/* Filter & Sort Toolbar */}
       {totalRawItemsCount > 0 && (
         <div className={styles.toolbarBar} data-testid="media-section-filter-sort-bar">
           <div className={styles.filterPillsGroup}>
@@ -876,7 +1119,7 @@ export default function MediaGallerySection({
         </div>
       )}
 
-      {/* Point 2 & 7: Post-Upload Bulk Edit Panel */}
+      {/* Post-Upload Bulk Edit Panel */}
       {isAdmin && isBulkEditMode && items.length > 0 && (
         <form
           onSubmit={e => {
@@ -914,7 +1157,7 @@ export default function MediaGallerySection({
           <div className={styles.formGrid}>
             <div className={styles.formField}>
               <label htmlFor="bulk-edit-folder" className={styles.label}>
-                Zmień nazwę folderu docelowego (snake_case, opcjonalnie)
+                Zmień nazwę folderu docelowego (przeniesie wszystkie pliki)
               </label>
               <input
                 id="bulk-edit-folder"
@@ -966,87 +1209,251 @@ export default function MediaGallerySection({
               >
                 <option value="NO_CHANGE">— Pozostaw daty bez zmian —</option>
                 <option value="METADATA">
-                  Przywróć datę i czas z metadanych każdego pliku (EXIF / MP4 / plik)
+                  Przywróć datę i czas z metadanych każdego pliku (zawsze Dokładnie)
                 </option>
                 {eventId !== undefined && (
                   <option value="EVENT">Ustaw datę i czas z bieżącego wydarzenia</option>
                 )}
-                <option value="MANUAL">Ustaw wspólną datę i czas ręcznie</option>
+                <option value="MANUAL">
+                  Ustaw wspólną datę i czas ręcznie (lub przedział „między … a …”)
+                </option>
                 <option value="UNDATED">Wyczyść datę (undated)</option>
               </select>
             </div>
+
+            {bulkEditDateMode === 'METADATA' && (
+              <div className={styles.formField}>
+                <label htmlFor="bulk-edit-meta-tag" className={styles.label}>
+                  Preferowane pole metadanych
+                </label>
+                <select
+                  id="bulk-edit-meta-tag"
+                  value={bulkEditMetadataTag}
+                  onChange={e => {
+                    setBulkEditMetadataTag(e.target.value);
+                  }}
+                  className={styles.input}
+                >
+                  <option value="">Automatycznie (Original Date Time -&gt; Image Date Time -&gt; plik)</option>
+                  <option value="Original Date Time">EXIF: Original Date Time (data wykonania)</option>
+                  <option value="Digitized Date Time">EXIF: Digitized Date Time (data digitalizacji)</option>
+                  <option value="Image Date Time">EXIF: Image Date Time (data obrazu)</option>
+                  <option value="creation_time">MP4 / QuickTime: creation_time</option>
+                  <option value="lastModified">Plik: Data modyfikacji (lastModified)</option>
+                </select>
+              </div>
+            )}
           </div>
 
           {bulkEditDateMode === 'MANUAL' && (
-            <div className={styles.compactDateTimeInputs}>
-              <span className={styles.label}>Wspólna data i czas (RRRR-MM-DD GG:MM:SS):</span>
-              <input
-                type="number"
-                placeholder="RRRR"
-                value={bulkEditYear}
-                onChange={e => {
-                  setBulkEditYear(e.target.value);
-                }}
-                className={`${styles.miniDateInput} ${styles.miniYearInput}`}
-              />
-              <input
-                type="number"
-                min={1}
-                max={12}
-                placeholder="MM"
-                value={bulkEditMonth}
-                onChange={e => {
-                  setBulkEditMonth(e.target.value);
-                }}
-                className={styles.miniDateInput}
-              />
-              <input
-                type="number"
-                min={1}
-                max={31}
-                placeholder="DD"
-                value={bulkEditDay}
-                onChange={e => {
-                  setBulkEditDay(e.target.value);
-                }}
-                className={styles.miniDateInput}
-              />
-              <span>godz.</span>
-              <input
-                type="number"
-                min={0}
-                max={23}
-                placeholder="GG"
-                value={bulkEditHour}
-                onChange={e => {
-                  setBulkEditHour(e.target.value);
-                }}
-                className={styles.miniDateInput}
-              />
-              <span>:</span>
-              <input
-                type="number"
-                min={0}
-                max={59}
-                placeholder="MM"
-                value={bulkEditMinute}
-                onChange={e => {
-                  setBulkEditMinute(e.target.value);
-                }}
-                className={styles.miniDateInput}
-              />
-              <span>:</span>
-              <input
-                type="number"
-                min={0}
-                max={59}
-                placeholder="SS"
-                value={bulkEditSecond}
-                onChange={e => {
-                  setBulkEditSecond(e.target.value);
-                }}
-                className={styles.miniDateInput}
-              />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.82rem', fontWeight: 600 }}>
+                <input
+                  type="checkbox"
+                  checked={bulkEditIsBetween}
+                  onChange={e => {
+                    setBulkEditIsBetween(e.target.checked);
+                  }}
+                />
+                <span>Przedział niepewności „między … a …” dla daty wykonania</span>
+              </label>
+
+              <div className={styles.compactDateTimeInputs}>
+                <select
+                  value={bulkEditDateQual}
+                  onChange={e => {
+                    setBulkEditDateQual(e.target.value);
+                  }}
+                  className={styles.input}
+                  style={{ width: '140px', height: '34px' }}
+                >
+                  {QUALIFIER_OPTIONS.map(q => (
+                    <option key={q.value} value={q.value}>
+                      {q.label}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="number"
+                  placeholder="RRRR"
+                  value={bulkEditYear}
+                  onChange={e => {
+                    setBulkEditYear(e.target.value);
+                  }}
+                  className={`${styles.miniDateInput} ${styles.miniYearInput}`}
+                />
+                <input
+                  type="number"
+                  min={1}
+                  max={12}
+                  placeholder="MM"
+                  value={bulkEditMonth}
+                  onChange={e => {
+                    setBulkEditMonth(e.target.value);
+                  }}
+                  className={styles.miniDateInput}
+                />
+                <input
+                  type="number"
+                  min={1}
+                  max={31}
+                  placeholder="DD"
+                  value={bulkEditDay}
+                  onChange={e => {
+                    setBulkEditDay(e.target.value);
+                  }}
+                  className={styles.miniDateInput}
+                />
+                <select
+                  value={bulkEditTimeQual}
+                  onChange={e => {
+                    setBulkEditTimeQual(e.target.value);
+                  }}
+                  className={styles.input}
+                  style={{ width: '130px', height: '34px' }}
+                >
+                  {QUALIFIER_OPTIONS.map(q => (
+                    <option key={q.value} value={q.value}>
+                      Czas: {q.label}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="number"
+                  min={0}
+                  max={23}
+                  placeholder="GG"
+                  value={bulkEditHour}
+                  onChange={e => {
+                    setBulkEditHour(e.target.value);
+                  }}
+                  className={styles.miniDateInput}
+                />
+                <span>:</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={59}
+                  placeholder="MM"
+                  value={bulkEditMinute}
+                  onChange={e => {
+                    setBulkEditMinute(e.target.value);
+                  }}
+                  className={styles.miniDateInput}
+                />
+                <span>:</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={59}
+                  placeholder="SS"
+                  value={bulkEditSecond}
+                  onChange={e => {
+                    setBulkEditSecond(e.target.value);
+                  }}
+                  className={styles.miniDateInput}
+                />
+              </div>
+
+              {bulkEditIsBetween && (
+                <div className={styles.compactDateTimeInputs}>
+                  <span className={styles.label}>… a:</span>
+                  <select
+                    value={bulkEditRangeEndQual}
+                    onChange={e => {
+                      setBulkEditRangeEndQual(e.target.value);
+                    }}
+                    className={styles.input}
+                    style={{ width: '140px', height: '34px' }}
+                  >
+                    {QUALIFIER_OPTIONS.map(q => (
+                      <option key={q.value} value={q.value}>
+                        {q.label}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    placeholder={bulkEditYear || 'RRRR'}
+                    value={bulkEditRangeEndYear}
+                    onChange={e => {
+                      setBulkEditRangeEndYear(e.target.value);
+                    }}
+                    className={`${styles.miniDateInput} ${styles.miniYearInput}`}
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    max={12}
+                    placeholder="MM"
+                    value={bulkEditRangeEndMonth}
+                    onChange={e => {
+                      setBulkEditRangeEndMonth(e.target.value);
+                    }}
+                    className={styles.miniDateInput}
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    max={31}
+                    placeholder="DD"
+                    value={bulkEditRangeEndDay}
+                    onChange={e => {
+                      setBulkEditRangeEndDay(e.target.value);
+                    }}
+                    className={styles.miniDateInput}
+                  />
+                  <select
+                    value={bulkEditRangeEndTimeQual}
+                    onChange={e => {
+                      setBulkEditRangeEndTimeQual(e.target.value);
+                    }}
+                    className={styles.input}
+                    style={{ width: '130px', height: '34px' }}
+                  >
+                    {QUALIFIER_OPTIONS.map(q => (
+                      <option key={q.value} value={q.value}>
+                        Czas: {q.label}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min={0}
+                    max={23}
+                    placeholder="GG"
+                    value={bulkEditRangeEndHour}
+                    onChange={e => {
+                      setBulkEditRangeEndHour(e.target.value);
+                    }}
+                    className={styles.miniDateInput}
+                  />
+                  <span>:</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={59}
+                    placeholder="MM"
+                    value={bulkEditRangeEndMinute}
+                    onChange={e => {
+                      setBulkEditRangeEndMinute(e.target.value);
+                    }}
+                    className={styles.miniDateInput}
+                  />
+                  <span>:</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={59}
+                    placeholder="SS"
+                    value={bulkEditRangeEndSecond}
+                    onChange={e => {
+                      setBulkEditRangeEndSecond(e.target.value);
+                    }}
+                    className={styles.miniDateInput}
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -1194,6 +1601,20 @@ export default function MediaGallerySection({
               <span className={styles.label}>
                 Wspólna data i czas paczki (RRRR-MM-DD GG:MM:SS):
               </span>
+              <select
+                value={manualBulkQual}
+                onChange={e => {
+                  setManualBulkQual(e.target.value);
+                }}
+                className={styles.input}
+                style={{ width: '135px', height: '34px' }}
+              >
+                {QUALIFIER_OPTIONS.map(q => (
+                  <option key={q.value} value={q.value}>
+                    {q.label}
+                  </option>
+                ))}
+              </select>
               <input
                 type="number"
                 placeholder="RRRR"
@@ -1258,7 +1679,20 @@ export default function MediaGallerySection({
                 }}
                 className={styles.miniDateInput}
               />
-              <span>godz.</span>
+              <select
+                value={manualBulkTimeQual}
+                onChange={e => {
+                  setManualBulkTimeQual(e.target.value);
+                }}
+                className={styles.input}
+                style={{ width: '130px', height: '34px' }}
+              >
+                {QUALIFIER_OPTIONS.map(q => (
+                  <option key={q.value} value={q.value}>
+                    Czas: {q.label}
+                  </option>
+                ))}
+              </select>
               <input
                 type="number"
                 min={0}
@@ -1344,202 +1778,241 @@ export default function MediaGallerySection({
 
           {stagedFiles.length > 0 && (
             <div className={styles.stagedList}>
-              {stagedFiles.map((st, idx) => (
-                <div key={`${st.file.name}-${String(idx)}`} className={styles.stagedCard}>
-                  <div className={styles.stagedTopRow}>
-                    <span className={styles.breakableCode}>📄 {st.file.name}</span>
+              {stagedFiles.map((st, idx) => {
+                const chosenMeta =
+                  st.metadataOptions.find(o => o.sourceTag === st.selectedMetadataTag) ??
+                  st.metadataOptions.at(0);
 
-                    {st.metadata ? (
-                      <div className={styles.metadataBadge}>
-                        <span>
-                          📷 Metadane ({st.metadata.sourceTag}):{' '}
-                          <strong>{st.metadata.formattedText}</strong>
+                return (
+                  <div key={`${st.file.name}-${String(idx)}`} className={styles.stagedCard}>
+                    <div className={styles.stagedTopRow}>
+                      <span className={styles.breakableCode}>📄 {st.file.name}</span>
+
+                      {chosenMeta ? (
+                        <div className={styles.metadataBadge}>
+                          <span>📷 Metadane:</span>
+                          {st.metadataOptions.length > 1 ? (
+                            <select
+                              value={st.selectedMetadataTag}
+                              onChange={e => {
+                                const tag = e.target.value;
+                                const opt = st.metadataOptions.find(o => o.sourceTag === tag);
+                                setStagedFiles(prev =>
+                                  prev.map((item, i) =>
+                                    i === idx
+                                      ? {
+                                          ...item,
+                                          selectedMetadataTag: tag,
+                                          year: opt ? String(opt.year) : item.year,
+                                          month: opt ? String(opt.month) : item.month,
+                                          day: opt ? String(opt.day) : item.day,
+                                          hour: opt ? String(opt.hour) : item.hour,
+                                          minute: opt ? String(opt.minute) : item.minute,
+                                          second: opt ? String(opt.second) : item.second,
+                                        }
+                                      : item
+                                  )
+                                );
+                              }}
+                              className={styles.input}
+                              style={{ height: '26px', fontSize: '0.73rem', width: 'auto', padding: '0 0.4rem' }}
+                            >
+                              {st.metadataOptions.map(opt => (
+                                <option key={opt.sourceTag} value={opt.sourceTag}>
+                                  {opt.sourceTag} — {opt.formattedText}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span>
+                              ({chosenMeta.sourceTag}): <strong>{chosenMeta.formattedText}</strong>
+                            </span>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setStagedFiles(prev =>
+                                prev.map((item, i) =>
+                                  i === idx
+                                    ? {
+                                        ...item,
+                                        year: String(chosenMeta.year),
+                                        month: String(chosenMeta.month),
+                                        day: String(chosenMeta.day),
+                                        hour: String(chosenMeta.hour),
+                                        minute: String(chosenMeta.minute),
+                                        second: String(chosenMeta.second),
+                                      }
+                                    : item
+                                )
+                              );
+                            }}
+                            className={styles.btnSecondary}
+                            style={{ padding: '0.15rem 0.5rem', fontSize: '0.72rem' }}
+                          >
+                            Użyj tej daty z metadanych
+                          </button>
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                          Brak daty w metadanych pliku
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const m = st.metadata;
-                            if (!m) return;
+                      )}
+                    </div>
+
+                    <div className={styles.stagedInputsGrid}>
+                      <div>
+                        <span className={styles.label}>Nazwa pliku na dysku</span>
+                        <input
+                          type="text"
+                          aria-label="Nazwa pliku na dysku"
+                          data-testid={
+                            idx === 0
+                              ? 'media-filename-input'
+                              : `media-filename-input-${String(idx)}`
+                          }
+                          value={st.customFileName}
+                          onChange={e => {
+                            const val = e.target.value;
                             setStagedFiles(prev =>
                               prev.map((item, i) =>
-                                i === idx
-                                  ? {
-                                      ...item,
-                                      year: String(m.year),
-                                      month: String(m.month),
-                                      day: String(m.day),
-                                      hour: String(m.hour),
-                                      minute: String(m.minute),
-                                      second: String(m.second),
-                                    }
-                                  : item
+                                i === idx ? { ...item, customFileName: val } : item
                               )
                             );
                           }}
-                          className={styles.btnSecondary}
-                          style={{ padding: '0.15rem 0.5rem', fontSize: '0.72rem' }}
-                        >
-                          Użyj z metadanych
-                        </button>
+                          placeholder="Nazwa snake_case.jpg"
+                          className={styles.input}
+                        />
                       </div>
-                    ) : (
-                      <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                        Brak daty w metadanych pliku
-                      </span>
-                    )}
-                  </div>
 
-                  <div className={styles.stagedInputsGrid}>
-                    <div>
-                      <span className={styles.label}>Nazwa pliku na dysku</span>
-                      <input
-                        type="text"
-                        aria-label="Nazwa pliku na dysku"
-                        data-testid={
-                          idx === 0
-                            ? 'media-filename-input'
-                            : `media-filename-input-${String(idx)}`
-                        }
-                        value={st.customFileName}
-                        onChange={e => {
-                          const val = e.target.value;
-                          setStagedFiles(prev =>
-                            prev.map((item, i) =>
-                              i === idx ? { ...item, customFileName: val } : item
-                            )
-                          );
-                        }}
-                        placeholder="Nazwa snake_case.jpg"
-                        className={styles.input}
-                      />
-                    </div>
+                      <div>
+                        <span className={styles.label}>Tytuł / podpis</span>
+                        <input
+                          type="text"
+                          aria-label="Tytuł lub podpis"
+                          value={st.title}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setStagedFiles(prev =>
+                              prev.map((item, i) =>
+                                i === idx ? { ...item, title: val } : item
+                              )
+                            );
+                          }}
+                          placeholder="Podpis (opcjonalnie)..."
+                          className={styles.input}
+                        />
+                      </div>
 
-                    <div>
-                      <span className={styles.label}>Tytuł / podpis</span>
-                      <input
-                        type="text"
-                        aria-label="Tytuł lub podpis"
-                        value={st.title}
-                        onChange={e => {
-                          const val = e.target.value;
-                          setStagedFiles(prev =>
-                            prev.map((item, i) =>
-                              i === idx ? { ...item, title: val } : item
-                            )
-                          );
-                        }}
-                        placeholder="Podpis (opcjonalnie)..."
-                        className={styles.input}
-                      />
-                    </div>
-
-                    <div>
-                      <span className={styles.label}>
-                        Data i czas zdjęcia/filmu (RRRR-MM-DD GG:MM:SS)
-                      </span>
-                      <div className={styles.compactDateTimeInputs}>
-                        <input
-                          type="number"
-                          aria-label="Rok zdjęcia"
-                          placeholder="RRRR"
-                          value={st.year}
-                          onChange={e => {
-                            const val = e.target.value;
-                            setStagedFiles(prev =>
-                              prev.map((item, i) =>
-                                i === idx ? { ...item, year: val } : item
-                              )
-                            );
-                          }}
-                          className={`${styles.miniDateInput} ${styles.miniYearInput}`}
-                        />
-                        <input
-                          type="number"
-                          min={1}
-                          max={12}
-                          placeholder="MM"
-                          value={st.month}
-                          onChange={e => {
-                            const val = e.target.value;
-                            setStagedFiles(prev =>
-                              prev.map((item, i) =>
-                                i === idx ? { ...item, month: val } : item
-                              )
-                            );
-                          }}
-                          className={styles.miniDateInput}
-                        />
-                        <input
-                          type="number"
-                          min={1}
-                          max={31}
-                          placeholder="DD"
-                          value={st.day}
-                          onChange={e => {
-                            const val = e.target.value;
-                            setStagedFiles(prev =>
-                              prev.map((item, i) =>
-                                i === idx ? { ...item, day: val } : item
-                              )
-                            );
-                          }}
-                          className={styles.miniDateInput}
-                        />
-                        <input
-                          type="number"
-                          min={0}
-                          max={23}
-                          placeholder="GG"
-                          value={st.hour}
-                          onChange={e => {
-                            const val = e.target.value;
-                            setStagedFiles(prev =>
-                              prev.map((item, i) =>
-                                i === idx ? { ...item, hour: val } : item
-                              )
-                            );
-                          }}
-                          className={styles.miniDateInput}
-                        />
-                        <span>:</span>
-                        <input
-                          type="number"
-                          min={0}
-                          max={59}
-                          placeholder="MM"
-                          value={st.minute}
-                          onChange={e => {
-                            const val = e.target.value;
-                            setStagedFiles(prev =>
-                              prev.map((item, i) =>
-                                i === idx ? { ...item, minute: val } : item
-                              )
-                            );
-                          }}
-                          className={styles.miniDateInput}
-                        />
-                        <span>:</span>
-                        <input
-                          type="number"
-                          min={0}
-                          max={59}
-                          placeholder="SS"
-                          value={st.second}
-                          onChange={e => {
-                            const val = e.target.value;
-                            setStagedFiles(prev =>
-                              prev.map((item, i) =>
-                                i === idx ? { ...item, second: val } : item
-                              )
-                            );
-                          }}
-                          className={styles.miniDateInput}
-                        />
+                      <div>
+                        <span className={styles.label}>
+                          Data i czas zdjęcia/filmu (RRRR-MM-DD GG:MM:SS)
+                        </span>
+                        <div className={styles.compactDateTimeInputs}>
+                          <input
+                            type="number"
+                            aria-label="Rok zdjęcia"
+                            placeholder="RRRR"
+                            value={st.year}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setStagedFiles(prev =>
+                                prev.map((item, i) =>
+                                  i === idx ? { ...item, year: val } : item
+                                )
+                              );
+                            }}
+                            className={`${styles.miniDateInput} ${styles.miniYearInput}`}
+                          />
+                          <input
+                            type="number"
+                            min={1}
+                            max={12}
+                            placeholder="MM"
+                            value={st.month}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setStagedFiles(prev =>
+                                prev.map((item, i) =>
+                                  i === idx ? { ...item, month: val } : item
+                                )
+                              );
+                            }}
+                            className={styles.miniDateInput}
+                          />
+                          <input
+                            type="number"
+                            min={1}
+                            max={31}
+                            placeholder="DD"
+                            value={st.day}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setStagedFiles(prev =>
+                                prev.map((item, i) =>
+                                  i === idx ? { ...item, day: val } : item
+                                )
+                              );
+                            }}
+                            className={styles.miniDateInput}
+                          />
+                          <input
+                            type="number"
+                            min={0}
+                            max={23}
+                            placeholder="GG"
+                            value={st.hour}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setStagedFiles(prev =>
+                                prev.map((item, i) =>
+                                  i === idx ? { ...item, hour: val } : item
+                                )
+                              );
+                            }}
+                            className={styles.miniDateInput}
+                          />
+                          <span>:</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={59}
+                            placeholder="MM"
+                            value={st.minute}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setStagedFiles(prev =>
+                                prev.map((item, i) =>
+                                  i === idx ? { ...item, minute: val } : item
+                                )
+                              );
+                            }}
+                            className={styles.miniDateInput}
+                          />
+                          <span>:</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={59}
+                            placeholder="SS"
+                            value={st.second}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setStagedFiles(prev =>
+                                prev.map((item, i) =>
+                                  i === idx ? { ...item, second: val } : item
+                                )
+                              );
+                            }}
+                            className={styles.miniDateInput}
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
@@ -1619,7 +2092,7 @@ export default function MediaGallerySection({
         </>
       )}
 
-      {/* Point 9: Modal for Linking Existing Media from Gallery */}
+      {/* Modal for Linking Existing Media from Gallery */}
       {showLinkExistingModal && (
         <div
           className={styles.modalBackdrop}
@@ -1775,7 +2248,7 @@ export default function MediaGallerySection({
         </div>
       )}
 
-      {/* Fullscreen Lightbox with Individual Date/Time/Folder/Filename Editor */}
+      {/* Fullscreen Lightbox with Version Switcher, Reverse Side, Authors, Source, Person Roles & Interactive Cropper */}
       {activeItem && (
         <div
           className={styles.fullscreenOverlay}
@@ -1790,10 +2263,48 @@ export default function MediaGallerySection({
               e.stopPropagation();
             }}
           >
-            <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>
-              {activeItem.title ?? 'Podgląd multimediów'} (
-              {String((activeIndex ?? 0) + 1)} / {String(allViewableItems.length)})
-            </span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+              <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                {activeItem.title ?? 'Podgląd multimediów'} (
+                {String((activeIndex ?? 0) + 1)} / {String(allViewableItems.length)})
+              </span>
+
+              {/* Points 15 & 17: Version & Reverse Side Switcher */}
+              {activeVersions.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                  {activeVersions.map(ver => {
+                    const isVerActive =
+                      selectedVersionId !== null
+                        ? selectedVersionId === ver.id
+                        : ver.main;
+                    return (
+                      <button
+                        key={ver.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedVersionId(ver.id);
+                          setZoom(1);
+                          setPan({ x: 0, y: 0 });
+                        }}
+                        style={{
+                          padding: '0.22rem 0.6rem',
+                          fontSize: '0.75rem',
+                          fontWeight: 700,
+                          borderRadius: '999px',
+                          border: isVerActive ? '1px solid #60a5fa' : '1px solid rgba(255,255,255,0.3)',
+                          backgroundColor: isVerActive ? '#2563eb' : 'rgba(255,255,255,0.12)',
+                          color: '#ffffff',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {ver.reverseSide ? '🔄 ' : ver.main ? '⭐ ' : ''}
+                        {ver.versionLabel}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
             <div className={styles.topBarButtons}>
               {activeItem.mediaType === 'IMAGE' && (
@@ -1931,24 +2442,24 @@ export default function MediaGallerySection({
                 transition: dragStart ? 'none' : 'transform 0.1s ease-out',
                 cursor: zoom > 1 ? 'grab' : 'default',
                 maxWidth: '94vw',
-                maxHeight: showDetailsDrawer ? '44vh' : '84vh',
+                maxHeight: showDetailsDrawer ? '44vh' : '82vh',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
-              {activeItem.mediaType === 'VIDEO' ? (
+              {activeItem.mediaType === 'VIDEO' && !activeSelectedVersion?.reverseSide ? (
                 <video
-                  src={mediaApi.getFileUrl(activeItem.id)}
+                  src={activeStageUrl}
                   controls
-                  style={{ maxWidth: '94vw', maxHeight: '80vh', objectFit: 'contain' }}
+                  style={{ maxWidth: '94vw', maxHeight: '78vh', objectFit: 'contain' }}
                 />
               ) : (
                 <img
-                  src={mediaApi.getFileUrl(activeItem.id)}
+                  src={activeStageUrl}
                   alt={activeItem.title ?? ''}
                   draggable={false}
-                  style={{ maxWidth: '94vw', maxHeight: '82vh', objectFit: 'contain' }}
+                  style={{ maxWidth: '94vw', maxHeight: '80vh', objectFit: 'contain' }}
                 />
               )}
             </div>
@@ -2008,7 +2519,7 @@ export default function MediaGallerySection({
                     </div>
                     <div className={styles.formField}>
                       <label htmlFor="edit-media-title" className={styles.label}>
-                        Tytuł / podpis
+                        Tytuł (krótka nazwa kafelka)
                       </label>
                       <input
                         id="edit-media-title"
@@ -2020,6 +2531,55 @@ export default function MediaGallerySection({
                         className={styles.input}
                       />
                     </div>
+                    <div className={styles.formField}>
+                      <label htmlFor="edit-media-source" className={styles.label}>
+                        Źródło zdjęcia / filmu (tekstowo)
+                      </label>
+                      <input
+                        id="edit-media-source"
+                        type="text"
+                        placeholder="np. Z albumu babci Katarzyny"
+                        value={editSourceText}
+                        onChange={e => {
+                          setEditSourceText(e.target.value);
+                        }}
+                        className={styles.input}
+                      />
+                    </div>
+                    <div className={styles.formField}>
+                      <label htmlFor="edit-media-inscription" className={styles.label}>
+                        Podpis z odwrotu zdjęcia / oryginalna dedykacja
+                      </label>
+                      <input
+                        id="edit-media-inscription"
+                        type="text"
+                        placeholder="np. Na pamiątkę z Krynicy, 1938 r."
+                        value={editInscription}
+                        onChange={e => {
+                          setEditInscription(e.target.value);
+                        }}
+                        className={styles.input}
+                      />
+                    </div>
+                    <div className={styles.formField}>
+                      <label htmlFor="edit-media-desc" className={styles.label}>
+                        Opis tekstowy (zwykły tekst)
+                      </label>
+                      <input
+                        id="edit-media-desc"
+                        type="text"
+                        placeholder="Dodatkowe informacje o zdjęciu/nagraniu..."
+                        value={editDescription}
+                        onChange={e => {
+                          setEditDescription(e.target.value);
+                        }}
+                        className={styles.input}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Date & Time Mode */}
+                  <div className={styles.formGrid}>
                     <div className={styles.formField}>
                       <label htmlFor="edit-media-date-mode" className={styles.label}>
                         Źródło daty i czasu tego pliku
@@ -2034,20 +2594,27 @@ export default function MediaGallerySection({
                             | 'EVENT'
                             | 'UNDATED';
                           setEditDateMode(nextM);
-                          if (nextM === 'METADATA' && activeItem.metadataYear) {
-                            setEditYear(numToStr(activeItem.metadataYear));
-                            setEditMonth(numToStr(activeItem.metadataMonth));
-                            setEditDay(numToStr(activeItem.metadataDay));
-                            setEditHour(numToStr(activeItem.metadataHour));
-                            setEditMinute(numToStr(activeItem.metadataMinute));
-                            setEditSecond(numToStr(activeItem.metadataSecond));
+                          if (nextM === 'METADATA') {
+                            setEditIsBetween(false);
+                            setEditDateQual('EXACT');
+                            setEditTimeQual('EXACT');
+                            if (activeItem.metadataYear) {
+                              setEditYear(numToStr(activeItem.metadataYear));
+                              setEditMonth(numToStr(activeItem.metadataMonth));
+                              setEditDay(numToStr(activeItem.metadataDay));
+                              setEditHour(numToStr(activeItem.metadataHour));
+                              setEditMinute(numToStr(activeItem.metadataMinute));
+                              setEditSecond(numToStr(activeItem.metadataSecond));
+                            }
                           }
                         }}
                         className={styles.input}
                       >
-                        <option value="MANUAL">Wpisz datę i czas ręcznie</option>
+                        <option value="MANUAL">
+                          Wpisz datę i czas ręcznie (lub przedział „między … a …”)
+                        </option>
                         <option value="METADATA">
-                          Przywróć datę i czas z metadanych pliku
+                          Przywróć datę i czas z metadanych pliku (zawsze Dokładnie)
                         </option>
                         {eventId !== undefined && (
                           <option value="EVENT">Ustaw z daty bieżącego wydarzenia</option>
@@ -2055,89 +2622,465 @@ export default function MediaGallerySection({
                         <option value="UNDATED">Wyczyść datę (undated)</option>
                       </select>
                     </div>
+
+                    {editDateMode === 'METADATA' &&
+                      activeItem.availableMetadataDates &&
+                      activeItem.availableMetadataDates.length > 0 && (
+                        <div className={styles.formField}>
+                          <label htmlFor="edit-media-meta-tag" className={styles.label}>
+                            Wybierz pole metadanych pliku
+                          </label>
+                          <select
+                            id="edit-media-meta-tag"
+                            value={editSelectedMetadataTag}
+                            onChange={e => {
+                              const tag = e.target.value;
+                              setEditSelectedMetadataTag(tag);
+                              const opt = activeItem.availableMetadataDates?.find(
+                                o => o.sourceTag === tag
+                              );
+                              if (opt) {
+                                setEditYear(numToStr(opt.year));
+                                setEditMonth(numToStr(opt.month));
+                                setEditDay(numToStr(opt.day));
+                                setEditHour(numToStr(opt.hour));
+                                setEditMinute(numToStr(opt.minute));
+                                setEditSecond(numToStr(opt.second));
+                              }
+                            }}
+                            className={styles.input}
+                          >
+                            {activeItem.availableMetadataDates.map(opt => (
+                              <option key={opt.sourceTag} value={opt.sourceTag}>
+                                {opt.sourceTag} — {opt.dateText}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                   </div>
 
                   {editDateMode === 'MANUAL' && (
-                    <div className={styles.compactDateTimeInputs}>
-                      <span className={styles.label}>Data i czas (RRRR-MM-DD GG:MM:SS):</span>
-                      <input
-                        type="number"
-                        placeholder="RRRR"
-                        value={editYear}
-                        onChange={e => {
-                          setEditYear(e.target.value);
-                        }}
-                        className={`${styles.miniDateInput} ${styles.miniYearInput}`}
-                      />
-                      <input
-                        type="number"
-                        min={1}
-                        max={12}
-                        placeholder="MM"
-                        value={editMonth}
-                        onChange={e => {
-                          setEditMonth(e.target.value);
-                        }}
-                        className={styles.miniDateInput}
-                      />
-                      <input
-                        type="number"
-                        min={1}
-                        max={31}
-                        placeholder="DD"
-                        value={editDay}
-                        onChange={e => {
-                          setEditDay(e.target.value);
-                        }}
-                        className={styles.miniDateInput}
-                      />
-                      <span>godz.</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={23}
-                        placeholder="GG"
-                        value={editHour}
-                        onChange={e => {
-                          setEditHour(e.target.value);
-                        }}
-                        className={styles.miniDateInput}
-                      />
-                      <span>:</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={59}
-                        placeholder="MM"
-                        value={editMinute}
-                        onChange={e => {
-                          setEditMinute(e.target.value);
-                        }}
-                        className={styles.miniDateInput}
-                      />
-                      <span>:</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={59}
-                        placeholder="SS"
-                        value={editSecond}
-                        onChange={e => {
-                          setEditSecond(e.target.value);
-                        }}
-                        className={styles.miniDateInput}
-                      />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.82rem', fontWeight: 600 }}>
+                        <input
+                          type="checkbox"
+                          checked={editIsBetween}
+                          onChange={e => {
+                            setEditIsBetween(e.target.checked);
+                          }}
+                        />
+                        <span>Przedział niepewności „między … a …” dla daty wykonania</span>
+                      </label>
+
+                      <div className={styles.compactDateTimeInputs}>
+                        <select
+                          value={editDateQual}
+                          onChange={e => {
+                            setEditDateQual(e.target.value);
+                          }}
+                          className={styles.input}
+                          style={{ width: '140px', height: '34px' }}
+                        >
+                          {QUALIFIER_OPTIONS.map(q => (
+                            <option key={q.value} value={q.value}>
+                              {q.label}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="number"
+                          placeholder="RRRR"
+                          value={editYear}
+                          onChange={e => {
+                            setEditYear(e.target.value);
+                          }}
+                          className={`${styles.miniDateInput} ${styles.miniYearInput}`}
+                        />
+                        <input
+                          type="number"
+                          min={1}
+                          max={12}
+                          placeholder="MM"
+                          value={editMonth}
+                          onChange={e => {
+                            setEditMonth(e.target.value);
+                          }}
+                          className={styles.miniDateInput}
+                        />
+                        <input
+                          type="number"
+                          min={1}
+                          max={31}
+                          placeholder="DD"
+                          value={editDay}
+                          onChange={e => {
+                            setEditDay(e.target.value);
+                          }}
+                          className={styles.miniDateInput}
+                        />
+                        <select
+                          value={editTimeQual}
+                          onChange={e => {
+                            setEditTimeQual(e.target.value);
+                          }}
+                          className={styles.input}
+                          style={{ width: '130px', height: '34px' }}
+                        >
+                          {QUALIFIER_OPTIONS.map(q => (
+                            <option key={q.value} value={q.value}>
+                              Czas: {q.label}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="number"
+                          min={0}
+                          max={23}
+                          placeholder="GG"
+                          value={editHour}
+                          onChange={e => {
+                            setEditHour(e.target.value);
+                          }}
+                          className={styles.miniDateInput}
+                        />
+                        <span>:</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={59}
+                          placeholder="MM"
+                          value={editMinute}
+                          onChange={e => {
+                            setEditMinute(e.target.value);
+                          }}
+                          className={styles.miniDateInput}
+                        />
+                        <span>:</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={59}
+                          placeholder="SS"
+                          value={editSecond}
+                          onChange={e => {
+                            setEditSecond(e.target.value);
+                          }}
+                          className={styles.miniDateInput}
+                        />
+                      </div>
+
+                      {editIsBetween && (
+                        <div className={styles.compactDateTimeInputs}>
+                          <span className={styles.label}>… a:</span>
+                          <select
+                            value={editRangeEndQual}
+                            onChange={e => {
+                              setEditRangeEndQual(e.target.value);
+                            }}
+                            className={styles.input}
+                            style={{ width: '140px', height: '34px' }}
+                          >
+                            {QUALIFIER_OPTIONS.map(q => (
+                              <option key={q.value} value={q.value}>
+                                {q.label}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type="number"
+                            placeholder={editYear || 'RRRR'}
+                            value={editRangeEndYear}
+                            onChange={e => {
+                              setEditRangeEndYear(e.target.value);
+                            }}
+                            className={`${styles.miniDateInput} ${styles.miniYearInput}`}
+                          />
+                          <input
+                            type="number"
+                            min={1}
+                            max={12}
+                            placeholder="MM"
+                            value={editRangeEndMonth}
+                            onChange={e => {
+                              setEditRangeEndMonth(e.target.value);
+                            }}
+                            className={styles.miniDateInput}
+                          />
+                          <input
+                            type="number"
+                            min={1}
+                            max={31}
+                            placeholder="DD"
+                            value={editRangeEndDay}
+                            onChange={e => {
+                              setEditRangeEndDay(e.target.value);
+                            }}
+                            className={styles.miniDateInput}
+                          />
+                          <select
+                            value={editRangeEndTimeQual}
+                            onChange={e => {
+                              setEditRangeEndTimeQual(e.target.value);
+                            }}
+                            className={styles.input}
+                            style={{ width: '130px', height: '34px' }}
+                          >
+                            {QUALIFIER_OPTIONS.map(q => (
+                              <option key={q.value} value={q.value}>
+                                Czas: {q.label}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type="number"
+                            min={0}
+                            max={23}
+                            placeholder="GG"
+                            value={editRangeEndHour}
+                            onChange={e => {
+                              setEditRangeEndHour(e.target.value);
+                            }}
+                            className={styles.miniDateInput}
+                          />
+                          <span>:</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={59}
+                            placeholder="MM"
+                            value={editRangeEndMinute}
+                            onChange={e => {
+                              setEditRangeEndMinute(e.target.value);
+                            }}
+                            className={styles.miniDateInput}
+                          />
+                          <span>:</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={59}
+                            placeholder="SS"
+                            value={editRangeEndSecond}
+                            onChange={e => {
+                              setEditRangeEndSecond(e.target.value);
+                            }}
+                            className={styles.miniDateInput}
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
+
+                  {/* Points 13 & 14: Person Links Builder (DEPICTED, RELATED, AUTHOR - DB or Text) */}
+                  <div
+                    style={{
+                      backgroundColor: '#f8fafc',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '8px',
+                      padding: '0.75rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.55rem',
+                    }}
+                  >
+                    <span className={styles.label}>
+                      Osoby na zdjęciu, osoby powiązane oraz autorzy (z bazy lub tekstowo):
+                    </span>
+                    <div className={styles.formGrid}>
+                      <div className={styles.formField}>
+                        <span className={styles.label}>Rodzaj powiązania</span>
+                        <select
+                          value={linkRoleType}
+                          onChange={e => {
+                            setLinkRoleType(
+                              e.target.value as 'DEPICTED' | 'RELATED' | 'AUTHOR'
+                            );
+                          }}
+                          className={styles.input}
+                        >
+                          <option value="DEPICTED">
+                            👁️ Osoba widoczna na zdjęciu / filmie
+                          </option>
+                          <option value="RELATED">
+                            🔗 Osoba powiązana ze zdjęciem / filmem
+                          </option>
+                          <option value="AUTHOR">
+                            📷 Autor zdjęcia / nagrania (kto wykonał)
+                          </option>
+                        </select>
+                      </div>
+
+                      <div className={styles.formField}>
+                        <span className={styles.label}>Dodaj osobę z drzewa</span>
+                        <div style={{ display: 'flex', gap: '0.4rem' }}>
+                          <input
+                            type="text"
+                            placeholder="Szukaj w drzewie..."
+                            value={linkPersonQuery}
+                            onChange={e => {
+                              setLinkPersonQuery(e.target.value);
+                            }}
+                            className={styles.input}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void handleSearchPersonForLink();
+                            }}
+                            className={styles.btnSecondary}
+                          >
+                            Szukaj
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className={styles.formField}>
+                        <span className={styles.label}>Lub wpisz osobę tekstowo</span>
+                        <div style={{ display: 'flex', gap: '0.4rem' }}>
+                          <input
+                            type="text"
+                            placeholder="np. Fotograf z Lublina"
+                            value={linkTextInput}
+                            onChange={e => {
+                              setLinkTextInput(e.target.value);
+                            }}
+                            className={styles.input}
+                          />
+                          <select
+                            value={linkTextSex}
+                            onChange={e => {
+                              setLinkTextSex(e.target.value as PersonSex);
+                            }}
+                            className={styles.input}
+                            style={{ width: '75px' }}
+                          >
+                            <option value="MALE">M</option>
+                            <option value="FEMALE">K</option>
+                            <option value="UNKNOWN">?</option>
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (linkTextInput.trim() === '') return;
+                              const txt = linkTextInput.trim();
+                              setEditPersonLinks(prev => [
+                                ...prev,
+                                {
+                                  personText: txt,
+                                  personSex: linkTextSex,
+                                  linkType: linkRoleType,
+                                  displayLabel: `${PERSON_LINK_TYPE_LABELS[linkRoleType]}: ${txt} [spoza bazy]`,
+                                },
+                              ]);
+                              setLinkTextInput('');
+                            }}
+                            className={styles.btnSecondary}
+                          >
+                            + Dodaj
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {linkPersonResults.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                        {linkPersonResults.map(p => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => {
+                              const fullName = `${p.givenName ?? ''} ${p.surname ?? ''}`.trim();
+                              setEditPersonLinks(prev => [
+                                ...prev,
+                                {
+                                  personId: p.id,
+                                  linkType: linkRoleType,
+                                  displayLabel: `${PERSON_LINK_TYPE_LABELS[linkRoleType]}: ${fullName}`,
+                                },
+                              ]);
+                              setLinkPersonResults([]);
+                              setLinkPersonQuery('');
+                            }}
+                            className={styles.btnSecondary}
+                          >
+                            + Wybierz: {p.givenName} {p.surname} ({p.birthYear ?? '?'})
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {editPersonLinks.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                        {editPersonLinks.map((pl, idx) => (
+                          <span
+                            key={`${pl.displayLabel}-${String(idx)}`}
+                            className={styles.selectedFilesBadge}
+                          >
+                            {pl.displayLabel}{' '}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditPersonLinks(prev =>
+                                  prev.filter((_, i) => i !== idx)
+                                );
+                              }}
+                              style={{
+                                marginLeft: '0.35rem',
+                                border: 'none',
+                                background: 'none',
+                                cursor: 'pointer',
+                                fontWeight: 800,
+                              }}
+                            >
+                              ✕
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.28rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.32rem' }}>
                   {activeItem.title && (
                     <strong style={{ fontSize: '1rem' }}>{activeItem.title}</strong>
                   )}
                   {activeItem.dateText && (
                     <div style={{ fontSize: '0.84rem', fontWeight: 600, color: '#1e293b' }}>
                       📅 Data i czas wykonania: {activeItem.dateText}
+                    </div>
+                  )}
+                  {activeItem.inscriptionText && (
+                    <div style={{ fontSize: '0.84rem', color: '#1e293b', fontStyle: 'italic' }}>
+                      ✍️ Podpis z odwrotu: „{activeItem.inscriptionText}”
+                    </div>
+                  )}
+                  {activeItem.description && (
+                    <div style={{ fontSize: '0.84rem', color: '#334155' }}>
+                      📝 Opis: {activeItem.description}
+                    </div>
+                  )}
+                  {activeItem.sourceText && (
+                    <div style={{ fontSize: '0.82rem', color: '#475569' }}>
+                      📚 Źródło: <strong>{activeItem.sourceText}</strong>
+                    </div>
+                  )}
+                  {activeItem.authors && activeItem.authors.length > 0 && (
+                    <div style={{ fontSize: '0.82rem', color: '#475569' }}>
+                      📷 Autor: <strong>{activeItem.authors.map(a => a.displayName).join(', ')}</strong>
+                    </div>
+                  )}
+                  {activeItem.depictedPersons && activeItem.depictedPersons.length > 0 && (
+                    <div style={{ fontSize: '0.82rem', color: '#475569' }}>
+                      👁️ Osoby na zdjęciu/filmie:{' '}
+                      <strong>{activeItem.depictedPersons.map(d => d.displayName).join(', ')}</strong>
+                    </div>
+                  )}
+                  {activeItem.relatedPersons && activeItem.relatedPersons.length > 0 && (
+                    <div style={{ fontSize: '0.82rem', color: '#475569' }}>
+                      🔗 Osoby powiązane:{' '}
+                      <strong>{activeItem.relatedPersons.map(r => r.displayName).join(', ')}</strong>
                     </div>
                   )}
                   {isAdmin && activeItem.metadataDateText && (
@@ -2147,84 +3090,118 @@ export default function MediaGallerySection({
                     </div>
                   )}
                   <div className={styles.breakableCode}>
-                    Nazwa pliku: {activeItem.fileName}
+                    Nazwa pliku: {activeSelectedVersion ? activeSelectedVersion.fileName : activeItem.fileName}
                   </div>
                   {isAdmin && activeItem.relativePath && (
                     <div className={styles.breakableCode}>
                       Ścieżka na dysku (widoczna dla administratora):{' '}
-                      {activeItem.relativePath}
+                      {activeSelectedVersion?.relativePath ?? activeItem.relativePath}
                     </div>
                   )}
                 </div>
               )}
 
-              {/* Square Avatar Cropper for Person Portrait */}
-              {isAdmin && showCropper && personId !== undefined && (
-                <div className={styles.cropperBox} data-testid="avatar-cropper-box">
-                  <PersonAvatar
-                    sex="UNKNOWN"
-                    size="lg"
-                    avatarMediaId={activeItem.id}
-                    avatarMediaType={activeItem.mediaType}
-                    avatarCropX={cropX}
-                    avatarCropY={cropY}
-                    avatarCropZoom={cropZoom}
-                  />
-                  <div style={{ flex: 1, minWidth: '200px', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                    <span className={styles.label}>
-                      Wykadruj kwadrat do małych okrągłych awatarów (w tabeli biografii zdjęcie pozostanie w całości):
-                    </span>
-                    <label style={{ fontSize: '0.78rem' }}>
-                      Poziomo (X: {String(cropX)}%):
-                      <input
-                        type="range"
-                        min={0}
-                        max={100}
-                        value={cropX}
-                        onChange={e => {
-                          setCropX(Number(e.target.value));
-                        }}
-                        style={{ width: '100%' }}
-                      />
-                    </label>
-                    <label style={{ fontSize: '0.78rem' }}>
-                      Pionowo (Y: {String(cropY)}%):
-                      <input
-                        type="range"
-                        min={0}
-                        max={100}
-                        value={cropY}
-                        onChange={e => {
-                          setCropY(Number(e.target.value));
-                        }}
-                        style={{ width: '100%' }}
-                      />
-                    </label>
-                    <label style={{ fontSize: '0.78rem' }}>
-                      Powiększenie wycinka ({cropZoom.toFixed(1)}x):
-                      <input
-                        type="range"
-                        min={1}
-                        max={4}
-                        step={0.1}
-                        value={cropZoom}
-                        onChange={e => {
-                          setCropZoom(Number(e.target.value));
-                        }}
-                        style={{ width: '100%' }}
-                      />
-                    </label>
+              {/* Point 15 & 17: Add Version or Reverse Side Form */}
+              {isAdmin && showVersionUpload && (
+                <div
+                  style={{
+                    backgroundColor: '#f8fafc',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    padding: '0.85rem',
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'flex-end',
+                    gap: '0.65rem',
+                  }}
+                >
+                  <div className={styles.formField} style={{ flex: '1 1 180px' }}>
+                    <span className={styles.label}>Typ wersji / strony</span>
+                    <select
+                      value={versionTypeInput}
+                      onChange={e => {
+                        setVersionTypeInput(e.target.value);
+                      }}
+                      className={styles.input}
+                    >
+                      <option value="RESTORED">Wersja odnowiona (po retuszu)</option>
+                      <option value="COLORIZED">Wersja w kolorze</option>
+                      <option value="ENHANCED">Wersja wyostrzona / poprawiona</option>
+                      <option value="REVERSE">🔄 Strona odwrotna (Rewers zdjęcia)</option>
+                      <option value="ORIGINAL">Oryginał</option>
+                      <option value="OTHER">Inna wersja</option>
+                    </select>
                   </div>
+
+                  <div className={styles.formField} style={{ flex: '1 1 180px' }}>
+                    <span className={styles.label}>Własna etykieta (opcjonalnie)</span>
+                    <input
+                      type="text"
+                      placeholder="np. Koloryzacja z 2025 r."
+                      value={versionLabelInput}
+                      onChange={e => {
+                        setVersionLabelInput(e.target.value);
+                      }}
+                      className={styles.input}
+                    />
+                  </div>
+
+                  <div className={styles.filePickerRow}>
+                    <label htmlFor={versionFileInputId} className={styles.filePickerLabel}>
+                      📂 Wybierz plik wersji
+                    </label>
+                    <input
+                      id={versionFileInputId}
+                      type="file"
+                      accept="image/*,video/*"
+                      onChange={e => {
+                        setVersionFile(e.target.files?.[0] ?? null);
+                      }}
+                      className={styles.hiddenFileInput}
+                    />
+                    <span className={styles.selectedFilesBadge}>
+                      {versionFile ? versionFile.name : 'Nie wybrano'}
+                    </span>
+                  </div>
+
+                  {versionTypeInput !== 'REVERSE' && (
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: 600 }}>
+                      <input
+                        type="checkbox"
+                        checked={versionSetAsMain}
+                        onChange={e => {
+                          setVersionSetAsMain(e.target.checked);
+                        }}
+                      />
+                      <span>Ustaw jako główną wyświetlaną wersję</span>
+                    </label>
+                  )}
+
                   <button
                     type="button"
+                    disabled={!versionFile || isSubmitting}
                     onClick={() => {
-                      void handleSetAsPrimaryWithCrop(activeItem);
+                      void handleUploadVersionSubmit();
                     }}
                     className={styles.btnPrimary}
                   >
-                    ✓ Zapisz jako portret
+                    ✓ Wgraj wersję
                   </button>
                 </div>
+              )}
+
+              {/* Point 12: Interactive Drag & Wheel Avatar Cropper */}
+              {isAdmin && showCropper && personId !== undefined && (
+                <InteractiveAvatarCropper
+                  mediaId={activeItem.id}
+                  mediaType={activeItem.mediaType}
+                  onSaveCrop={(cx, cy, cz) => {
+                    void handleSavePrimaryOrAvatarCrop(activeItem, cx, cy, cz);
+                  }}
+                  onCancel={() => {
+                    setShowCropper(false);
+                  }}
+                />
               )}
 
               {isAdmin && (
@@ -2238,8 +3215,43 @@ export default function MediaGallerySection({
                         }}
                         className={styles.btnSecondary}
                       >
-                        ✏️ Edytuj nazwę, folder, podpis lub datę
+                        ✏️ Edytuj dane, opis, osoby, autora lub datę
                       </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowVersionUpload(prev => !prev);
+                        }}
+                        className={styles.btnSecondary}
+                      >
+                        ➕ Dodaj wersję / rewers
+                      </button>
+
+                      {activeSelectedVersion && !activeSelectedVersion.main && (
+                        <>
+                          {!activeSelectedVersion.reverseSide && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void handleSetVersionAsMain(activeSelectedVersion.id);
+                              }}
+                              className={styles.btnSecondary}
+                            >
+                              ⭐ Ustaw tę wersję jako główną
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void handleDeleteVersion(activeSelectedVersion.id);
+                            }}
+                            className={styles.btnDanger}
+                          >
+                            🗑️ Usuń tę wersję
+                          </button>
+                        </>
+                      )}
 
                       {context === 'PERSON' && personId !== undefined && (
                         <button
@@ -2249,7 +3261,7 @@ export default function MediaGallerySection({
                           }}
                           className={styles.btnSecondary}
                         >
-                          ⭐ Ustaw jako portret / wykadruj kwadrat
+                          ⭐ Ustaw jako portret / wykadruj kółko
                         </button>
                       )}
 
@@ -2260,7 +3272,7 @@ export default function MediaGallerySection({
                           <button
                             type="button"
                             onClick={() => {
-                              void handleSetAsPrimaryWithCrop(activeItem);
+                              void handleSavePrimaryOrAvatarCrop(activeItem);
                             }}
                             className={styles.btnSecondary}
                           >

@@ -13,6 +13,7 @@ vi.mock('../../api/mediaApi', () => ({
     createCollection: vi.fn(),
     deleteCollection: vi.fn(),
     uploadMedia: vi.fn(),
+    uploadBatchMedia: vi.fn(),
     deleteMedia: vi.fn(),
     getThumbnailUrl: (id: number) => `http://mock/media/${String(id)}/thumbnail`,
     getFileUrl: (id: number) => `http://mock/media/${String(id)}/file`,
@@ -33,7 +34,8 @@ describe('GalleryPage Component', () => {
         id: 10,
         mediaType: 'IMAGE',
         primaryContext: 'PERSON',
-        relativePath: 'undated/collections/zbior_babci/zbior_babci_01.jpg',
+        portrait: true,
+        relativePath: 'undated/collections/zbior_babci/portraits/single/zbior_babci_01.jpg',
         fileName: 'zbior_babci_01.jpg',
         mimeType: 'image/jpeg',
         fileSize: 2048,
@@ -45,6 +47,14 @@ describe('GalleryPage Component', () => {
         createdAt: '2026-10-30T10:00:00',
         personIds: [5],
         personNames: ['Jan Kowalski'],
+        depictedPersons: [
+          {
+            personId: 5,
+            displayName: 'Jan Kowalski',
+            sex: 'MALE',
+            linkType: 'DEPICTED',
+          },
+        ],
         graveIds: [],
         cemeteryNames: [],
         eventIds: [],
@@ -75,7 +85,7 @@ describe('GalleryPage Component', () => {
     vi.clearAllMocks();
   });
 
-  it('should render media items, group by person when PERSON category is selected, and allow creating a collection', async () => {
+  it('should render media items in open upload-date ribbons, drill down in PERSON view, and allow creating a collection', async () => {
     const mockedApi = vi.mocked(mediaApi);
     mockedApi.getGalleryPage.mockResolvedValue(mockGalleryPage);
     mockedApi.createCollection.mockResolvedValue(mockGalleryPage.collections[0]);
@@ -93,7 +103,7 @@ describe('GalleryPage Component', () => {
     });
     expect(screen.getByText('Dziadek w wojsku')).toBeInTheDocument();
 
-    // Select compact category "PERSON" -> groups items by person name ("👤 Jan Kowalski (1)")
+    // Switch to PERSON view -> shows clickable person tile "Jan Kowalski"
     fireEvent.change(screen.getByTestId('gal-category-select'), {
       target: { value: 'PERSON' },
     });
@@ -101,7 +111,11 @@ describe('GalleryPage Component', () => {
     await waitFor(() => {
       expect(screen.getByTestId('gallery-grouped-sections')).toBeInTheDocument();
     });
-    expect(screen.getByText(/👤 Jan Kowalski \(1\)/i)).toBeInTheDocument();
+    expect(screen.getByText('Jan Kowalski')).toBeInTheDocument();
+
+    // Click on "Jan Kowalski" tile -> shows "Portrety jednoosobowe" tile
+    fireEvent.click(screen.getByText('Jan Kowalski'));
+    expect(screen.getByText('Portrety jednoosobowe')).toBeInTheDocument();
 
     // Open Create Collection form and submit
     fireEvent.click(screen.getByTestId('open-create-collection-button'));

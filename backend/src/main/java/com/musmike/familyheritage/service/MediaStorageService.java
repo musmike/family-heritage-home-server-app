@@ -1,5 +1,6 @@
 package com.musmike.familyheritage.service;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -9,15 +10,20 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributeView;
+import java.nio.file.attribute.FileTime;
 import java.text.Normalizer;
 import java.util.Comparator;
 import java.util.Locale;
 import java.util.stream.Stream;
 
 @Service
+@RequiredArgsConstructor
 public class MediaStorageService {
 
     private static final int THUMBNAIL_MAX_DIM = 420;
+
+    private final MediaMetadataExtractor metadataExtractor;
 
     @Value("${app.media.root-path:./local_media}")
     private String mediaRootPath;
@@ -88,10 +94,36 @@ public class MediaStorageService {
     }
 
     public void saveFileAndThumbnail(String relativePath, Long mediaId, byte[] fileBytes, boolean isImage) {
+        saveFileAndThumbnail(relativePath, mediaId, fileBytes, isImage, null);
+    }
+
+    public void saveFileAndThumbnail(
+            String relativePath,
+            Long mediaId,
+            byte[] fileBytes,
+            boolean isImage,
+            Long originalFileTimestampMs
+    ) {
         try {
             Path targetPath = resolveMediaFilePath(relativePath);
             Files.createDirectories(targetPath.getParent());
+            // Write exact 1:1 original bytes without modifying pixels or metadata
             Files.write(targetPath, fileBytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+
+            // Preserve original file system timestamps (modified, accessed, created) if provided
+            if (originalFileTimestampMs != null && originalFileTimestampMs > 0) {
+                try {
+                    FileTime ft = FileTime.fromMillis(originalFileTimestampMs);
+                    BasicFileAttributeView attrView = Files.getFileAttributeView(targetPath, BasicFileAttributeView.class);
+                    if (attrView != null) {
+                        attrView.setTimes(ft, ft, ft);
+                    } else {
+                        Files.setLastModifiedTime(targetPath, ft);
+                    }
+                } catch (IOException ignored) {
+                    // Ignore if underlying filesystem does not support setting all 3 timestamps
+                }
+            }
 
             if (isImage) {
                 generateThumbnailIfPossible(mediaId, fileBytes);
@@ -189,7 +221,6 @@ public class MediaStorageService {
                 Files.deleteIfExists(thumb);
             }
         } catch (IOException ignored) {
-            // Ignore cleanup errors for missing files
         }
     }
 
@@ -217,8 +248,13 @@ public class MediaStorageService {
             if (original == null) {
                 return;
             }
-            int origW = original.getWidth();
-            int origH = original.getHeight();
+            int orientation = metadataExtractor != null
+                    ? metadataExtractor.extractExifOrientation(imageBytes)
+                    : 1;
+            BufferedImage oriented = applyExifOrientation(original, orientation);
+
+            int origW = oriented.getWidth();
+            int origH = oriented.getHeight();
             if (origW <= 0 || origH <= 0) {
                 return;
             }
@@ -232,7 +268,7 @@ public class MediaStorageService {
             g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
             g2d.setColor(Color.WHITE);
             g2d.fillRect(0, 0, targetW, targetH);
-            g2d.drawImage(original, 0, 0, targetW, targetH, null);
+            g2d.drawImage(oriented, 0, 0, targetW, targetH, null);
             g2d.dispose();
 
             Path thumbPath = resolveThumbnailPath(mediaId);
@@ -241,5 +277,61 @@ public class MediaStorageService {
         } catch (Exception ignored) {
             // Fallback to original image when thumbnail generation is unsupported for format
         }
+    }
+
+    private BufferedImage applyExifOrientation(BufferedImage src, int orientation) {
+        if (orientation <= 1 || orientation > 8) {
+            return src;
+        }
+        int w = src.getWidth();
+        int h = src.getHeight();
+        boolean swapDimensions = (orientation >= 5 && orientation <= 8);
+        int dstW = swapDimensions ? h : w;
+        int dstH = swapDimensions ? w : h;
+
+        BufferedImage dst = new BufferedImage(dstW, dstH, BufferedImage.TYPE_INT_RGB);
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int rgb = src.getRGB(x, y);
+                int nx = x;
+                int ny = y;
+                switch (orientation) {
+                    case 2 -> {
+                        nx = w - 1 - x;
+                        ny = y;
+                    }
+                    case 3 -> {
+                        nx = w - 1 - x;
+                        ny = h - 1 - y;
+                    }
+                    case 4 -> {
+                        nx = x;
+                        ny = h - 1 - y;
+                    }
+                    case 5 -> {
+                        nx = y;
+                        ny = x;
+                    }
+                    case 6 -> {
+                        // Rotate 90 degrees CW
+                        nx = h - 1 - y;
+                        ny = x;
+                    }
+                    case 7 -> {
+                        nx = h - 1 - y;
+                        ny = w - 1 - x;
+                    }
+                    case 8 -> {
+                        // Rotate 270 degrees CW (90 CCW)
+                        nx = y;
+                        ny = w - 1 - x;
+                    }
+                    default -> {
+                    }
+                }
+                dst.setRGB(nx, ny, rgb);
+            }
+        }
+        return dst;
     }
 }

@@ -13,5 +13,9 @@ public class SaveMediaCollectionRequestDto {
     private String name;
     private String customSlug;
     private String description;
+    private Long parentCollectionId;
+    private Boolean datedCollection;
+    private Integer startYear;
+    private Integer endYear;
     private Long founderPersonId;
 }

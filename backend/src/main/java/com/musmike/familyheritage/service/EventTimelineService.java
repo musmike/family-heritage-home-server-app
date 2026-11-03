@@ -121,14 +121,17 @@ public class EventTimelineService {
             }
 
             Integer eventYear = extractEventYear(evt);
-            if (eventYear == null && !includeUndated) {
-                continue;
-            }
-            if (yearFrom != null && (eventYear == null || eventYear < yearFrom)) {
-                continue;
-            }
-            if (yearTo != null && (eventYear == null || eventYear > yearTo)) {
-                continue;
+            if (eventYear == null) {
+                if (!includeUndated) {
+                    continue;
+                }
+            } else {
+                if (yearFrom != null && eventYear < yearFrom) {
+                    continue;
+                }
+                if (yearTo != null && eventYear > yearTo) {
+                    continue;
+                }
             }
 
             TimelineEventDto dto = toTimelineEventDto(
@@ -173,14 +176,13 @@ public class EventTimelineService {
 
         int fromIndex = Math.min(safePage * safeSize, totalEvents);
         int toIndex = Math.min(fromIndex + safeSize, totalEvents);
-        List<TimelineEventDto> pageSlice = matchingEvents.subList(fromIndex, toIndex).stream()
-                .map(ScoredTimelineEvent::dto)
-                .toList();
+        List<ScoredTimelineEvent> pageSlice = matchingEvents.subList(fromIndex, toIndex);
 
-        Map<Integer, Map<Integer, List<TimelineEventDto>>> decadeYearMap = new LinkedHashMap<>();
+        Map<Integer, Map<Integer, List<ScoredTimelineEvent>>> decadeYearMap = new LinkedHashMap<>();
         List<TimelineEventDto> undatedList = new ArrayList<>();
 
-        for (TimelineEventDto item : pageSlice) {
+        for (ScoredTimelineEvent scoredItem : pageSlice) {
+            TimelineEventDto item = scoredItem.dto();
             if (item.getYear() == null) {
                 undatedList.add(item);
             } else {
@@ -188,19 +190,27 @@ public class EventTimelineService {
                 decadeYearMap
                         .computeIfAbsent(decade, d -> new LinkedHashMap<>())
                         .computeIfAbsent(item.getYear(), y -> new ArrayList<>())
-                        .add(item);
+                        .add(scoredItem);
             }
         }
 
+        Comparator<ScoredTimelineEvent> janToDecComp = Comparator
+                .comparing(ScoredTimelineEvent::sortDateTime, Comparator.nullsLast(LocalDateTime::compareTo))
+                .thenComparing(se -> se.dto().getEventId());
+
         List<TimelineDecadeGroupDto> decadeGroups = new ArrayList<>();
-        for (Map.Entry<Integer, Map<Integer, List<TimelineEventDto>>> decEntry : decadeYearMap.entrySet()) {
+        for (Map.Entry<Integer, Map<Integer, List<ScoredTimelineEvent>>> decEntry : decadeYearMap.entrySet()) {
             int decStart = decEntry.getKey();
             List<TimelineYearGroupDto> yearGroups = new ArrayList<>();
             int countInDecade = 0;
 
-            for (Map.Entry<Integer, List<TimelineEventDto>> yrEntry : decEntry.getValue().entrySet()) {
-                yearGroups.add(new TimelineYearGroupDto(yrEntry.getKey(), yrEntry.getValue()));
-                countInDecade += yrEntry.getValue().size();
+            for (Map.Entry<Integer, List<ScoredTimelineEvent>> yrEntry : decEntry.getValue().entrySet()) {
+                List<TimelineEventDto> janToDecEvents = yrEntry.getValue().stream()
+                        .sorted(janToDecComp)
+                        .map(ScoredTimelineEvent::dto)
+                        .toList();
+                yearGroups.add(new TimelineYearGroupDto(yrEntry.getKey(), janToDecEvents));
+                countInDecade += janToDecEvents.size();
             }
 
             decadeGroups.add(TimelineDecadeGroupDto.builder()

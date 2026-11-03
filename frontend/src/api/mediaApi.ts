@@ -27,6 +27,9 @@ export const mediaApi = {
   getFileUrl: (mediaId: number): string =>
     `${getApiBaseUrl()}/media/${String(mediaId)}/file`,
 
+  getVersionFileUrl: (mediaId: number, versionId: number): string =>
+    `${getApiBaseUrl()}/media/${String(mediaId)}/versions/${String(versionId)}/file`,
+
   getGalleryPage: async (
     params: MediaGalleryQueryParams
   ): Promise<MediaGalleryPageDto> => {
@@ -40,7 +43,10 @@ export const mediaApi = {
     if (
       params.primaryContext &&
       params.primaryContext !== 'ALL' &&
-      params.primaryContext !== 'TIMELINE'
+      params.primaryContext !== 'TIMELINE' &&
+      params.primaryContext !== 'PERSONS_VIEW' &&
+      params.primaryContext !== 'GRAVES_VIEW' &&
+      params.primaryContext !== 'COLLECTIONS_VIEW'
     ) {
       cleanParams.primaryContext = params.primaryContext;
     }
@@ -99,6 +105,9 @@ export const mediaApi = {
     customFileName?: string;
     originalFilename?: string;
     mimeType?: string;
+    portraitMedia?: boolean;
+    unknownMedia?: boolean;
+    personsCount?: number;
   }): Promise<MediaFilenamePreviewDto> => {
     const response = await api.get<MediaFilenamePreviewDto>('/media/preview-filename', {
       params,
@@ -112,16 +121,32 @@ export const mediaApi = {
     customFolderName?: string;
     customFileName?: string;
     title?: string;
+    inscriptionText?: string;
     description?: string;
+    sourceText?: string;
     graveId?: number;
     eventId?: number;
     collectionId?: number;
+    portraitMedia?: boolean;
+    unknownMedia?: boolean;
+    isBetweenRange?: boolean;
+    dateQualifier?: string;
     customYear?: number;
     customMonth?: number;
     customDay?: number;
+    timeQualifier?: string;
     customHour?: number;
     customMinute?: number;
     customSecond?: number;
+    rangeEndQualifier?: string;
+    rangeEndYear?: number;
+    rangeEndMonth?: number;
+    rangeEndDay?: number;
+    rangeEndTimeQualifier?: string;
+    rangeEndHour?: number;
+    rangeEndMinute?: number;
+    rangeEndSecond?: number;
+    selectedMetadataSourceTag?: string;
     clientLastModifiedMs?: number;
     personIds?: number[];
     setAsPersonAvatar?: boolean;
@@ -139,8 +164,14 @@ export const mediaApi = {
     if (params.title && params.title.trim() !== '') {
       formData.append('title', params.title.trim());
     }
+    if (params.inscriptionText && params.inscriptionText.trim() !== '') {
+      formData.append('inscriptionText', params.inscriptionText.trim());
+    }
     if (params.description && params.description.trim() !== '') {
       formData.append('description', params.description.trim());
+    }
+    if (params.sourceText && params.sourceText.trim() !== '') {
+      formData.append('sourceText', params.sourceText.trim());
     }
     if (params.graveId !== undefined) {
       formData.append('graveId', String(params.graveId));
@@ -151,6 +182,18 @@ export const mediaApi = {
     if (params.collectionId !== undefined) {
       formData.append('collectionId', String(params.collectionId));
     }
+    if (params.portraitMedia !== undefined) {
+      formData.append('portraitMedia', String(params.portraitMedia));
+    }
+    if (params.unknownMedia !== undefined) {
+      formData.append('unknownMedia', String(params.unknownMedia));
+    }
+    if (params.isBetweenRange !== undefined) {
+      formData.append('isBetweenRange', String(params.isBetweenRange));
+    }
+    if (params.dateQualifier) {
+      formData.append('dateQualifier', params.dateQualifier);
+    }
     if (params.customYear !== undefined) {
       formData.append('customYear', String(params.customYear));
     }
@@ -160,6 +203,9 @@ export const mediaApi = {
     if (params.customDay !== undefined) {
       formData.append('customDay', String(params.customDay));
     }
+    if (params.timeQualifier) {
+      formData.append('timeQualifier', params.timeQualifier);
+    }
     if (params.customHour !== undefined) {
       formData.append('customHour', String(params.customHour));
     }
@@ -168,6 +214,33 @@ export const mediaApi = {
     }
     if (params.customSecond !== undefined) {
       formData.append('customSecond', String(params.customSecond));
+    }
+    if (params.rangeEndQualifier) {
+      formData.append('rangeEndQualifier', params.rangeEndQualifier);
+    }
+    if (params.rangeEndYear !== undefined) {
+      formData.append('rangeEndYear', String(params.rangeEndYear));
+    }
+    if (params.rangeEndMonth !== undefined) {
+      formData.append('rangeEndMonth', String(params.rangeEndMonth));
+    }
+    if (params.rangeEndDay !== undefined) {
+      formData.append('rangeEndDay', String(params.rangeEndDay));
+    }
+    if (params.rangeEndTimeQualifier) {
+      formData.append('rangeEndTimeQualifier', params.rangeEndTimeQualifier);
+    }
+    if (params.rangeEndHour !== undefined) {
+      formData.append('rangeEndHour', String(params.rangeEndHour));
+    }
+    if (params.rangeEndMinute !== undefined) {
+      formData.append('rangeEndMinute', String(params.rangeEndMinute));
+    }
+    if (params.rangeEndSecond !== undefined) {
+      formData.append('rangeEndSecond', String(params.rangeEndSecond));
+    }
+    if (params.selectedMetadataSourceTag) {
+      formData.append('selectedMetadataSourceTag', params.selectedMetadataSourceTag);
     }
     if (params.clientLastModifiedMs !== undefined) {
       formData.append('clientLastModifiedMs', String(params.clientLastModifiedMs));
@@ -200,10 +273,13 @@ export const mediaApi = {
     customHours?: (number | null)[];
     customMinutes?: (number | null)[];
     customSeconds?: (number | null)[];
+    selectedMetadataSourceTags?: (string | null)[];
     clientLastModifiedList?: (number | null)[];
     graveId?: number;
     eventId?: number;
     collectionId?: number;
+    portraitMedia?: boolean;
+    unknownMedia?: boolean;
     defaultYear?: number | null;
     personIds?: number[];
   }): Promise<MediaItemDto[]> => {
@@ -249,6 +325,11 @@ export const mediaApi = {
         formData.append('customSeconds', sec !== null ? String(sec) : '');
       }
     }
+    if (params.selectedMetadataSourceTags) {
+      for (const tag of params.selectedMetadataSourceTags) {
+        formData.append('selectedMetadataSourceTags', tag ?? '');
+      }
+    }
     if (params.clientLastModifiedList) {
       for (const lm of params.clientLastModifiedList) {
         formData.append('clientLastModifiedList', lm !== null ? String(lm) : '');
@@ -262,6 +343,12 @@ export const mediaApi = {
     }
     if (params.collectionId !== undefined) {
       formData.append('collectionId', String(params.collectionId));
+    }
+    if (params.portraitMedia !== undefined) {
+      formData.append('portraitMedia', String(params.portraitMedia));
+    }
+    if (params.unknownMedia !== undefined) {
+      formData.append('unknownMedia', String(params.unknownMedia));
     }
     if (params.defaultYear !== undefined && params.defaultYear !== null) {
       formData.append('defaultYear', String(params.defaultYear));
@@ -283,6 +370,50 @@ export const mediaApi = {
     const response = await api.put<MediaItemDto>(
       `/media/${String(mediaId)}`,
       payload
+    );
+    return response.data;
+  },
+
+  uploadMediaVersion: async (params: {
+    mediaId: number;
+    file: File;
+    versionType: string;
+    versionLabel?: string;
+    setAsMain?: boolean;
+  }): Promise<MediaItemDto> => {
+    const formData = new FormData();
+    formData.append('file', params.file);
+    formData.append('versionType', params.versionType);
+    if (params.versionLabel && params.versionLabel.trim() !== '') {
+      formData.append('versionLabel', params.versionLabel.trim());
+    }
+    if (params.setAsMain !== undefined) {
+      formData.append('setAsMain', String(params.setAsMain));
+    }
+    const response = await api.post<MediaItemDto>(
+      `/media/${String(params.mediaId)}/versions`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    );
+    return response.data;
+  },
+
+  setMainMediaVersion: async (
+    mediaId: number,
+    versionId: number
+  ): Promise<MediaItemDto> => {
+    const response = await api.put<MediaItemDto>(
+      `/media/${String(mediaId)}/versions/${String(versionId)}/set-main`
+    );
+    return response.data;
+  },
+
+  deleteMediaVersion: async (
+    mediaId: number,
+    versionId: number
+  ): Promise<MediaItemDto> => {
+    const response = await api.delete<MediaItemDto>(
+      `/media/${String(mediaId)}/versions/${String(versionId)}`
     );
     return response.data;
   },

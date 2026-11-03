@@ -69,22 +69,23 @@ const readAsciiFromView = (
   return out.trim();
 };
 
-const parseTiffSegment = (
+const parseAllTiffSegmentDates = (
   view: DataView,
   tiffStart: number,
   tiffLength: number
-): ClientExtractedMetadata | null => {
-  if (tiffStart + 8 > view.byteLength || tiffLength < 8) return null;
+): ClientExtractedMetadata[] => {
+  const results: ClientExtractedMetadata[] = [];
+  if (tiffStart + 8 > view.byteLength || tiffLength < 8) return results;
   const b0 = view.getUint8(tiffStart);
   const b1 = view.getUint8(tiffStart + 1);
   const littleEndian = b0 === 0x49 && b1 === 0x49;
   const bigEndian = b0 === 0x4d && b1 === 0x4d;
-  if (!littleEndian && !bigEndian) return null;
+  if (!littleEndian && !bigEndian) return results;
 
   const isLe = littleEndian;
   const firstIfdOffset = view.getUint32(tiffStart + 4, isLe);
   const ifdPos = tiffStart + firstIfdOffset;
-  if (ifdPos + 2 > view.byteLength) return null;
+  if (ifdPos + 2 > view.byteLength) return results;
 
   let dateTimeOriginal: string | null = null;
   let dateTimeDigitized: string | null = null;
@@ -121,6 +122,8 @@ const parseTiffSegment = (
         dateTimeOriginal = readAsciiFromView(view, tiffStart + valOffset, 20);
       } else if (tag === 0x9004) {
         dateTimeDigitized = readAsciiFromView(view, tiffStart + valOffset, 20);
+      } else if (tag === 0x0132) {
+        dateTimeModify = readAsciiFromView(view, tiffStart + valOffset, 20);
       }
     }
   }
@@ -128,30 +131,32 @@ const parseTiffSegment = (
   if (dateTimeOriginal) {
     const parsed = parseExifString(
       dateTimeOriginal,
-      'EXIF: DateTimeOriginal (Data wykonania zdjęcia)'
+      'EXIF: Original Date Time (DateTimeOriginal – data wykonania)'
     );
-    if (parsed) return parsed;
+    if (parsed) results.push(parsed);
   }
   if (dateTimeDigitized) {
     const parsed = parseExifString(
       dateTimeDigitized,
-      'EXIF: DateTimeDigitized (Data digitalizacji)'
+      'EXIF: Digitized Date Time (DateTimeDigitized – data digitalizacji)'
     );
-    if (parsed) return parsed;
+    if (parsed) results.push(parsed);
   }
   if (dateTimeModify) {
     const parsed = parseExifString(
       dateTimeModify,
-      'EXIF: DateTime (Data zapisu w urządzeniu)'
+      'EXIF: Image Date Time (DateTime – data obrazu)'
     );
-    if (parsed) return parsed;
+    if (parsed) results.push(parsed);
   }
-  return null;
+  return results;
 };
 
-export const extractClientFileMetadata = async (
+export const extractAllClientFileMetadata = async (
   file: File
-): Promise<ClientExtractedMetadata | null> => {
+): Promise<ClientExtractedMetadata[]> => {
+  const options: ClientExtractedMetadata[] = [];
+
   try {
     if (typeof file.slice === 'function') {
       const slice = file.slice(0, 65536);
@@ -159,7 +164,6 @@ export const extractClientFileMetadata = async (
         const buffer = await slice.arrayBuffer();
         const view = new DataView(buffer);
 
-        // 1. Check JPEG APP1 Exif
         if (
           view.byteLength > 14 &&
           view.getUint8(0) === 0xff &&
@@ -176,26 +180,30 @@ export const extractClientFileMetadata = async (
             if (marker === 0xe1 && segLen >= 14) {
               const hdr = readAsciiFromView(view, offset + 4, 4);
               if (hdr === 'Exif') {
-                const parsed = parseTiffSegment(view, offset + 10, segLen - 8);
-                if (parsed) return parsed;
+                const parsedList = parseAllTiffSegmentDates(view, offset + 10, segLen - 8);
+                for (const p of parsedList) {
+                  options.push(p);
+                }
+                if (options.length > 0) break;
               }
             }
             offset += 2 + segLen;
           }
         }
 
-        // 2. Generic ASCII header scan for EXIF / XMP timestamp
-        const uint8 = new Uint8Array(buffer);
-        let rawAscii = '';
-        const scanLen = Math.min(uint8.length, 16384);
-        for (let i = 0; i < scanLen; i++) {
-          rawAscii += String.fromCharCode(uint8[i]);
+        if (options.length === 0) {
+          const uint8 = new Uint8Array(buffer);
+          let rawAscii = '';
+          const scanLen = Math.min(uint8.length, 16384);
+          for (let i = 0; i < scanLen; i++) {
+            rawAscii += String.fromCharCode(uint8[i]);
+          }
+          const scanned = parseExifString(
+            rawAscii,
+            'EXIF: Original Date Time (osadzona w nagłówku)'
+          );
+          if (scanned) options.push(scanned);
         }
-        const scanned = parseExifString(
-          rawAscii,
-          'EXIF / XMP: Data osadzona w nagłówku pliku'
-        );
-        if (scanned) return scanned;
       }
     }
   } catch {
@@ -210,7 +218,7 @@ export const extractClientFileMetadata = async (
     const h = dt.getHours();
     const min = dt.getMinutes();
     const sec = dt.getSeconds();
-    return {
+    options.push({
       year: y,
       month: m,
       day: d,
@@ -219,8 +227,15 @@ export const extractClientFileMetadata = async (
       second: sec,
       formattedText: formatFullDateTime(y, m, d, h, min, sec),
       sourceTag: 'Plik: Data modyfikacji (lastModified)',
-    };
+    });
   }
 
-  return null;
+  return options;
+};
+
+export const extractClientFileMetadata = async (
+  file: File
+): Promise<ClientExtractedMetadata | null> => {
+  const all = await extractAllClientFileMetadata(file);
+  return all[0] ?? null;
 };

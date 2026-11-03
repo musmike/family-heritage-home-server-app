@@ -1,14 +1,14 @@
-import { useState, useEffect, use, type ReactNode } from 'react';
+import { useState, useEffect, useId, use, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { biographyApi } from '../../api/biographyApi';
+import { mediaApi } from '../../api/mediaApi';
 import { AuthContext } from '../../context/AuthContext';
 import AncestorTree from '../../components/AncestorTree/AncestorTree';
 import WikiBiographySection from '../../components/WikiBiography/WikiBiographySection';
 import Loader from '../../components/Loader/Loader';
 import PersonAvatar from '../../components/PersonAvatar/PersonAvatar';
+import InteractiveAvatarCropper from '../../components/PersonAvatar/InteractiveAvatarCropper';
 import styles from './Biographies.module.css';
-import MediaGallerySection from '../../components/MediaSection/MediaGallerySection';
-import { mediaApi } from '../../api/mediaApi';
 import type {
   ChildInFamilyDto,
   FamilyChildRelationshipType,
@@ -17,6 +17,7 @@ import type {
   PersonSex,
   RelatedPersonDto,
 } from '../../types/biography';
+import type { MediaItemDto } from '../../types/media';
 
 const translateSex = (sex: PersonSex | null): string | null => {
   if (sex === 'MALE') return 'mężczyzna';
@@ -123,7 +124,15 @@ const renderInlineRelative = (rel: RelatedPersonDto, note?: string) => {
 
   const inner = (
     <>
-      <PersonAvatar sex={rel.sex} size="sm" avatarMediaId={rel.avatarMediaId} />
+      <PersonAvatar
+        sex={rel.sex}
+        size="sm"
+        avatarMediaId={rel.avatarMediaId}
+        avatarMediaType={rel.avatarMediaType}
+        avatarCropX={rel.avatarCropX}
+        avatarCropY={rel.avatarCropY}
+        avatarCropZoom={rel.avatarCropZoom}
+      />
       <div className={styles.infoboxRelativeText}>
         <span className={styles.infoboxRelativeName}>{fullName}</span>
         {subText && <span className={styles.infoboxRelativeSub}>{subText}</span>}
@@ -163,6 +172,7 @@ const describeNonBiologicalChildRelation = (ch: ChildInFamilyDto): string => {
 };
 
 export default function PersonBiographyPage() {
+  const portraitInputId = useId();
   const { personId } = useParams<{ personId: string }>();
   const auth = use(AuthContext);
   const isAdmin =
@@ -175,24 +185,114 @@ export default function PersonBiographyPage() {
   const [isPortraitFullscreen, setIsPortraitFullscreen] = useState<boolean>(false);
   const [portraitZoom, setPortraitZoom] = useState<number>(1);
 
+  // Admin Infobox Portrait Picker & Cropper Modal State
+  const [showPortraitModal, setShowPortraitModal] = useState<boolean>(false);
+  const [showCropperModal, setShowCropperModal] = useState<boolean>(false);
+  const [portraitUploadFile, setPortraitUploadFile] = useState<File | null>(null);
+  const [portraitSearchQuery, setPortraitSearchQuery] = useState<string>('');
+  const [portraitCandidates, setPortraitCandidates] = useState<MediaItemDto[]>([]);
+  const [isSubmittingPortrait, setIsSubmittingPortrait] = useState<boolean>(false);
+
+  const fetchBio = async () => {
+    if (!personId) return;
+    setIsLoading(true);
+    setErrorMessage(null);
+    try {
+      const result = await biographyApi.getBiography(Number(personId));
+      setBio(result);
+    } catch {
+      setErrorMessage(
+        'Nie udało się pobrać biografii osoby lub brak uprawnień do jej wyświetlenia.'
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchBio = async () => {
-      if (!personId) return;
-      setIsLoading(true);
-      setErrorMessage(null);
-      try {
-        const result = await biographyApi.getBiography(Number(personId));
-        setBio(result);
-      } catch {
-        setErrorMessage(
-          'Nie udało się pobrać biografii osoby lub brak uprawnień do jej wyświetlenia.'
-        );
-      } finally {
-        setIsLoading(false);
-      }
-    };
     void fetchBio();
   }, [personId]);
+
+  const fetchGalleryPortraitCandidates = async (q: string) => {
+    try {
+      const page = await mediaApi.getGalleryPage({
+        search: q,
+        page: 0,
+        size: 36,
+      });
+      setPortraitCandidates(page.content);
+    } catch {
+      // Ignore error
+    }
+  };
+
+  const handleOpenPortraitModal = () => {
+    setPortraitUploadFile(null);
+    setPortraitSearchQuery('');
+    setShowPortraitModal(true);
+    void fetchGalleryPortraitCandidates('');
+  };
+
+  const handleUploadNewPortrait = async () => {
+    if (!bio || !portraitUploadFile) return;
+    setIsSubmittingPortrait(true);
+    try {
+      await mediaApi.uploadMedia({
+        file: portraitUploadFile,
+        primaryContext: 'PERSON',
+        personIds: [bio.id],
+        setAsPersonAvatar: true,
+        clientLastModifiedMs: portraitUploadFile.lastModified || undefined,
+      });
+      setShowPortraitModal(false);
+      await fetchBio();
+      setShowCropperModal(true);
+    } catch {
+      setErrorMessage('Nie udało się wgrać nowego portretu.');
+    } finally {
+      setIsSubmittingPortrait(false);
+    }
+  };
+
+  const handleSelectExistingAsPortrait = async (mediaId: number) => {
+    if (!bio) return;
+    setIsSubmittingPortrait(true);
+    try {
+      await mediaApi.linkExistingMedia({
+        mediaIds: [mediaId],
+        personId: bio.id,
+      });
+      await mediaApi.updateMedia(mediaId, {
+        setAsAvatarForPersonId: bio.id,
+        avatarCropX: 50,
+        avatarCropY: 50,
+        avatarCropZoom: 1.0,
+      });
+      setShowPortraitModal(false);
+      await fetchBio();
+      setShowCropperModal(true);
+    } catch {
+      setErrorMessage('Nie udało się ustawić wybranego zdjęcia jako portretu.');
+    } finally {
+      setIsSubmittingPortrait(false);
+    }
+  };
+
+  const handleSaveAvatarCrop = async (cropX: number, cropY: number, cropZoom: number) => {
+    if (!bio?.avatarMediaId) return;
+    try {
+      await mediaApi.updateMedia(bio.avatarMediaId, {
+        setAsAvatarForPersonId: bio.id,
+        avatarCropX: cropX,
+        avatarCropY: cropY,
+        avatarCropZoom: cropZoom,
+      });
+      setShowCropperModal(false);
+      await fetchBio();
+    } catch {
+      setErrorMessage('Nie udało się zapisać wykadrowanego awatara.');
+    }
+  };
 
   if (isLoading) {
     return (
@@ -367,7 +467,35 @@ export default function PersonBiographyPage() {
             ) : (
               <PersonAvatar sex={bio.sex} size="xl" />
             )}
+
             {bio.archived && <span className={styles.archivedBadge}>Osoba zarchiwizowana</span>}
+
+            {isAdmin && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '0.4rem', marginTop: '0.25rem' }}>
+                <button
+                  type="button"
+                  data-testid="open-infobox-portrait-modal-button"
+                  onClick={handleOpenPortraitModal}
+                  className={styles.btnSecondary}
+                  style={{ padding: '0.32rem 0.7rem', fontSize: '0.78rem' }}
+                >
+                  📷 {bio.avatarMediaId ? 'Zmień portret' : 'Ustaw portret'}
+                </button>
+                {bio.avatarMediaId && (
+                  <button
+                    type="button"
+                    data-testid="open-infobox-cropper-button"
+                    onClick={() => {
+                      setShowCropperModal(true);
+                    }}
+                    className={styles.btnSecondary}
+                    style={{ padding: '0.32rem 0.7rem', fontSize: '0.78rem' }}
+                  >
+                    ✂️ Wykadruj kółko
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           <div className={styles.infoboxSectionHeader}>Podstawowe informacje</div>
@@ -524,7 +652,7 @@ export default function PersonBiographyPage() {
           })}
         </aside>
 
-        {/* 4. LEFT MAIN CONTENT (Wikipedia-Style Biography + Optional Admin Raw View) */}
+        {/* 4. LEFT MAIN CONTENT (Wikipedia-Style Biography with Embedded Photos/Videos) */}
         <div className={styles.articleBodyBlock}>
           {showRawGedcom && bio.rawGedcomData && (
             <section className={styles.wikiSection} data-testid="raw-gedcom-panel">
@@ -573,22 +701,231 @@ export default function PersonBiographyPage() {
               setBio(updated);
             }}
           />
-
-          <MediaGallerySection
-            context="PERSON"
-            personId={bio.id}
-            primaryMediaId={bio.avatarMediaId}
-            isAdmin={isAdmin}
-            sectionTitle="Zdjęcia i portrety tej osoby"
-            onMediaChanged={() => {
-              void biographyApi.getBiography(bio.id).then(updated => {
-                setBio(updated);
-              });
-            }}
-          />
         </div>
       </div>
 
+      {/* Modal: Set or Change Main Portrait (Upload New or Pick from Gallery) */}
+      {isAdmin && showPortraitModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.6)',
+            zIndex: 1250,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem',
+          }}
+          onClick={() => {
+            setShowPortraitModal(false);
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#ffffff',
+              borderRadius: '12px',
+              border: '1px solid #cbd5e1',
+              width: '100%',
+              maxWidth: '820px',
+              maxHeight: '88vh',
+              overflowY: 'auto',
+              padding: '1.25rem 1.5rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1rem',
+            }}
+            onClick={e => {
+              e.stopPropagation();
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <strong style={{ fontSize: '1.08rem', color: '#0f172a' }}>
+                📷 Ustaw lub zmień portret główny osoby: {fullName}
+              </strong>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPortraitModal(false);
+                }}
+                className={styles.btnSecondary}
+              >
+                ✕ Zamknij
+              </button>
+            </div>
+
+            {/* Option 1: Upload from disk */}
+            <div
+              style={{
+                backgroundColor: '#f8fafc',
+                border: '1px solid #cbd5e1',
+                borderRadius: '8px',
+                padding: '0.9rem 1.1rem',
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '0.75rem',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                <label
+                  htmlFor={portraitInputId}
+                  className={styles.btnSecondary}
+                  style={{ cursor: 'pointer' }}
+                >
+                  📂 Wybierz nowy plik portretu z dysku
+                </label>
+                <input
+                  id={portraitInputId}
+                  type="file"
+                  accept="image/*,video/*"
+                  onChange={e => {
+                    setPortraitUploadFile(e.target.files?.[0] ?? null);
+                  }}
+                  style={{ display: 'none' }}
+                />
+                <span style={{ fontSize: '0.84rem', color: '#475569', fontWeight: 600 }}>
+                  {portraitUploadFile ? portraitUploadFile.name : 'Nie wybrano pliku'}
+                </span>
+              </div>
+
+              <button
+                type="button"
+                disabled={!portraitUploadFile || isSubmittingPortrait}
+                onClick={() => {
+                  void handleUploadNewPortrait();
+                }}
+                className={styles.btnSecondary}
+                style={{ backgroundColor: '#2563eb', color: '#ffffff', borderColor: '#1d4ed8' }}
+              >
+                {isSubmittingPortrait ? 'Wgrywanie...' : 'Wgraj i ustaw jako portret'}
+              </button>
+            </div>
+
+            {/* Option 2: Pick existing from Gallery */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+              <strong style={{ fontSize: '0.9rem', color: '#1e293b' }}>
+                Lub wybierz istniejące zdjęcie / film z galerii:
+              </strong>
+              <input
+                type="text"
+                placeholder="Szukaj w galerii po tytule, nazwie pliku lub osobie..."
+                value={portraitSearchQuery}
+                onChange={e => {
+                  const q = e.target.value;
+                  setPortraitSearchQuery(q);
+                  void fetchGalleryPortraitCandidates(q);
+                }}
+                className={styles.textInput}
+              />
+
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(145px, 1fr))',
+                  gap: '0.75rem',
+                  maxHeight: '360px',
+                  overflowY: 'auto',
+                }}
+              >
+                {portraitCandidates.map(cand => (
+                  <button
+                    key={cand.id}
+                    type="button"
+                    disabled={isSubmittingPortrait}
+                    onClick={() => {
+                      void handleSelectExistingAsPortrait(cand.id);
+                    }}
+                    style={{
+                      backgroundColor: '#f8fafc',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '8px',
+                      overflow: 'hidden',
+                      padding: 0,
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <div style={{ width: '100%', height: '120px', backgroundColor: '#0f172a' }}>
+                      {cand.mediaType === 'IMAGE' ? (
+                        <img
+                          src={mediaApi.getThumbnailUrl(cand.id)}
+                          alt={cand.title ?? ''}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      ) : (
+                        <video
+                          src={`${mediaApi.getFileUrl(cand.id)}#t=0.5`}
+                          preload="metadata"
+                          muted
+                          playsInline
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      )}
+                    </div>
+                    <div
+                      style={{
+                        padding: '0.4rem 0.55rem',
+                        fontSize: '0.76rem',
+                        fontWeight: 600,
+                        color: '#0f172a',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {cand.title ?? cand.fileName}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Interactive Circular Avatar Cropper */}
+      {isAdmin && showCropperModal && bio.avatarMediaId && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.6)',
+            zIndex: 1260,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem',
+          }}
+          onClick={() => {
+            setShowCropperModal(false);
+          }}
+        >
+          <div
+            style={{ width: '100%', maxWidth: '640px' }}
+            onClick={e => {
+              e.stopPropagation();
+            }}
+          >
+            <InteractiveAvatarCropper
+              mediaId={bio.avatarMediaId}
+              mediaType={bio.avatarMediaType ?? 'IMAGE'}
+              initialCropX={bio.avatarCropX}
+              initialCropY={bio.avatarCropY}
+              initialCropZoom={bio.avatarCropZoom}
+              onSaveCrop={(cx, cy, cz) => {
+                void handleSaveAvatarCrop(cx, cy, cz);
+              }}
+              onCancel={() => {
+                setShowCropperModal(false);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Fullscreen Infobox Portrait Preview */}
       {isPortraitFullscreen && bio.avatarMediaId && (
         <div
           style={{

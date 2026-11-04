@@ -118,12 +118,26 @@ const renderSectionBody = (lines: string[], sectionKey: string): ReactNode[] => 
       let align: 'left' | 'right' | 'center' = 'right';
       let caption = rawCaption.trim();
 
-      const alignMatch = /^(left|right|center)\s*\|(.*)$/i.exec(caption);
-      if (alignMatch?.[1] && alignMatch[2]) {
-        align = alignMatch[1].toLowerCase() as 'left' | 'right' | 'center';
+      const alignMatch = /^(left|right|center|lewo|lewa|prawo|prawa|środek|srodek)\s*\|(.*)$/i.exec(caption);
+      if (alignMatch?.[1]) {
+        const rawAlign = alignMatch[1].toLowerCase();
+        if (rawAlign === 'left' || rawAlign === 'lewo' || rawAlign === 'lewa') {
+          align = 'left';
+        } else if (rawAlign === 'center' || rawAlign === 'środek' || rawAlign === 'srodek') {
+          align = 'center';
+        } else {
+          align = 'right';
+        }
         caption = alignMatch[2].trim();
-      } else if (/^(left|right|center)$/i.test(caption)) {
-        align = caption.toLowerCase() as 'left' | 'right' | 'center';
+      } else if (/^(left|right|center|lewo|lewa|prawo|prawa|środek|srodek)$/i.test(caption)) {
+        const rawAlign = caption.toLowerCase();
+        if (rawAlign === 'left' || rawAlign === 'lewo' || rawAlign === 'lewa') {
+          align = 'left';
+        } else if (rawAlign === 'center' || rawAlign === 'środek' || rawAlign === 'srodek') {
+          align = 'center';
+        } else {
+          align = 'right';
+        }
         caption = '';
       }
 

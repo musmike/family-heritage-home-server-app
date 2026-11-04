@@ -210,9 +210,9 @@ public class PersonBiographyService {
                 .orElseThrow(() -> new IllegalArgumentException("Person not found: " + personId));
 
         person.setAvatarMedia(null);
-        person.setAvatarCropX(null);
-        person.setAvatarCropY(null);
-        person.setAvatarCropZoom(null);
+        person.setAvatarCropX(50);
+        person.setAvatarCropY(50);
+        person.setAvatarCropZoom(1.0);
         personRepository.saveAndFlush(person);
 
         String fullName = ((person.getCachedGivenName() != null ? person.getCachedGivenName() : "") + " "

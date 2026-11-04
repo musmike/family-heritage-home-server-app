@@ -1426,7 +1426,7 @@ export default function EventsPage() {
           </div>
 
           {boundsInitialized && (
-            <div className={styles.filterField} style={{ flex: '1.4 1 240px' }}>
+            <div className={`${styles.filterField} ${styles.filterFieldYears}`}>
               <span className={styles.filterLabel}>
                 Zakres lat ({String(minBound)} – {String(maxBound)})
               </span>

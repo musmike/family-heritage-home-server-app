@@ -96,7 +96,11 @@ const renderInlineFormatted = (text: string, keyPrefix: string): ReactNode[] => 
   });
 };
 
-const renderSectionBody = (lines: string[], sectionKey: string): ReactNode[] => {
+const renderSectionBody = (
+  lines: string[],
+  sectionKey: string,
+  onMediaClick?: (mediaId: number, kind: string, caption: string) => void
+): ReactNode[] => {
   const elements: ReactNode[] = [];
   let i = 0;
 
@@ -118,12 +122,26 @@ const renderSectionBody = (lines: string[], sectionKey: string): ReactNode[] => 
       let align: 'left' | 'right' | 'center' = 'right';
       let caption = rawCaption.trim();
 
-      const alignMatch = /^(left|right|center)\s*\|(.*)$/i.exec(caption);
-      if (alignMatch?.[1] && alignMatch[2]) {
-        align = alignMatch[1].toLowerCase() as 'left' | 'right' | 'center';
+      const alignMatch = /^(left|right|center|lewo|lewa|prawo|prawa|środek|srodek)\s*\|(.*)$/i.exec(caption);
+      if (alignMatch?.[1]) {
+        const rawAlign = alignMatch[1].toLowerCase();
+        if (rawAlign === 'left' || rawAlign === 'lewo' || rawAlign === 'lewa') {
+          align = 'left';
+        } else if (rawAlign === 'center' || rawAlign === 'środek' || rawAlign === 'srodek') {
+          align = 'center';
+        } else {
+          align = 'right';
+        }
         caption = alignMatch[2].trim();
-      } else if (/^(left|right|center)$/i.test(caption)) {
-        align = caption.toLowerCase() as 'left' | 'right' | 'center';
+      } else if (/^(left|right|center|lewo|lewa|prawo|prawa|środek|srodek)$/i.test(caption)) {
+        const rawAlign = caption.toLowerCase();
+        if (rawAlign === 'left' || rawAlign === 'lewo' || rawAlign === 'lewa') {
+          align = 'left';
+        } else if (rawAlign === 'center' || rawAlign === 'środek' || rawAlign === 'srodek') {
+          align = 'center';
+        } else {
+          align = 'right';
+        }
         caption = '';
       }
 
@@ -151,6 +169,10 @@ const renderSectionBody = (lines: string[], sectionKey: string): ReactNode[] => 
               src={mediaApi.getFileUrl(mediaId)}
               alt={caption}
               className={styles.wikiMediaImg}
+              onClick={() => {
+                onMediaClick?.(mediaId, kind, caption);
+              }}
+              title="Kliknij, aby powiększyć zdjęcie"
             />
           )}
           {caption && (
@@ -191,7 +213,7 @@ const renderSectionBody = (lines: string[], sectionKey: string): ReactNode[] => 
           className={alignStyleClass}
           data-testid={`wiki-align-${alignType}`}
         >
-          {renderSectionBody(blockLines, `${sectionKey}-al-${String(i)}`)}
+          {renderSectionBody(blockLines, `${sectionKey}-al-${String(i)}`, onMediaClick)}
         </div>
       );
       continue;
@@ -300,6 +322,7 @@ export default function WikiBiographySection({
   const [mediaSearchQuery, setMediaSearchQuery] = useState<string>('');
   const [mediaGalleryResults, setMediaGalleryResults] = useState<MediaItemDto[]>([]);
   const [mediaAlign, setMediaAlign] = useState<'right' | 'left' | 'center'>('right');
+  const [lightboxMedia, setLightboxMedia] = useState<{ id: number; kind: string; caption: string } | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -684,7 +707,7 @@ export default function WikiBiographySection({
         </button>
         <button
           type="button"
-          title="Wstaw gotowy szablon zdjęcia z opływaniem tekstu"
+          title="Wstaw szablon zdjęcia z prawej strony (opływanie z lewej)"
           onClick={() => {
             const el = textareaRef.current;
             if (!el) return;
@@ -696,7 +719,39 @@ export default function WikiBiographySection({
           }}
           className={styles.toolBtn}
         >
-          📷 Szablon zdjęcia
+          📷 Z prawej
+        </button>
+        <button
+          type="button"
+          title="Wstaw szablon zdjęcia wyśrodkowanego"
+          onClick={() => {
+            const el = textareaRef.current;
+            if (!el) return;
+            const start = el.selectionStart;
+            const end = el.selectionEnd;
+            const token = `\n![center|Podpis zdjęcia](media:ID)\n`;
+            setDraftText(draftText.slice(0, start) + token + draftText.slice(end));
+            el.focus();
+          }}
+          className={styles.toolBtn}
+        >
+          📷 Na środku
+        </button>
+        <button
+          type="button"
+          title="Wstaw szablon zdjęcia z lewej strony (opływanie z prawej)"
+          onClick={() => {
+            const el = textareaRef.current;
+            if (!el) return;
+            const start = el.selectionStart;
+            const end = el.selectionEnd;
+            const token = `\n![left|Podpis zdjęcia](media:ID)\n`;
+            setDraftText(draftText.slice(0, start) + token + draftText.slice(end));
+            el.focus();
+          }}
+          className={styles.toolBtn}
+        >
+          📷 Z lewej
         </button>
       </div>
 
@@ -989,7 +1044,9 @@ export default function WikiBiographySection({
                     </span>
                   </h3>
                 )}
-                {renderSectionBody(sec.bodyLines, `prev-sec-${String(sec.index)}`)}
+                {renderSectionBody(sec.bodyLines, `prev-sec-${String(sec.index)}`, (id, kind, caption) => {
+                  setLightboxMedia({ id, kind, caption });
+                })}
               </div>
             ))}
           </div>
@@ -1124,10 +1181,98 @@ export default function WikiBiographySection({
                   </h3>
                 )}
 
-                {renderSectionBody(sec.bodyLines, `sec-${String(sec.index)}`)}
+                {renderSectionBody(sec.bodyLines, `sec-${String(sec.index)}`, (id, kind, caption) => {
+                  setLightboxMedia({ id, kind, caption });
+                })}
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Fullscreen Lightbox for Embedded Media */}
+      {lightboxMedia && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(5, 8, 15, 0.95)',
+            zIndex: 1400,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1.5rem',
+          }}
+          onClick={() => {
+            setLightboxMedia(null);
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              top: '1rem',
+              right: '1rem',
+              zIndex: 10,
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setLightboxMedia(null);
+              }}
+              className={styles.toolBtn}
+              style={{
+                backgroundColor: 'rgba(255, 255, 255, 0.15)',
+                color: '#ffffff',
+                border: 'none',
+                padding: '0.5rem 1rem',
+                fontSize: '0.95rem',
+              }}
+            >
+              ✕ Zamknij
+            </button>
+          </div>
+          <div
+            onClick={e => {
+              e.stopPropagation();
+            }}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              maxWidth: '92vw',
+              maxHeight: '85vh',
+            }}
+          >
+            {lightboxMedia.kind === 'video' ? (
+              <video
+                src={mediaApi.getFileUrl(lightboxMedia.id)}
+                controls
+                autoPlay
+                style={{ maxWidth: '92vw', maxHeight: '78vh', objectFit: 'contain' }}
+              />
+            ) : (
+              <img
+                src={mediaApi.getFileUrl(lightboxMedia.id)}
+                alt={lightboxMedia.caption}
+                style={{ maxWidth: '92vw', maxHeight: '78vh', objectFit: 'contain', borderRadius: '4px' }}
+              />
+            )}
+            {lightboxMedia.caption && (
+              <div
+                style={{
+                  marginTop: '0.85rem',
+                  color: '#e2e8f0',
+                  fontSize: '0.95rem',
+                  textAlign: 'center',
+                  maxWidth: '700px',
+                }}
+              >
+                {lightboxMedia.caption}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </section>

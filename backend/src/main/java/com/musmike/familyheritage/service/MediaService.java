@@ -2341,11 +2341,12 @@ public class MediaService {
             }
         }
 
-        String namePart = (evt.getTitle() != null && !evt.getTitle().isBlank())
+        boolean hasCustomTitle = (evt.getTitle() != null && !evt.getTitle().isBlank());
+        String namePart = hasCustomTitle
                 ? storageService.toSnakeCase(evt.getTitle())
                 : storageService.toSnakeCase(evt.getEventType().getCode());
 
-        List<String> participantFullNames = evt.getParticipants().size() > 3
+        List<String> participantFullNames = hasCustomTitle || evt.getParticipants().size() > 3
                 ? List.of()
                 : evt.getParticipants().stream()
                 .sorted(Comparator.comparing(ep -> ep.getPerson() != null ? ep.getPerson().getId() : Long.MAX_VALUE))

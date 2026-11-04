@@ -34,6 +34,11 @@ interface StagedUploadFile {
   file: File;
   customFileName: string;
   title: string;
+  sourceText?: string;
+  inscriptionText?: string;
+  description?: string;
+  personLinks?: (SaveMediaPersonLinkRequestDto & { displayLabel: string })[];
+  showDetails?: boolean;
   year: string;
   month: string;
   day: string;
@@ -96,6 +101,12 @@ const parseOptInt = (val: string): number | null => {
   return Number.isNaN(num) ? null : num;
 };
 
+const optTrim = (val: string | null | undefined): string | undefined => {
+  if (val === undefined || val === null) return undefined;
+  const trimmed = val.trim();
+  return trimmed !== '' ? trimmed : undefined;
+};
+
 const numToStr = (val: number | null | undefined): string =>
   val !== undefined && val !== null ? String(val) : '';
 
@@ -153,6 +164,33 @@ export default function MediaGallerySection({
   const [setAsPrimary, setSetAsPrimary] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Staged Upload Details & Bulk Details State (Point 5)
+  const [showBulkDetails, setShowBulkDetails] = useState<boolean>(false);
+  const [bulkTitle, setBulkTitle] = useState<string>('');
+  const [bulkSourceText, setBulkSourceText] = useState<string>('');
+  const [bulkInscriptionText, setBulkInscriptionText] = useState<string>('');
+  const [bulkDescription, setBulkDescription] = useState<string>('');
+  const [bulkPersonLinks, setBulkPersonLinks] = useState<
+    (SaveMediaPersonLinkRequestDto & { displayLabel: string })[]
+  >([]);
+  const [bulkLinkRoleType, setBulkLinkRoleType] = useState<
+    'DEPICTED' | 'RELATED' | 'AUTHOR'
+  >('DEPICTED');
+  const [bulkLinkPersonQuery, setBulkLinkPersonQuery] = useState<string>('');
+  const [bulkLinkPersonResults, setBulkLinkPersonResults] = useState<PersonListItemDto[]>([]);
+  const [bulkLinkTextInput, setBulkLinkTextInput] = useState<string>('');
+  const [bulkLinkTextSex, setBulkLinkTextSex] = useState<PersonSex>('UNKNOWN');
+
+  // Per-Staged-Item Person Linking State
+  const [activeStagedSearchIdx, setActiveStagedSearchIdx] = useState<number | null>(null);
+  const [stagedPersonQuery, setStagedPersonQuery] = useState<string>('');
+  const [stagedPersonResults, setStagedPersonResults] = useState<PersonListItemDto[]>([]);
+  const [stagedLinkRoleType, setStagedLinkRoleType] = useState<
+    'DEPICTED' | 'RELATED' | 'AUTHOR'
+  >('DEPICTED');
+  const [stagedTextPersonInput, setStagedTextPersonInput] = useState<string>('');
+  const [stagedTextPersonSex, setStagedTextPersonSex] = useState<PersonSex>('UNKNOWN');
 
   // Post-Upload Bulk Edit Mode state
   const [isBulkEditMode, setIsBulkEditMode] = useState<boolean>(false);
@@ -462,7 +500,12 @@ export default function MediaGallerySection({
       return {
         file: f,
         customFileName: `${baseStem}_${suffix}.${ext}`,
-        title: '',
+        title: bulkTitle.trim() || '',
+        sourceText: bulkSourceText.trim() || undefined,
+        inscriptionText: bulkInscriptionText.trim() || undefined,
+        description: bulkDescription.trim() || undefined,
+        personLinks: bulkPersonLinks.length > 0 ? [...bulkPersonLinks] : [],
+        showDetails: false,
         year: y,
         month: m,
         day: d,
@@ -475,6 +518,137 @@ export default function MediaGallerySection({
     });
 
     setStagedFiles(staged);
+  };
+
+  const handleApplyBulkDetailsToAll = () => {
+    setStagedFiles(prev =>
+      prev.map(item => ({
+        ...item,
+        title: bulkTitle.trim() || item.title,
+        sourceText: bulkSourceText.trim() || item.sourceText,
+        inscriptionText: bulkInscriptionText.trim() || item.inscriptionText,
+        description: bulkDescription.trim() || item.description,
+        personLinks: bulkPersonLinks.length > 0 ? [...bulkPersonLinks] : item.personLinks,
+      }))
+    );
+  };
+
+  const handleSearchPersonForBulk = async () => {
+    if (bulkLinkPersonQuery.trim() === '') return;
+    try {
+      const res = await biographyApi.listPeople({
+        search: bulkLinkPersonQuery.trim(),
+        page: 0,
+        size: 8,
+      });
+      setBulkLinkPersonResults(res.content);
+    } catch {
+      setBulkLinkPersonResults([]);
+    }
+  };
+
+  const handleAddDbPersonToBulk = (p: PersonListItemDto) => {
+    const fullName = `${p.givenName ?? ''} ${p.surname ?? ''}`.trim();
+    setBulkPersonLinks(prev => [
+      ...prev,
+      {
+        personId: p.id,
+        linkType: bulkLinkRoleType,
+        displayLabel: `${PERSON_LINK_TYPE_LABELS[bulkLinkRoleType]}: ${fullName}`,
+      },
+    ]);
+    setBulkLinkPersonResults([]);
+    setBulkLinkPersonQuery('');
+  };
+
+  const handleAddTextPersonToBulk = () => {
+    const txt = bulkLinkTextInput.trim();
+    if (txt === '') return;
+    setBulkPersonLinks(prev => [
+      ...prev,
+      {
+        personText: txt,
+        personSex: bulkLinkTextSex,
+        linkType: bulkLinkRoleType,
+        displayLabel: `${PERSON_LINK_TYPE_LABELS[bulkLinkRoleType]}: ${txt} [spoza bazy]`,
+      },
+    ]);
+    setBulkLinkTextInput('');
+  };
+
+  const handleSearchPersonForStaged = async (idx: number) => {
+    if (stagedPersonQuery.trim() === '') return;
+    try {
+      const res = await biographyApi.listPeople({
+        search: stagedPersonQuery.trim(),
+        page: 0,
+        size: 8,
+      });
+      setActiveStagedSearchIdx(idx);
+      setStagedPersonResults(res.content);
+    } catch {
+      setStagedPersonResults([]);
+    }
+  };
+
+  const handleAddDbPersonToStaged = (idx: number, p: PersonListItemDto) => {
+    const fullName = `${p.givenName ?? ''} ${p.surname ?? ''}`.trim();
+    setStagedFiles(prev =>
+      prev.map((item, i) =>
+        i === idx
+          ? {
+              ...item,
+              personLinks: [
+                ...(item.personLinks ?? []),
+                {
+                  personId: p.id,
+                  linkType: stagedLinkRoleType,
+                  displayLabel: `${PERSON_LINK_TYPE_LABELS[stagedLinkRoleType]}: ${fullName}`,
+                },
+              ],
+            }
+          : item
+      )
+    );
+    setStagedPersonResults([]);
+    setStagedPersonQuery('');
+  };
+
+  const handleAddTextPersonToStaged = (idx: number) => {
+    const txt = stagedTextPersonInput.trim();
+    if (txt === '') return;
+    setStagedFiles(prev =>
+      prev.map((item, i) =>
+        i === idx
+          ? {
+              ...item,
+              personLinks: [
+                ...(item.personLinks ?? []),
+                {
+                  personText: txt,
+                  personSex: stagedTextPersonSex,
+                  linkType: stagedLinkRoleType,
+                  displayLabel: `${PERSON_LINK_TYPE_LABELS[stagedLinkRoleType]}: ${txt} [spoza bazy]`,
+                },
+              ],
+            }
+          : item
+      )
+    );
+    setStagedTextPersonInput('');
+  };
+
+  const handleRemovePersonFromStaged = (idx: number, linkIdx: number) => {
+    setStagedFiles(prev =>
+      prev.map((item, i) =>
+        i === idx
+          ? {
+              ...item,
+              personLinks: (item.personLinks ?? []).filter((_, pi) => pi !== linkIdx),
+            }
+          : item
+      )
+    );
   };
 
   const applyBulkSettingsToStaged = (
@@ -554,12 +728,15 @@ export default function MediaGallerySection({
     try {
       if (stagedFiles.length === 1) {
         const single = stagedFiles[0];
-        await mediaApi.uploadMedia({
+        const created = await mediaApi.uploadMedia({
           file: single.file,
           primaryContext: context,
-          customFolderName: customFolderName.trim() || undefined,
+          customFolderName: optTrim(customFolderName),
           customFileName: single.customFileName,
-          title: single.title,
+          title: optTrim(single.title),
+          sourceText: optTrim(single.sourceText),
+          inscriptionText: optTrim(single.inscriptionText),
+          description: optTrim(single.description),
           graveId,
           eventId,
           isBetweenRange: uploadIsRange,
@@ -579,18 +756,33 @@ export default function MediaGallerySection({
           rangeEndHour: uploadIsRange ? parseOptInt(manualBulkRangeEndHour) ?? undefined : undefined,
           rangeEndMinute: uploadIsRange ? parseOptInt(manualBulkRangeEndMinute) ?? undefined : undefined,
           rangeEndSecond: uploadIsRange ? parseOptInt(manualBulkRangeEndSecond) ?? undefined : undefined,
-          selectedMetadataSourceTag: single.selectedMetadataTag || undefined,
-          clientLastModifiedMs: single.file.lastModified || undefined,
+          selectedMetadataSourceTag: optTrim(single.selectedMetadataTag),
+          clientLastModifiedMs: single.file.lastModified > 0 ? single.file.lastModified : undefined,
           personIds: targetPersonIds,
           portraitMedia: context === 'PERSON' ? uploadPortraitType === 'SINGLE' : undefined,
           setAsPersonAvatar: context === 'PERSON' && setAsPrimary,
           setAsGravePrimary: context === 'GRAVE' && setAsPrimary,
         });
+
+        if (single.personLinks && single.personLinks.length > 0) {
+          await mediaApi.updateMedia(created.id, {
+            title: optTrim(single.title) ?? created.title,
+            sourceText: optTrim(single.sourceText) ?? created.sourceText,
+            inscriptionText: optTrim(single.inscriptionText) ?? created.inscriptionText,
+            description: optTrim(single.description) ?? created.description,
+            personLinks: single.personLinks.map(l => ({
+              personId: l.personId,
+              personText: l.personText,
+              personSex: l.personSex,
+              linkType: l.linkType,
+            })),
+          });
+        }
       } else {
-        await mediaApi.uploadBatchMedia({
+        const createdBatch = await mediaApi.uploadBatchMedia({
           files: stagedFiles.map(s => s.file),
           primaryContext: context,
-          customFolderName: customFolderName.trim() || undefined,
+          customFolderName: optTrim(customFolderName),
           customFileNames: stagedFiles.map(s => s.customFileName),
           titles: stagedFiles.map(s => s.title),
           customYears: stagedFiles.map(s => parseOptInt(s.year)),
@@ -600,9 +792,9 @@ export default function MediaGallerySection({
           customMinutes: stagedFiles.map(s => parseOptInt(s.minute)),
           customSeconds: stagedFiles.map(s => parseOptInt(s.second)),
           selectedMetadataSourceTags: stagedFiles.map(
-            s => s.selectedMetadataTag || null
+            s => optTrim(s.selectedMetadataTag) ?? null
           ),
-          clientLastModifiedList: stagedFiles.map(s => s.file.lastModified || null),
+          clientLastModifiedList: stagedFiles.map(s => s.file.lastModified > 0 ? s.file.lastModified : null),
           graveId,
           eventId,
           defaultYear:
@@ -610,6 +802,31 @@ export default function MediaGallerySection({
           personIds: targetPersonIds,
           portraitMedia: context === 'PERSON' ? uploadPortraitType === 'SINGLE' : undefined,
         });
+
+        for (let i = 0; i < createdBatch.length; i++) {
+          const st = stagedFiles[i];
+          const createdItem = createdBatch[i];
+          const hasDetails =
+            Boolean(optTrim(st.sourceText)) ||
+            Boolean(optTrim(st.inscriptionText)) ||
+            Boolean(optTrim(st.description)) ||
+            (st.personLinks !== undefined && st.personLinks.length > 0);
+
+          if (hasDetails) {
+            await mediaApi.updateMedia(createdItem.id, {
+              title: optTrim(st.title) ?? createdItem.title,
+              sourceText: optTrim(st.sourceText) ?? createdItem.sourceText,
+              inscriptionText: optTrim(st.inscriptionText) ?? createdItem.inscriptionText,
+              description: optTrim(st.description) ?? createdItem.description,
+              personLinks: st.personLinks?.map(l => ({
+                personId: l.personId,
+                personText: l.personText,
+                personSex: l.personSex,
+                linkType: l.linkType,
+              })),
+            });
+          }
+        }
       }
 
       setShowUpload(false);
@@ -1108,7 +1325,6 @@ export default function MediaGallerySection({
                 data-testid="toggle-bulk-edit-media-button"
                 onClick={() => {
                   setIsBulkEditMode(prev => !prev);
-                  setShowUpload(false);
                   setSelectedBulkIds(items.map(i => i.id));
                 }}
                 className={styles.btnSecondary}
@@ -1327,7 +1543,7 @@ export default function MediaGallerySection({
                   <option value="Digitized Date Time">EXIF: Digitized Date Time (data digitalizacji)</option>
                   <option value="Image Date Time">EXIF: Image Date Time (data obrazu)</option>
                   <option value="creation_time">MP4 / QuickTime: creation_time</option>
-                  <option value="lastModified">Plik: Data modyfikacji (lastModified)</option>
+                  <option value="lastModified">Data modyfikacji pliku (lastModified)</option>
                 </select>
               </div>
             )}
@@ -1398,7 +1614,7 @@ export default function MediaGallerySection({
                     setBulkEditTimeQual(e.target.value);
                   }}
                   className={styles.input}
-                  style={{ width: '130px', height: '34px' }}
+                  style={{ width: '180px', height: '34px' }}
                 >
                   {QUALIFIER_OPTIONS.map(q => (
                     <option key={q.value} value={q.value}>
@@ -1497,7 +1713,7 @@ export default function MediaGallerySection({
                       setBulkEditRangeEndTimeQual(e.target.value);
                     }}
                     className={styles.input}
-                    style={{ width: '130px', height: '34px' }}
+                    style={{ width: '155px', height: '34px' }}
                   >
                     {QUALIFIER_OPTIONS.map(q => (
                       <option key={q.value} value={q.value}>
@@ -1855,7 +2071,7 @@ export default function MediaGallerySection({
                     setManualBulkTimeQual(e.target.value);
                   }}
                   className={styles.input}
-                  style={{ width: '130px', height: '34px' }}
+                  style={{ width: '180px', height: '34px' }}
                 >
                   {QUALIFIER_OPTIONS.map(q => (
                     <option key={q.value} value={q.value}>
@@ -2027,7 +2243,7 @@ export default function MediaGallerySection({
                         setManualBulkRangeEndTimeQual(e.target.value);
                       }}
                       className={styles.input}
-                      style={{ width: '130px', height: '34px' }}
+                      style={{ width: '180px', height: '34px' }}
                     >
                       {QUALIFIER_OPTIONS.map(q => (
                         <option key={q.value} value={q.value}>
@@ -2088,6 +2304,210 @@ export default function MediaGallerySection({
             </div>
           )}
 
+          {stagedFiles.length > 1 && (
+            <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <strong style={{ fontSize: '0.88rem', color: '#1e293b' }}>
+                  ⚙️ Zbiorcze szczegóły dla wszystkich {String(stagedFiles.length)} plików w paczce
+                </strong>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowBulkDetails(prev => !prev);
+                  }}
+                  className={styles.btnSecondary}
+                  style={{ fontSize: '0.78rem', padding: '0.2rem 0.6rem' }}
+                >
+                  {showBulkDetails ? '▲ Zwiń zbiorcze szczegóły' : '▼ Rozwiń zbiorcze szczegóły'}
+                </button>
+              </div>
+
+              {showBulkDetails && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.25rem' }}>
+                  <div className={styles.stagedDetailsRow}>
+                    <div className={styles.formField}>
+                      <span className={styles.label}>Wspólny tytuł</span>
+                      <input
+                        type="text"
+                        placeholder="Wspólny tytuł dla wszystkich plików..."
+                        value={bulkTitle}
+                        onChange={e => {
+                          setBulkTitle(e.target.value);
+                        }}
+                        className={styles.input}
+                      />
+                    </div>
+                    <div className={styles.formField}>
+                      <span className={styles.label}>Wspólne źródło zdjęcia / filmu</span>
+                      <input
+                        type="text"
+                        placeholder="np. Zbiór z archiwum rodzinnego"
+                        value={bulkSourceText}
+                        onChange={e => {
+                          setBulkSourceText(e.target.value);
+                        }}
+                        className={styles.input}
+                      />
+                    </div>
+                    <div className={styles.formField}>
+                      <span className={styles.label}>Wspólny podpis z odwrotu</span>
+                      <input
+                        type="text"
+                        placeholder="np. Pamiątka z wakacji"
+                        value={bulkInscriptionText}
+                        onChange={e => {
+                          setBulkInscriptionText(e.target.value);
+                        }}
+                        className={styles.input}
+                      />
+                    </div>
+                  </div>
+
+                  <div className={styles.formField} style={{ width: '100%' }}>
+                    <span className={styles.label}>Wspólny opis tekstowy</span>
+                    <textarea
+                      rows={3}
+                      placeholder="Wspólny opis dla wszystkich wgrywanych plików..."
+                      value={bulkDescription}
+                      onChange={e => {
+                        setBulkDescription(e.target.value);
+                      }}
+                      className={styles.textarea}
+                    />
+                  </div>
+
+                  <div style={{ backgroundColor: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+                    <span className={styles.label}>
+                      Wspólne osoby na zdjęciu, osoby powiązane oraz autorzy:
+                    </span>
+                    <div className={styles.personLinksGrid}>
+                      <div className={styles.formField}>
+                        <span className={styles.label}>Rodzaj powiązania</span>
+                        <select
+                          value={bulkLinkRoleType}
+                          onChange={e => {
+                            setBulkLinkRoleType(e.target.value as 'DEPICTED' | 'RELATED' | 'AUTHOR');
+                          }}
+                          className={styles.input}
+                        >
+                          <option value="DEPICTED">👁️ Osoba widoczna na zdjęciu / filmie</option>
+                          <option value="RELATED">🔗 Osoba powiązana ze zdjęciem / filmem</option>
+                          <option value="AUTHOR">📷 Autor zdjęcia / nagrania (kto wykonał)</option>
+                        </select>
+                      </div>
+
+                      <div className={styles.formField}>
+                        <span className={styles.label}>Dodaj osobę z drzewa</span>
+                        <div style={{ display: 'flex', gap: '0.4rem' }}>
+                          <input
+                            type="text"
+                            placeholder="Szukaj w drzewie..."
+                            value={bulkLinkPersonQuery}
+                            onChange={e => {
+                              setBulkLinkPersonQuery(e.target.value);
+                            }}
+                            className={styles.input}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => void handleSearchPersonForBulk()}
+                            className={styles.btnSecondary}
+                          >
+                            Szukaj
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className={styles.formField}>
+                        <span className={styles.label}>Lub wpisz osobę tekstowo</span>
+                        <div style={{ display: 'flex', gap: '0.4rem' }}>
+                          <input
+                            type="text"
+                            placeholder="np. Fotograf z Lublina"
+                            value={bulkLinkTextInput}
+                            onChange={e => {
+                              setBulkLinkTextInput(e.target.value);
+                            }}
+                            className={styles.input}
+                          />
+                          <select
+                            value={bulkLinkTextSex}
+                            onChange={e => {
+                              setBulkLinkTextSex(e.target.value as PersonSex);
+                            }}
+                            className={styles.input}
+                            style={{ width: '75px' }}
+                          >
+                            <option value="MALE">M</option>
+                            <option value="FEMALE">K</option>
+                            <option value="UNKNOWN">?</option>
+                          </select>
+                          <button
+                            type="button"
+                            onClick={handleAddTextPersonToBulk}
+                            className={styles.btnSecondary}
+                          >
+                            + Dodaj
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {bulkLinkPersonResults.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                        {bulkLinkPersonResults.map(p => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => {
+                              handleAddDbPersonToBulk(p);
+                            }}
+                            className={styles.btnSecondary}
+                          >
+                            + Wybierz: {p.givenName} {p.surname} ({p.birthYear ?? '?'})
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {bulkPersonLinks.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                        {bulkPersonLinks.map((pl, bIdx) => (
+                          <span
+                            key={`${pl.displayLabel}-${String(bIdx)}`}
+                            className={styles.selectedFilesBadge}
+                          >
+                            {pl.displayLabel}{' '}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBulkPersonLinks(prev => prev.filter((_, i) => i !== bIdx));
+                              }}
+                              className={styles.pillRemoveBtn}
+                            >
+                              ✕
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.4rem' }}>
+                    <button
+                      type="button"
+                      onClick={handleApplyBulkDetailsToAll}
+                      className={styles.btnPrimary}
+                      style={{ fontSize: '0.82rem', padding: '0.35rem 0.85rem' }}
+                    >
+                      ✓ Zastosuj te szczegóły do wszystkich plików w paczce
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {stagedFiles.length > 0 && (
             <div className={styles.stagedList}>
               {stagedFiles.map((st, idx) => {
@@ -2137,7 +2557,9 @@ export default function MediaGallerySection({
                             </select>
                           ) : (
                             <span>
-                              ({chosenMeta.sourceTag}): <strong>{chosenMeta.formattedText}</strong>
+                              {chosenMeta.sourceTag.includes('lastModified')
+                                ? 'data modyfikacji pliku'
+                                : chosenMeta.sourceTag.replace(/[()]/g, '')} — <strong>{chosenMeta.formattedText}</strong>
                             </span>
                           )}
 
@@ -2194,25 +2616,6 @@ export default function MediaGallerySection({
                             );
                           }}
                           placeholder="Nazwa snake_case.jpg"
-                          className={styles.input}
-                        />
-                      </div>
-
-                      <div>
-                        <span className={styles.label}>Tytuł / podpis</span>
-                        <input
-                          type="text"
-                          aria-label="Tytuł lub podpis"
-                          value={st.title}
-                          onChange={e => {
-                            const val = e.target.value;
-                            setStagedFiles(prev =>
-                              prev.map((item, i) =>
-                                i === idx ? { ...item, title: val } : item
-                              )
-                            );
-                          }}
-                          placeholder="Podpis (opcjonalnie)..."
                           className={styles.input}
                         />
                       </div>
@@ -2321,7 +2724,255 @@ export default function MediaGallerySection({
                           />
                         </div>
                       </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setStagedFiles(prev =>
+                              prev.map((item, i) =>
+                                i === idx ? { ...item, showDetails: !item.showDetails } : item
+                              )
+                            );
+                          }}
+                          className={styles.btnSecondary}
+                          style={{ height: '36px', whiteSpace: 'nowrap' }}
+                        >
+                          {st.showDetails ? '▲ Zwiń szczegóły' : '🔍 Szczegóły pliku ▼'}
+                          {(Boolean(st.title) ||
+                            Boolean(st.sourceText) ||
+                            Boolean(st.inscriptionText) ||
+                            Boolean(st.description) ||
+                            Boolean(st.personLinks && st.personLinks.length > 0)) && (
+                            <span style={{ marginLeft: '0.4rem', color: '#16a34a', fontWeight: 800 }}>
+                              ●
+                            </span>
+                          )}
+                        </button>
+                      </div>
                     </div>
+
+                    {st.showDetails && (
+                      <div className={styles.stagedDetailsPanel}>
+                        <div className={styles.stagedDetailsRow}>
+                          <div className={styles.formField}>
+                            <span className={styles.label}>Tytuł</span>
+                            <input
+                              type="text"
+                              aria-label="Tytuł zdjęcia"
+                              placeholder="Krótki tytuł zdjęcia lub filmu..."
+                              value={st.title}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setStagedFiles(prev =>
+                                  prev.map((item, i) =>
+                                    i === idx ? { ...item, title: val } : item
+                                  )
+                                );
+                              }}
+                              className={styles.input}
+                            />
+                          </div>
+
+                          <div className={styles.formField}>
+                            <span className={styles.label}>Źródło zdjęcia / filmu (tekstowo)</span>
+                            <input
+                              type="text"
+                              placeholder="np. Z albumu babci Katarzyny"
+                              value={st.sourceText ?? ''}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setStagedFiles(prev =>
+                                  prev.map((item, i) =>
+                                    i === idx ? { ...item, sourceText: val } : item
+                                  )
+                                );
+                              }}
+                              className={styles.input}
+                            />
+                          </div>
+
+                          <div className={styles.formField}>
+                            <span className={styles.label}>
+                              Podpis z odwrotu zdjęcia / oryginalna dedykacja
+                            </span>
+                            <input
+                              type="text"
+                              placeholder="np. Na pamiątkę z Krynicy, 1938 r."
+                              value={st.inscriptionText ?? ''}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setStagedFiles(prev =>
+                                  prev.map((item, i) =>
+                                    i === idx ? { ...item, inscriptionText: val } : item
+                                  )
+                                );
+                              }}
+                              className={styles.input}
+                            />
+                          </div>
+                        </div>
+
+                        <div className={styles.formField} style={{ width: '100%' }}>
+                          <span className={styles.label}>Opis tekstowy (zwykły tekst)</span>
+                          <textarea
+                            rows={3}
+                            placeholder="Dodatkowe informacje o zdjęciu/nagraniu..."
+                            value={st.description ?? ''}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setStagedFiles(prev =>
+                                prev.map((item, i) =>
+                                  i === idx ? { ...item, description: val } : item
+                                )
+                              );
+                            }}
+                            className={styles.textarea}
+                          />
+                        </div>
+
+                        <div
+                          style={{
+                            backgroundColor: '#ffffff',
+                            border: '1px solid #cbd5e1',
+                            borderRadius: '8px',
+                            padding: '0.75rem',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.55rem',
+                          }}
+                        >
+                          <span className={styles.label}>
+                            Osoby na zdjęciu, osoby powiązane oraz autorzy (z bazy lub tekstowo):
+                          </span>
+                          <div className={styles.personLinksGrid}>
+                            <div className={styles.formField}>
+                              <span className={styles.label}>Rodzaj powiązania</span>
+                              <select
+                                value={stagedLinkRoleType}
+                                onChange={e => {
+                                  setStagedLinkRoleType(
+                                    e.target.value as 'DEPICTED' | 'RELATED' | 'AUTHOR'
+                                  );
+                                }}
+                                className={styles.input}
+                              >
+                                <option value="DEPICTED">
+                                  👁️ Osoba widoczna na zdjęciu / filmie
+                                </option>
+                                <option value="RELATED">
+                                  🔗 Osoba powiązana ze zdjęciem / filmem
+                                </option>
+                                <option value="AUTHOR">
+                                  📷 Autor zdjęcia / nagrania (kto wykonał)
+                                </option>
+                              </select>
+                            </div>
+
+                            <div className={styles.formField}>
+                              <span className={styles.label}>Dodaj osobę z drzewa</span>
+                              <div style={{ display: 'flex', gap: '0.4rem' }}>
+                                <input
+                                  type="text"
+                                  placeholder="Szukaj w drzewie..."
+                                  value={activeStagedSearchIdx === idx ? stagedPersonQuery : ''}
+                                  onChange={e => {
+                                    setActiveStagedSearchIdx(idx);
+                                    setStagedPersonQuery(e.target.value);
+                                  }}
+                                  className={styles.input}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void handleSearchPersonForStaged(idx);
+                                  }}
+                                  className={styles.btnSecondary}
+                                >
+                                  Szukaj
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className={styles.formField}>
+                              <span className={styles.label}>Lub wpisz osobę tekstowo</span>
+                              <div style={{ display: 'flex', gap: '0.4rem' }}>
+                                <input
+                                  type="text"
+                                  placeholder="np. Fotograf z Lublina"
+                                  value={activeStagedSearchIdx === idx ? stagedTextPersonInput : ''}
+                                  onChange={e => {
+                                    setActiveStagedSearchIdx(idx);
+                                    setStagedTextPersonInput(e.target.value);
+                                  }}
+                                  className={styles.input}
+                                />
+                                <select
+                                  value={stagedTextPersonSex}
+                                  onChange={e => {
+                                    setStagedTextPersonSex(e.target.value as PersonSex);
+                                  }}
+                                  className={styles.input}
+                                  style={{ width: '75px' }}
+                                >
+                                  <option value="MALE">M</option>
+                                  <option value="FEMALE">K</option>
+                                  <option value="UNKNOWN">?</option>
+                                </select>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    handleAddTextPersonToStaged(idx);
+                                  }}
+                                  className={styles.btnSecondary}
+                                >
+                                  + Dodaj
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          {activeStagedSearchIdx === idx && stagedPersonResults.length > 0 && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                              {stagedPersonResults.map(p => (
+                                <button
+                                  key={p.id}
+                                  type="button"
+                                  onClick={() => {
+                                    handleAddDbPersonToStaged(idx, p);
+                                  }}
+                                  className={styles.btnSecondary}
+                                >
+                                  + Wybierz: {p.givenName} {p.surname} ({p.birthYear ?? '?'})
+                                </button>
+                              ))}
+                            </div>
+                          )}
+
+                          {st.personLinks && st.personLinks.length > 0 && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                              {st.personLinks.map((pl, pIdx) => (
+                                <span
+                                  key={`${pl.displayLabel}-${String(pIdx)}`}
+                                  className={styles.selectedFilesBadge}
+                                >
+                                  {pl.displayLabel}{' '}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      handleRemovePersonFromStaged(idx, pIdx);
+                                    }}
+                                    className={styles.pillRemoveBtn}
+                                  >
+                                    ✕
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -2824,7 +3475,6 @@ export default function MediaGallerySection({
                   <audio
                     src={activeStageUrl}
                     controls
-                    autoPlay
                     style={{ width: '100%', borderRadius: '30px' }}
                   />
                 </div>
@@ -2935,21 +3585,22 @@ export default function MediaGallerySection({
                         className={styles.input}
                       />
                     </div>
-                    <div className={styles.formField}>
-                      <label htmlFor="edit-media-desc" className={styles.label}>
-                        Opis tekstowy (zwykły tekst)
-                      </label>
-                      <textarea
-                        id="edit-media-desc"
-                        rows={4}
-                        placeholder="Dodatkowe informacje o zdjęciu/nagraniu..."
-                        value={editDescription}
-                        onChange={e => {
-                          setEditDescription(e.target.value);
-                        }}
-                        className={styles.textarea}
-                      />
-                    </div>
+                  </div>
+
+                  <div className={styles.formField} style={{ width: '100%' }}>
+                    <label htmlFor="edit-media-desc" className={styles.label}>
+                      Opis tekstowy (zwykły tekst)
+                    </label>
+                    <textarea
+                      id="edit-media-desc"
+                      rows={4}
+                      placeholder="Dodatkowe informacje o zdjęciu/nagraniu..."
+                      value={editDescription}
+                      onChange={e => {
+                        setEditDescription(e.target.value);
+                      }}
+                      className={styles.textarea}
+                    />
                   </div>
 
                   {/* Date & Time Mode */}
@@ -3099,7 +3750,7 @@ export default function MediaGallerySection({
                             setEditTimeQual(e.target.value);
                           }}
                           className={styles.input}
-                          style={{ width: '130px', height: '34px' }}
+                          style={{ width: '180px', height: '34px' }}
                         >
                           {QUALIFIER_OPTIONS.map(q => (
                             <option key={q.value} value={q.value}>
@@ -3198,7 +3849,7 @@ export default function MediaGallerySection({
                               setEditRangeEndTimeQual(e.target.value);
                             }}
                             className={styles.input}
-                            style={{ width: '130px', height: '34px' }}
+                            style={{ width: '180px', height: '34px' }}
                           >
                             {QUALIFIER_OPTIONS.map(q => (
                               <option key={q.value} value={q.value}>
@@ -3261,7 +3912,7 @@ export default function MediaGallerySection({
                     <span className={styles.label}>
                       Osoby na zdjęciu, osoby powiązane oraz autorzy (z bazy lub tekstowo):
                     </span>
-                    <div className={styles.formGrid}>
+                    <div className={styles.personLinksGrid}>
                       <div className={styles.formField}>
                         <span className={styles.label}>Rodzaj powiązania</span>
                         <select

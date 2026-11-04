@@ -121,8 +121,8 @@
 .filterTopRow {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 1rem;
+  align-items: flex-end;
+  gap: 0.85rem;
   width: 100%;
 }
 
@@ -130,13 +130,19 @@
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  flex: 1 1 180px;
+  flex: 1 1 140px;
+  min-width: 130px;
   position: relative;
 }
 
 .filterFieldTypes {
-  flex: 1.5 1 270px;
-  min-width: 250px;
+  flex: 1.1 1 200px;
+  min-width: 190px;
+}
+
+.filterFieldYears {
+  flex: 1.1 1 190px;
+  min-width: 170px;
 }
 
 .formField {
@@ -284,7 +290,8 @@
   align-items: center;
   gap: 0.5rem;
   height: 38px;
-  margin-top: 1.42rem;
+  flex: 0 0 auto;
+  align-self: flex-end;
   padding: 0 0.85rem;
   font-size: 0.86rem;
   font-weight: 600;
@@ -293,6 +300,7 @@
   border: 1px solid #cbd5e1;
   border-radius: 8px;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 /* ==========================================================================

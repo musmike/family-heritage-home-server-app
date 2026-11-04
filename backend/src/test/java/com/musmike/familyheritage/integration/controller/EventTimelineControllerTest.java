@@ -212,10 +212,10 @@ class EventTimelineControllerTest extends AbstractIntegrationTest {
         Long subEventId = objectMapper.readTree(createdRes.getResponse().getContentAsString()).get("eventId").asLong();
         Event createdSubEvent = eventRepository.findById(subEventId).orElseThrow();
 
-        // Verify that child event directory is nested inside first parent event's folder and includes all given names!
+        // Verify that child event directory is nested inside first parent event's folder (no participants added after custom titles)
         String resolvedSubDir = mediaService.resolveEventDirectoryPath(createdSubEvent, null);
         assertThat(resolvedSubDir).isEqualTo(
-                "dated/1960s/1960/1960_07_10_vacation_jan_aleksander_kowalski/1960_07_11_chrzest_marka_marek_kowalski_jan_aleksander_kowalski_stanislawa_wisniewska_sasiadka"
+                "dated/1960s/1960/1960_07_10_vacation_jan_aleksander_kowalski/1960_07_11_chrzest_marka"
         );
     }
 

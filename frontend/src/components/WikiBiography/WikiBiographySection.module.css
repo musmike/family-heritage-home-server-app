@@ -354,23 +354,23 @@
 .wikiMediaRight {
   float: right;
   clear: right;
-  margin: 0.35rem 0 1rem 1.5rem;
-  max-width: 320px;
+  margin: 0.35rem 0 1rem 1.25rem;
+  max-width: 240px;
   width: 100%;
 }
 
 .wikiMediaLeft {
   float: left;
   clear: left;
-  margin: 0.35rem 1.5rem 1rem 0;
-  max-width: 320px;
+  margin: 0.35rem 1.25rem 1rem 0;
+  max-width: 240px;
   width: 100%;
 }
 
 .wikiMediaCenter {
   float: none;
   margin: 1.25rem auto;
-  max-width: 520px;
+  max-width: 360px;
   width: 100%;
   clear: both;
 }
@@ -393,9 +393,15 @@
 
 .wikiMediaImg {
   width: 100%;
-  max-height: 320px;
+  max-height: 240px;
   object-fit: contain;
   background-color: #0f172a;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.wikiMediaImg:hover {
+  opacity: 0.92;
 }
 
 .wikiMediaCaption {

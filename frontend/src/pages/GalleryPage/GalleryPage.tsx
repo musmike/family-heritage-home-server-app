@@ -12,9 +12,10 @@ import type {
   MediaItemDto,
   MediaPrimaryContext,
   MediaType,
+  SaveMediaPersonLinkRequestDto,
   UpdateMediaItemRequestDto,
 } from '../../types/media';
-import type { PersonListItemDto } from '../../types/biography';
+import type { PersonListItemDto, PersonSex } from '../../types/biography';
 
 interface FolderTileItem {
   key: string;
@@ -29,7 +30,13 @@ interface FolderTileItem {
 }
 
 const getTopPreviewItems = (list: MediaItemDto[]): { id: number; mediaType: MediaType }[] =>
-  list.slice(0, 3).map(m => ({ id: m.id, mediaType: m.mediaType }));
+  list.slice(0, 4).map(m => ({ id: m.id, mediaType: m.mediaType }));
+
+const PERSON_LINK_TYPE_LABELS: Record<'DEPICTED' | 'RELATED' | 'AUTHOR', string> = {
+  DEPICTED: '👁️ Na zdjęciu/filmie',
+  RELATED: '🔗 Powiązana',
+  AUTHOR: '📷 Autor',
+};
 
 const getPolishWeekdayLabel = (y: string, m: string, d: string): string | null => {
   const yNum = Number(y);
@@ -57,7 +64,7 @@ const toIsoDateInputValue = (y: string, m: string, d: string): string => {
 
 const QUALIFIER_OPTIONS = [
   { value: 'EXACT', label: 'Dokładna data' },
-  { value: 'APPROXIMATE', label: 'Około (w przybliżeniu)' },
+  { value: 'APPROXIMATE', label: 'Szacunkowo / Około' },
   { value: 'BEFORE', label: 'Przed' },
   { value: 'AFTER', label: 'Po' },
 ];
@@ -136,6 +143,7 @@ export default function GalleryPage() {
   const [colStartTimeQual, setColStartTimeQual] = useState<string>('EXACT');
   const [colStartHour, setColStartHour] = useState<string>('');
   const [colStartMinute, setColStartMinute] = useState<string>('');
+  const [colStartSecond, setColStartSecond] = useState<string>('');
   const [colEndQual, setColEndQual] = useState<string>('EXACT');
   const [colEndYear, setColEndYear] = useState<string>('');
   const [colEndMonth, setColEndMonth] = useState<string>('');
@@ -143,6 +151,7 @@ export default function GalleryPage() {
   const [colEndTimeQual, setColEndTimeQual] = useState<string>('EXACT');
   const [colEndHour, setColEndHour] = useState<string>('');
   const [colEndMinute, setColEndMinute] = useState<string>('');
+  const [colEndSecond, setColEndSecond] = useState<string>('');
 
   // Admin Single & Batch Upload Form (with Advanced Date/Time/Calendar & Portrait Single/Group)
   const [showUploadForm, setShowUploadForm] = useState<boolean>(false);
@@ -189,6 +198,23 @@ export default function GalleryPage() {
   const [editRangeEndYear, setEditRangeEndYear] = useState<string>('');
   const [editRangeEndMonth, setEditRangeEndMonth] = useState<string>('');
   const [editRangeEndDay, setEditRangeEndDay] = useState<string>('');
+  const [editSecond, setEditSecond] = useState<string>('');
+  const [editRangeEndTimeQual, setEditRangeEndTimeQual] = useState<string>('EXACT');
+  const [editRangeEndHour, setEditRangeEndHour] = useState<string>('');
+  const [editRangeEndMinute, setEditRangeEndMinute] = useState<string>('');
+  const [editRangeEndSecond, setEditRangeEndSecond] = useState<string>('');
+  const [editCollectionId, setEditCollectionId] = useState<string>('');
+  const [editOriginalCollectionId, setEditOriginalCollectionId] = useState<string>('');
+  const [editPersonLinks, setEditPersonLinks] = useState<
+    (SaveMediaPersonLinkRequestDto & { displayLabel: string })[]
+  >([]);
+  const [editLinkRoleType, setEditLinkRoleType] = useState<
+    'DEPICTED' | 'RELATED' | 'AUTHOR'
+  >('DEPICTED');
+  const [editLinkPersonQuery, setEditLinkPersonQuery] = useState<string>('');
+  const [editLinkPersonResults, setEditLinkPersonResults] = useState<PersonListItemDto[]>([]);
+  const [editLinkTextInput, setEditLinkTextInput] = useState<string>('');
+  const [editLinkTextSex, setEditLinkTextSex] = useState<PersonSex>('UNKNOWN');
 
   // Fullscreen Lightbox state
   const [activeLightboxList, setActiveLightboxList] = useState<MediaItemDto[]>([]);
@@ -198,6 +224,8 @@ export default function GalleryPage() {
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   const [pinchStartDist, setPinchStartDist] = useState<number | null>(null);
   const [showDetailsDrawer, setShowDetailsDrawer] = useState<boolean>(false);
+  const [collectionToDelete, setCollectionToDelete] = useState<{ id: number; title: string } | null>(null);
+  const [itemToDelete, setItemToDelete] = useState<MediaItemDto | null>(null);
 
   const resetDrillDown = () => {
     setSelectedDecade(null);
@@ -448,7 +476,7 @@ export default function GalleryPage() {
         } else {
           buckets.set(bKey, {
             title: item.collectionName,
-            subtitle: '📂 Kolekcja datowana',
+            subtitle: '📂 Album datowany',
             list: [item],
           });
         }
@@ -1043,6 +1071,7 @@ export default function GalleryPage() {
     setColStartTimeQual(col.startTimeQualifier ?? 'EXACT');
     setColStartHour(col.startHour !== null && col.startHour !== undefined ? String(col.startHour) : '');
     setColStartMinute(col.startMinute !== null && col.startMinute !== undefined ? String(col.startMinute) : '');
+    setColStartSecond(col.startSecond !== null && col.startSecond !== undefined ? String(col.startSecond) : '');
     setColEndQual(col.endQualifier ?? 'EXACT');
     setColEndYear(col.endYear ? String(col.endYear) : '');
     setColEndMonth(col.endMonth ? String(col.endMonth) : '');
@@ -1050,6 +1079,7 @@ export default function GalleryPage() {
     setColEndTimeQual(col.endTimeQualifier ?? 'EXACT');
     setColEndHour(col.endHour !== null && col.endHour !== undefined ? String(col.endHour) : '');
     setColEndMinute(col.endMinute !== null && col.endMinute !== undefined ? String(col.endMinute) : '');
+    setColEndSecond(col.endSecond !== null && col.endSecond !== undefined ? String(col.endSecond) : '');
     setShowCreateCollection(true);
   };
 
@@ -1060,7 +1090,7 @@ export default function GalleryPage() {
         name: colName.trim(),
         customSlug: colSlug.trim() || null,
         description: colDesc.trim() || null,
-        parentCollectionId: colParentId !== '' ? Number(colParentId) : null,
+        parentCollectionId: colIsDated ? null : (colParentId !== '' ? Number(colParentId) : null),
         datedCollection: colIsDated,
         isRange: colIsDated ? colIsRange : false,
         startQualifier: colIsDated ? colStartQual : null,
@@ -1070,6 +1100,7 @@ export default function GalleryPage() {
         startTimeQualifier: colIsDated ? colStartTimeQual : null,
         startHour: colIsDated && colStartHour.trim() !== '' ? Number(colStartHour) : null,
         startMinute: colIsDated && colStartMinute.trim() !== '' ? Number(colStartMinute) : null,
+        startSecond: colIsDated && colStartSecond.trim() !== '' ? Number(colStartSecond) : null,
         endQualifier: colIsDated && colIsRange ? colEndQual : null,
         endYear: colIsDated && colIsRange && colEndYear.trim() !== '' ? Number(colEndYear) : null,
         endMonth: colIsDated && colIsRange && colEndMonth.trim() !== '' ? Number(colEndMonth) : null,
@@ -1077,6 +1108,7 @@ export default function GalleryPage() {
         endTimeQualifier: colIsDated && colIsRange ? colEndTimeQual : null,
         endHour: colIsDated && colIsRange && colEndHour.trim() !== '' ? Number(colEndHour) : null,
         endMinute: colIsDated && colIsRange && colEndMinute.trim() !== '' ? Number(colEndMinute) : null,
+        endSecond: colIsDated && colIsRange && colEndSecond.trim() !== '' ? Number(colEndSecond) : null,
       };
 
       if (editingCollectionId !== null) {
@@ -1097,11 +1129,13 @@ export default function GalleryPage() {
       setColStartDay('');
       setColStartHour('');
       setColStartMinute('');
+      setColStartSecond('');
       setColEndYear('');
       setColEndMonth('');
       setColEndDay('');
       setColEndHour('');
       setColEndMinute('');
+      setColEndSecond('');
       setShowCreateCollection(false);
       await fetchGallery();
     } catch (err: unknown) {
@@ -1113,20 +1147,15 @@ export default function GalleryPage() {
     }
   };
 
-  const handleDeleteCollection = async (collectionId: number, collectionTitle: string) => {
-    if (
-      !window.confirm(
-        `Czy na pewno chcesz usunąć kolekcję „${collectionTitle}”?\nJeśli znajdują się w niej pliki przypisane wyłącznie do niej, musisz je najpierw przenieść lub usunąć.`
-      )
-    ) {
-      return;
-    }
+  const handleConfirmDeleteCollection = async () => {
+    if (!collectionToDelete) return;
     try {
-      await mediaApi.deleteCollection(collectionId);
-      if (selectedCollectionId === collectionId) {
+      await mediaApi.deleteCollection(collectionToDelete.id);
+      if (selectedCollectionId === collectionToDelete.id) {
         setSelectedCollectionId(null);
         setSelectedCollectionSubfolder(null);
       }
+      setCollectionToDelete(null);
       await fetchGallery();
     } catch (err: unknown) {
       if (axios.isAxiosError<{ message?: string }>(err) && err.response?.data.message) {
@@ -1134,6 +1163,18 @@ export default function GalleryPage() {
       } else {
         setErrorMessage('Nie udało się usunąć kolekcji.');
       }
+    }
+  };
+
+  const handleConfirmDeleteMediaItem = async () => {
+    if (!itemToDelete) return;
+    try {
+      await mediaApi.deleteMedia(itemToDelete.id);
+      setItemToDelete(null);
+      setActiveIndex(null);
+      await fetchGallery();
+    } catch {
+      setErrorMessage('Nie udało się usunąć pliku.');
     }
   };
 
@@ -1151,22 +1192,116 @@ export default function GalleryPage() {
     setEditTimeQual(item.timeQualifier ?? 'EXACT');
     setEditHour(item.hour !== null && item.hour !== undefined ? String(item.hour) : '');
     setEditMinute(item.minute !== null && item.minute !== undefined ? String(item.minute) : '');
+    setEditSecond(item.second !== null && item.second !== undefined ? String(item.second) : '');
     setEditRangeEndQual(item.rangeEndQualifier ?? 'EXACT');
     setEditRangeEndYear(item.rangeEndYear ? String(item.rangeEndYear) : '');
     setEditRangeEndMonth(item.rangeEndMonth ? String(item.rangeEndMonth) : '');
     setEditRangeEndDay(item.rangeEndDay ? String(item.rangeEndDay) : '');
+    setEditRangeEndTimeQual(item.rangeEndTimeQualifier ?? 'EXACT');
+    setEditRangeEndHour(item.rangeEndHour !== null && item.rangeEndHour !== undefined ? String(item.rangeEndHour) : '');
+    setEditRangeEndMinute(item.rangeEndMinute !== null && item.rangeEndMinute !== undefined ? String(item.rangeEndMinute) : '');
+    setEditRangeEndSecond(item.rangeEndSecond !== null && item.rangeEndSecond !== undefined ? String(item.rangeEndSecond) : '');
+    const colStr = item.collectionId !== null && item.collectionId !== undefined ? String(item.collectionId) : '';
+    setEditCollectionId(colStr);
+    setEditOriginalCollectionId(colStr);
+
+    const initialLinks: (SaveMediaPersonLinkRequestDto & { displayLabel: string })[] = [];
+    if (item.depictedPersons) {
+      for (const dp of item.depictedPersons) {
+        initialLinks.push({
+          personId: dp.personId ?? undefined,
+          personText: dp.personText ?? undefined,
+          personSex: dp.sex ?? undefined,
+          linkType: 'DEPICTED',
+          displayLabel: `👁️ Na zdjęciu/filmie: ${dp.displayName}`,
+        });
+      }
+    }
+    if (item.relatedPersons) {
+      for (const rp of item.relatedPersons) {
+        initialLinks.push({
+          personId: rp.personId ?? undefined,
+          personText: rp.personText ?? undefined,
+          personSex: rp.sex ?? undefined,
+          linkType: 'RELATED',
+          displayLabel: `🔗 Powiązana: ${rp.displayName}`,
+        });
+      }
+    }
+    if (item.authors) {
+      for (const ap of item.authors) {
+        initialLinks.push({
+          personId: ap.personId ?? undefined,
+          personText: ap.personText ?? undefined,
+          personSex: ap.sex ?? undefined,
+          linkType: 'AUTHOR',
+          displayLabel: `📷 Autor: ${ap.displayName}`,
+        });
+      }
+    }
+    setEditPersonLinks(initialLinks);
     setIsEditingMediaItem(true);
+  };
+
+  const handleSearchPersonForEdit = async () => {
+    if (editLinkPersonQuery.trim() === '') return;
+    try {
+      const res = await biographyApi.listPeople({
+        search: editLinkPersonQuery.trim(),
+        page: 0,
+        size: 8,
+      });
+      setEditLinkPersonResults(res.content);
+    } catch {
+      setEditLinkPersonResults([]);
+    }
+  };
+
+  const handleAddDbPersonToEdit = (p: PersonListItemDto) => {
+    const fullName = `${p.givenName ?? ''} ${p.surname ?? ''}`.trim();
+    setEditPersonLinks(prev => [
+      ...prev,
+      {
+        personId: p.id,
+        linkType: editLinkRoleType,
+        displayLabel: `${PERSON_LINK_TYPE_LABELS[editLinkRoleType]}: ${fullName}`,
+      },
+    ]);
+    setEditLinkPersonResults([]);
+    setEditLinkPersonQuery('');
+  };
+
+  const handleAddTextPersonToEdit = () => {
+    const txt = editLinkTextInput.trim();
+    if (txt === '') return;
+    setEditPersonLinks(prev => [
+      ...prev,
+      {
+        personText: txt,
+        personSex: editLinkTextSex,
+        linkType: editLinkRoleType,
+        displayLabel: `${PERSON_LINK_TYPE_LABELS[editLinkRoleType]}: ${txt} [spoza bazy]`,
+      },
+    ]);
+    setEditLinkTextInput('');
   };
 
   const handleSaveMediaEdit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (editMediaId === null) return;
+    if (editYear.trim() === '' && editCollectionId.trim() === '') {
+      setErrorMessage(
+        'Dla plików bez daty wybierz album/kolekcję docelową przed zapisaniem (nie mogą pozostać luźno).'
+      );
+      return;
+    }
     try {
       const payload: UpdateMediaItemRequestDto = {
         title: editTitle.trim() || null,
         description: editDescription.trim() || null,
         inscriptionText: editInscription.trim() || null,
         sourceText: editSourceText.trim() || null,
+        collectionId: editCollectionId.trim() !== '' ? Number(editCollectionId) : null,
         isBetweenRange: editIsRange,
         dateQualifier: editDateQual,
         year: editYear.trim() !== '' ? Number(editYear) : null,
@@ -1175,10 +1310,21 @@ export default function GalleryPage() {
         timeQualifier: editTimeQual,
         hour: editHour.trim() !== '' ? Number(editHour) : null,
         minute: editMinute.trim() !== '' ? Number(editMinute) : null,
+        second: editSecond.trim() !== '' ? Number(editSecond) : null,
         rangeEndQualifier: editIsRange ? editRangeEndQual : null,
         rangeEndYear: editIsRange && editRangeEndYear.trim() !== '' ? Number(editRangeEndYear) : null,
         rangeEndMonth: editIsRange && editRangeEndMonth.trim() !== '' ? Number(editRangeEndMonth) : null,
         rangeEndDay: editIsRange && editRangeEndDay.trim() !== '' ? Number(editRangeEndDay) : null,
+        rangeEndTimeQualifier: editIsRange ? editRangeEndTimeQual : null,
+        rangeEndHour: editIsRange && editRangeEndHour.trim() !== '' ? Number(editRangeEndHour) : null,
+        rangeEndMinute: editIsRange && editRangeEndMinute.trim() !== '' ? Number(editRangeEndMinute) : null,
+        rangeEndSecond: editIsRange && editRangeEndSecond.trim() !== '' ? Number(editRangeEndSecond) : null,
+        personLinks: editPersonLinks.map(l => ({
+          personId: l.personId,
+          personText: l.personText,
+          personSex: l.personSex,
+          linkType: l.linkType,
+        })),
       };
       await mediaApi.updateMedia(editMediaId, payload);
       setIsEditingMediaItem(false);
@@ -1271,16 +1417,6 @@ export default function GalleryPage() {
     }
   };
 
-  const handleDeleteMediaItem = async (mediaId: number) => {
-    try {
-      await mediaApi.deleteMedia(mediaId);
-      setActiveIndex(null);
-      await fetchGallery();
-    } catch {
-      setErrorMessage('Nie udało się usunąć pliku.');
-    }
-  };
-
   const handleOpenItem = (item: MediaItemDto, contextList: MediaItemDto[]) => {
     setActiveLightboxList(contextList);
     const idx = contextList.findIndex(m => m.id === item.id);
@@ -1366,23 +1502,14 @@ export default function GalleryPage() {
             >
               <div className={styles.folderThumbBox}>
                 {previews.length > 1 ? (
-                  <div className={styles.stackedThumbContainer}>
-                    {previews.map((pv, idx) => (
-                      <div
-                        key={pv.id}
-                        className={`${styles.stackedThumbItem} ${
-                          idx === 0
-                            ? styles.stackedThumbItem0
-                            : idx === 1
-                            ? styles.stackedThumbItem1
-                            : styles.stackedThumbItem2
-                        }`}
-                      >
+                  <div className={styles.collageThumbGrid}>
+                    {previews.map(pv => (
+                      <div key={pv.id} className={styles.collageThumbCell}>
                         {pv.mediaType === 'IMAGE' ? (
                           <img
                             src={mediaApi.getThumbnailUrl(pv.id)}
                             alt=""
-                            className={styles.thumbImg}
+                            className={styles.collageThumbImg}
                           />
                         ) : pv.mediaType === 'VIDEO' ? (
                           <video
@@ -1390,7 +1517,7 @@ export default function GalleryPage() {
                             preload="metadata"
                             muted
                             playsInline
-                            className={styles.thumbImg}
+                            className={styles.collageThumbImg}
                           />
                         ) : (
                           <div className={styles.audioThumbBox}>
@@ -1455,7 +1582,7 @@ export default function GalleryPage() {
                   type="button"
                   onClick={e => {
                     e.stopPropagation();
-                    void handleDeleteCollection(tile.collectionId, tile.title);
+                    setCollectionToDelete({ id: tile.collectionId, title: tile.title });
                   }}
                   className={`${styles.colActionBtn} ${styles.colActionBtnDanger}`}
                 >
@@ -1580,20 +1707,20 @@ export default function GalleryPage() {
                 }}
                 className={styles.btnSecondary}
               >
-                + Nowa kolekcja / kolekcja datowana
+                + Nowa kolekcja / album datowany
               </button>
             </>
           )}
         </div>
       </div>
 
-      {/* Create / Edit Collection / Sub-collection / Dated Collection Form */}
+      {/* Create / Edit Collection / Sub-collection / Dated Album Form */}
       {isAdmin && showCreateCollection && (
         <section className={styles.sectionCard} data-testid="create-collection-form">
           <h2 className={styles.groupTitle}>
             {editingCollectionId !== null
-              ? 'Edytuj kolekcję archiwalną lub datowaną'
-              : 'Utwórz nową kolekcję archiwalną, podkolekcję lub kolekcję datowaną'}
+              ? 'Edytuj kolekcję archiwalną lub album datowany'
+              : 'Utwórz nową kolekcję archiwalną, podkolekcję lub album datowany'}
           </h2>
           <form
             onSubmit={e => {
@@ -1619,28 +1746,30 @@ export default function GalleryPage() {
                 />
               </div>
 
-              <div className={styles.filterField} style={{ flex: '1 1 200px' }}>
-                <label htmlFor="col-parent-select" className={styles.filterLabel}>
-                  Kolekcja nadrzędna (dla podkolekcji, opcjonalnie)
-                </label>
-                <select
-                  id="col-parent-select"
-                  value={colParentId}
-                  onChange={e => {
-                    setColParentId(e.target.value);
-                  }}
-                  className={styles.selectInput}
-                >
-                  <option value="">— Brak (kolekcja główna) —</option>
-                  {allCollections
-                    .filter(c => editingCollectionId === null || c.id !== editingCollectionId)
-                    .map(c => (
-                      <option key={c.id} value={String(c.id)}>
-                        {c.name}
-                      </option>
-                    ))}
-                </select>
-              </div>
+              {!colIsDated && (
+                <div className={styles.filterField} style={{ flex: '1 1 200px' }}>
+                  <label htmlFor="col-parent-select" className={styles.filterLabel}>
+                    Kolekcja nadrzędna (dla podkolekcji, opcjonalnie)
+                  </label>
+                  <select
+                    id="col-parent-select"
+                    value={colParentId}
+                    onChange={e => {
+                      setColParentId(e.target.value);
+                    }}
+                    className={styles.selectInput}
+                  >
+                    <option value="">— Brak (kolekcja główna) —</option>
+                    {allCollections
+                      .filter(c => !c.datedCollection && (editingCollectionId === null || c.id !== editingCollectionId))
+                      .map(c => (
+                        <option key={c.id} value={String(c.id)}>
+                          {c.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
 
               <div className={styles.filterField} style={{ flex: '1 1 200px' }}>
                 <label htmlFor="col-slug-input" className={styles.filterLabel}>
@@ -1685,7 +1814,7 @@ export default function GalleryPage() {
                   }}
                 />
                 <span>
-                  To jest Kolekcja datowana w folderze dated/ (np. „Zdjęcia codzienne z domu rok 2002”)
+                  To jest Album datowany w folderze dated/ (np. „Zdjęcia codzienne z domu rok 2002”)
                 </span>
               </label>
 
@@ -1698,7 +1827,7 @@ export default function GalleryPage() {
                       setColIsRange(e.target.checked);
                     }}
                   />
-                  <span>Kolekcja obejmuje przedział czasu / zakres dat (od... do...)</span>
+                  <span>Album obejmuje przedział niepewności (między .. a ..)</span>
                 </label>
               )}
             </div>
@@ -1706,7 +1835,7 @@ export default function GalleryPage() {
             {colIsDated && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', background: '#f8fafc', padding: '0.85rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                 <strong style={{ fontSize: '0.85rem', color: '#1e293b' }}>
-                  {colIsRange ? '📅 Data początkowa kolekcji' : '📅 Data kolekcji datowanej'}
+                  {colIsRange ? '📅 Data początkowa albumu (od...)' : '📅 Data albumu datowanego'}
                 </strong>
                 <div className={styles.dateRowGrid}>
                   <div className={styles.filterField}>
@@ -1801,9 +1930,24 @@ export default function GalleryPage() {
                     />
                   </div>
 
-                  <div className={styles.filterField}>
-                    <label htmlFor="col-start-hour" className={styles.filterLabel}>Godzina (GG:MM)</label>
-                    <div style={{ display: 'flex', gap: '0.35rem' }}>
+                  <div className={styles.filterField} style={{ flex: '1.2 1 250px' }}>
+                    <label htmlFor="col-start-hour" className={styles.filterLabel}>Godzina i czas</label>
+                    <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+                      <select
+                        id="col-start-time-qual"
+                        value={colStartTimeQual}
+                        onChange={e => {
+                          setColStartTimeQual(e.target.value);
+                        }}
+                        className={styles.selectInput}
+                        style={{ width: '150px' }}
+                      >
+                        {QUALIFIER_OPTIONS.map(q => (
+                          <option key={q.value} value={q.value}>
+                            Czas: {q.label}
+                          </option>
+                        ))}
+                      </select>
                       <input
                         id="col-start-hour"
                         type="number"
@@ -1815,7 +1959,9 @@ export default function GalleryPage() {
                           setColStartHour(e.target.value);
                         }}
                         className={styles.textInput}
+                        style={{ width: '55px' }}
                       />
+                      <span>:</span>
                       <input
                         type="number"
                         min={0}
@@ -1826,6 +1972,20 @@ export default function GalleryPage() {
                           setColStartMinute(e.target.value);
                         }}
                         className={styles.textInput}
+                        style={{ width: '55px' }}
+                      />
+                      <span>:</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={59}
+                        placeholder="SS"
+                        value={colStartSecond}
+                        onChange={e => {
+                          setColStartSecond(e.target.value);
+                        }}
+                        className={styles.textInput}
+                        style={{ width: '55px' }}
                       />
                     </div>
                   </div>
@@ -1929,9 +2089,24 @@ export default function GalleryPage() {
                         />
                       </div>
 
-                      <div className={styles.filterField}>
-                        <label htmlFor="col-end-hour" className={styles.filterLabel}>Godzina (GG:MM)</label>
-                        <div style={{ display: 'flex', gap: '0.35rem' }}>
+                      <div className={styles.filterField} style={{ flex: '1.2 1 250px' }}>
+                        <label htmlFor="col-end-hour" className={styles.filterLabel}>Godzina i czas końca</label>
+                        <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+                          <select
+                            id="col-end-time-qual"
+                            value={colEndTimeQual}
+                            onChange={e => {
+                              setColEndTimeQual(e.target.value);
+                            }}
+                            className={styles.selectInput}
+                            style={{ width: '150px' }}
+                          >
+                            {QUALIFIER_OPTIONS.map(q => (
+                              <option key={q.value} value={q.value}>
+                                Czas: {q.label}
+                              </option>
+                            ))}
+                          </select>
                           <input
                             id="col-end-hour"
                             type="number"
@@ -1943,7 +2118,9 @@ export default function GalleryPage() {
                               setColEndHour(e.target.value);
                             }}
                             className={styles.textInput}
+                            style={{ width: '55px' }}
                           />
+                          <span>:</span>
                           <input
                             type="number"
                             min={0}
@@ -1954,6 +2131,20 @@ export default function GalleryPage() {
                               setColEndMinute(e.target.value);
                             }}
                             className={styles.textInput}
+                            style={{ width: '55px' }}
+                          />
+                          <span>:</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={59}
+                            placeholder="SS"
+                            value={colEndSecond}
+                            onChange={e => {
+                              setColEndSecond(e.target.value);
+                            }}
+                            className={styles.textInput}
+                            style={{ width: '55px' }}
                           />
                         </div>
                       </div>
@@ -2400,23 +2591,32 @@ export default function GalleryPage() {
               )}
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowUploadForm(false);
-                }}
-                className={styles.btnSecondary}
-              >
-                Anuluj
-              </button>
-              <button
-                type="submit"
-                disabled={uploadFiles.length === 0}
-                className={styles.btnPrimary}
-              >
-                Wgraj i zapisz ({String(uploadFiles.length)})
-              </button>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginTop: '0.85rem' }}>
+              {uploadYear.trim() === '' && uploadCollectionId === '' ? (
+                <span style={{ fontSize: '0.82rem', color: '#b91c1c', fontWeight: 600 }}>
+                  ⚠️ Dla plików bez ustalonej daty wybierz album/kolekcję docelową przed wgraniem.
+                </span>
+              ) : (
+                <span />
+              )}
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUploadForm(false);
+                  }}
+                  className={styles.btnSecondary}
+                >
+                  Anuluj
+                </button>
+                <button
+                  type="submit"
+                  disabled={uploadFiles.length === 0}
+                  className={styles.btnPrimary}
+                >
+                  Wgraj i zapisz ({String(uploadFiles.length)})
+                </button>
+              </div>
             </div>
           </form>
         </section>
@@ -2678,6 +2878,19 @@ export default function GalleryPage() {
                 </>
               )}
 
+              {isAdmin && (
+                <button
+                  type="button"
+                  data-testid="start-edit-media-item-button"
+                  onClick={() => {
+                    handleStartEditMedia(activeItem);
+                  }}
+                  className={styles.btnSecondary}
+                >
+                  ✏️ Edytuj dane, opis, osoby lub datę
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={() => {
@@ -2805,7 +3018,6 @@ export default function GalleryPage() {
                   <audio
                     src={mediaApi.getFileUrl(activeItem.id)}
                     controls
-                    autoPlay
                     className={styles.lightboxAudioPlayer}
                   />
                 </div>
@@ -2884,7 +3096,7 @@ export default function GalleryPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      void handleDeleteMediaItem(activeItem.id);
+                      setItemToDelete(activeItem);
                     }}
                     className={styles.btnDanger}
                   >
@@ -2927,6 +3139,36 @@ export default function GalleryPage() {
               }}
               style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}
             >
+              <div className={styles.filterField}>
+                <label htmlFor="edit-media-collection" className={styles.filterLabel}>
+                  Album / Kolekcja docelowa (lub zmiana lokalizacji)
+                </label>
+                <select
+                  id="edit-media-collection"
+                  value={editCollectionId}
+                  onChange={e => {
+                    setEditCollectionId(e.target.value);
+                  }}
+                  className={styles.selectInput}
+                >
+                  <option value="">
+                    {editYear.trim() !== ''
+                      ? '(Brak kolekcji – folder roku w dated)'
+                      : '-- Wybierz kolekcję / album docelowy --'}
+                  </option>
+                  {allCollections.map(col => (
+                    <option key={col.id} value={col.id}>
+                      {col.datedCollection ? `📅 [Album] ${col.name}` : `📦 [Kolekcja] ${col.name}`}
+                    </option>
+                  ))}
+                </select>
+                {editOriginalCollectionId !== '' && editCollectionId === '' && editYear.trim() === '' && (
+                  <span style={{ fontSize: '0.78rem', color: '#dc2626', fontWeight: 600 }}>
+                    ⚠️ Plik bez ustalonej daty musi posiadać przypisaną kolekcję docelową przed odpięciem.
+                  </span>
+                )}
+              </div>
+
               <div className={styles.filterField}>
                 <label htmlFor="edit-media-title" className={styles.filterLabel}>
                   Tytuł / podpis
@@ -2999,17 +3241,17 @@ export default function GalleryPage() {
                       setEditIsRange(e.target.checked);
                     }}
                   />
-                  <span>Przedział dat (od... do...)</span>
+                  <span>Przedział niepewności „między .. a ..” dla daty wykonania</span>
                 </label>
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', background: '#f8fafc', padding: '0.85rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                 <strong style={{ fontSize: '0.85rem', color: '#1e293b' }}>
-                  {editIsRange ? '📅 Data początkowa' : '📅 Data wykonania'}
+                  {editIsRange ? '📅 Data początkowa (od kiedy mogło powstać)' : '📅 Data wykonania'}
                 </strong>
                 <div className={styles.dateRowGrid}>
                   <div className={styles.filterField}>
-                    <label htmlFor="edit-date-qual" className={styles.filterLabel}>Kwalifikator</label>
+                    <label htmlFor="edit-date-qual" className={styles.filterLabel}>Kwalifikator daty</label>
                     <select
                       id="edit-date-qual"
                       value={editDateQual}
@@ -3096,12 +3338,70 @@ export default function GalleryPage() {
                       className={styles.textInput}
                     />
                   </div>
+
+                  <div className={styles.filterField}>
+                    <label htmlFor="edit-hour" className={styles.filterLabel}>Godzina (GG:MM:SS)</label>
+                    <div className={styles.timeTripletGroup}>
+                      <select
+                        aria-label="Kwalifikator czasu"
+                        value={editTimeQual}
+                        onChange={e => {
+                          setEditTimeQual(e.target.value);
+                        }}
+                        className={styles.selectInput}
+                        style={{ width: '130px' }}
+                      >
+                        {QUALIFIER_OPTIONS.map(q => (
+                          <option key={q.value} value={q.value}>Czas: {q.label}</option>
+                        ))}
+                      </select>
+                      <input
+                        id="edit-hour"
+                        type="number"
+                        min={0}
+                        max={23}
+                        placeholder="GG"
+                        value={editHour}
+                        onChange={e => {
+                          setEditHour(e.target.value);
+                        }}
+                        className={styles.textInput}
+                        style={{ width: '50px' }}
+                      />
+                      <span>:</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={59}
+                        placeholder="MM"
+                        value={editMinute}
+                        onChange={e => {
+                          setEditMinute(e.target.value);
+                        }}
+                        className={styles.textInput}
+                        style={{ width: '50px' }}
+                      />
+                      <span>:</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={59}
+                        placeholder="SS"
+                        value={editSecond}
+                        onChange={e => {
+                          setEditSecond(e.target.value);
+                        }}
+                        className={styles.textInput}
+                        style={{ width: '50px' }}
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 {editIsRange && (
                   <>
                     <strong style={{ fontSize: '0.85rem', color: '#1e293b', marginTop: '0.45rem' }}>
-                      📅 Data końcowa (koniec przedziału)
+                      📅 Koniec przedziału niepewności (do kiedy mogło powstać)
                     </strong>
                     <div className={styles.dateRowGrid}>
                       <div className={styles.filterField}>
@@ -3192,8 +3492,201 @@ export default function GalleryPage() {
                           className={styles.textInput}
                         />
                       </div>
+
+                      <div className={styles.filterField}>
+                        <label htmlFor="edit-rend-hour" className={styles.filterLabel}>Godzina końca (GG:MM:SS)</label>
+                        <div className={styles.timeTripletGroup}>
+                          <select
+                            aria-label="Kwalifikator czasu końca"
+                            value={editRangeEndTimeQual}
+                            onChange={e => {
+                              setEditRangeEndTimeQual(e.target.value);
+                            }}
+                            className={styles.selectInput}
+                            style={{ width: '130px' }}
+                          >
+                            {QUALIFIER_OPTIONS.map(q => (
+                              <option key={q.value} value={q.value}>Czas: {q.label}</option>
+                            ))}
+                          </select>
+                          <input
+                            id="edit-rend-hour"
+                            type="number"
+                            min={0}
+                            max={23}
+                            placeholder="GG"
+                            value={editRangeEndHour}
+                            onChange={e => {
+                              setEditRangeEndHour(e.target.value);
+                            }}
+                            className={styles.textInput}
+                            style={{ width: '50px' }}
+                          />
+                          <span>:</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={59}
+                            placeholder="MM"
+                            value={editRangeEndMinute}
+                            onChange={e => {
+                              setEditRangeEndMinute(e.target.value);
+                            }}
+                            className={styles.textInput}
+                            style={{ width: '50px' }}
+                          />
+                          <span>:</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={59}
+                            placeholder="SS"
+                            value={editRangeEndSecond}
+                            onChange={e => {
+                              setEditRangeEndSecond(e.target.value);
+                            }}
+                            className={styles.textInput}
+                            style={{ width: '50px' }}
+                          />
+                        </div>
+                      </div>
                     </div>
                   </>
+                )}
+              </div>
+
+              <div
+                style={{
+                  backgroundColor: '#f8fafc',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '8px',
+                  padding: '0.85rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.65rem',
+                }}
+              >
+                <span className={styles.filterLabel}>
+                  Osoby na zdjęciu, osoby powiązane oraz autorzy (z bazy lub tekstowo):
+                </span>
+                <div className={styles.personLinksGrid}>
+                  <div className={styles.filterField}>
+                    <label htmlFor="edit-link-role" className={styles.filterLabel}>Rodzaj powiązania</label>
+                    <select
+                      id="edit-link-role"
+                      value={editLinkRoleType}
+                      onChange={e => {
+                        setEditLinkRoleType(e.target.value as 'DEPICTED' | 'RELATED' | 'AUTHOR');
+                      }}
+                      className={styles.selectInput}
+                    >
+                      <option value="DEPICTED">👁️ Osoba widoczna na zdjęciu / filmie</option>
+                      <option value="RELATED">🔗 Osoba powiązana ze zdjęciem / filmem</option>
+                      <option value="AUTHOR">📷 Autor zdjęcia / nagrania (kto wykonał)</option>
+                    </select>
+                  </div>
+
+                  <div className={styles.filterField}>
+                    <label htmlFor="edit-link-person-query" className={styles.filterLabel}>Dodaj osobę z drzewa</label>
+                    <div style={{ display: 'flex', gap: '0.4rem' }}>
+                      <input
+                        id="edit-link-person-query"
+                        type="text"
+                        placeholder="Szukaj w drzewie..."
+                        value={editLinkPersonQuery}
+                        onChange={e => {
+                          setEditLinkPersonQuery(e.target.value);
+                        }}
+                        className={styles.textInput}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleSearchPersonForEdit();
+                        }}
+                        className={styles.btnSecondary}
+                      >
+                        Szukaj
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className={styles.filterField}>
+                    <label htmlFor="edit-link-text-person" className={styles.filterLabel}>Lub wpisz osobę tekstowo</label>
+                    <div style={{ display: 'flex', gap: '0.4rem' }}>
+                      <input
+                        id="edit-link-text-person"
+                        type="text"
+                        placeholder="np. Fotograf z Lublina"
+                        value={editLinkTextInput}
+                        onChange={e => {
+                          setEditLinkTextInput(e.target.value);
+                        }}
+                        className={styles.textInput}
+                      />
+                      <select
+                        aria-label="Płeć osoby tekstowej"
+                        value={editLinkTextSex}
+                        onChange={e => {
+                          setEditLinkTextSex(e.target.value as PersonSex);
+                        }}
+                        className={styles.selectInput}
+                        style={{ width: '75px' }}
+                      >
+                        <option value="MALE">M</option>
+                        <option value="FEMALE">K</option>
+                        <option value="UNKNOWN">?</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={handleAddTextPersonToEdit}
+                        className={styles.btnSecondary}
+                      >
+                        + Dodaj
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {editLinkPersonResults.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                    {editLinkPersonResults.map(p => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          handleAddDbPersonToEdit(p);
+                        }}
+                        className={styles.btnSecondary}
+                      >
+                        + Wybierz: {p.givenName} {p.surname} ({p.birthYear ?? '?'})
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {editPersonLinks.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.35rem' }}>
+                    {editPersonLinks.map((pl, lIdx) => (
+                      <span
+                        key={`${pl.displayLabel}-${String(lIdx)}`}
+                        className={styles.textPersonBadge}
+                        style={{ display: 'inline-flex', alignItems: 'center' }}
+                      >
+                        {pl.displayLabel}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditPersonLinks(prev => prev.filter((_, i) => i !== lIdx));
+                          }}
+                          className={styles.pillRemoveBtn}
+                          aria-label={`Usuń ${pl.displayLabel}`}
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ))}
+                  </div>
                 )}
               </div>
 
@@ -3215,6 +3708,99 @@ export default function GalleryPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Modal: Confirm Delete Collection */}
+      {collectionToDelete && (
+        <div
+          className={styles.lightboxBackdrop}
+          style={{ zIndex: 120 }}
+          onClick={() => {
+            setCollectionToDelete(null);
+          }}
+        >
+          <div
+            className={styles.sectionCard}
+            style={{ maxWidth: '480px', padding: '1.75rem', textAlign: 'center', margin: 'auto' }}
+            onClick={e => {
+              e.stopPropagation();
+            }}
+          >
+            <h3 style={{ margin: '0 0 0.85rem 0', fontSize: '1.25rem', color: '#1e293b' }}>
+              🗑️ Usunąć kolekcję?
+            </h3>
+            <p style={{ fontSize: '0.92rem', color: '#64748b', lineHeight: 1.5, marginBottom: '1.5rem' }}>
+              Czy na pewno chcesz usunąć kolekcję <strong>„{collectionToDelete.title}”</strong>?
+              <br />
+              Jeśli znajdują się w niej pliki przypisane wyłącznie do niej, musisz je najpierw przenieść lub usunąć.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '0.75rem' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setCollectionToDelete(null);
+                }}
+                className={styles.btnSecondary}
+              >
+                Anuluj
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleConfirmDeleteCollection();
+                }}
+                className={styles.btnDanger}
+              >
+                Tak, usuń kolekcję
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Confirm Delete Media Item */}
+      {itemToDelete && (
+        <div
+          className={styles.lightboxBackdrop}
+          style={{ zIndex: 120 }}
+          onClick={() => {
+            setItemToDelete(null);
+          }}
+        >
+          <div
+            className={styles.sectionCard}
+            style={{ maxWidth: '480px', padding: '1.75rem', textAlign: 'center', margin: 'auto' }}
+            onClick={e => {
+              e.stopPropagation();
+            }}
+          >
+            <h3 style={{ margin: '0 0 0.85rem 0', fontSize: '1.25rem', color: '#1e293b' }}>
+              🗑️ Usunąć plik z archiwum?
+            </h3>
+            <p style={{ fontSize: '0.92rem', color: '#64748b', lineHeight: 1.5, marginBottom: '1.5rem' }}>
+              Czy na pewno chcesz bezpowrotnie usunąć plik <strong>„{itemToDelete.title ?? itemToDelete.fileName}”</strong> z dysku?
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '0.75rem' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setItemToDelete(null);
+                }}
+                className={styles.btnSecondary}
+              >
+                Anuluj
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleConfirmDeleteMediaItem();
+                }}
+                className={styles.btnDanger}
+              >
+                Tak, usuń plik
+              </button>
+            </div>
           </div>
         </div>
       )}

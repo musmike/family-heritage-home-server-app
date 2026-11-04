@@ -154,7 +154,7 @@ class MediaControllerTest extends AbstractIntegrationTest {
                         .header("X-XSRF-TOKEN", CSRF))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.relativePath").value(
-                        "dated/1990s/1995/1995_07_10_wakacje_nad_morzem_jan_aleksander_kowalski/1995_07_10_wakacje_nad_morzem_jan_aleksander_kowalski_01.jpg"
+                        "dated/1990s/1995/1995_07_10_wakacje_nad_morzem/1995_07_10_wakacje_nad_morzem_01.jpg"
                 ))
                 .andExpect(jsonPath("$.metadataYear").value(1995))
                 .andExpect(jsonPath("$.metadataMonth").value(7))
@@ -194,7 +194,7 @@ class MediaControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/media/by-event/{id}", evt.getEventId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.directMedia[0].relativePath").value(
-                        "dated/1990s/1996/1996_08_20_wakacje_nad_morzem_jan_aleksander_kowalski/1996_08_20_wakacje_nad_morzem_jan_aleksander_kowalski_01.jpg"
+                        "dated/1990s/1996/1996_08_20_wakacje_nad_morzem/1996_08_20_wakacje_nad_morzem_01.jpg"
                 ));
 
         // Link this existing vacation photo to a Grave as well!

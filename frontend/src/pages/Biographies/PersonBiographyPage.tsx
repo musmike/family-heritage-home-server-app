@@ -194,6 +194,9 @@ export default function PersonBiographyPage() {
   const [availableCollections, setAvailableCollections] = useState<MediaCollectionDto[]>([]);
   const [selectedPortraitCollectionId, setSelectedPortraitCollectionId] = useState<number | null>(null);
   const [isSubmittingPortrait, setIsSubmittingPortrait] = useState<boolean>(false);
+  const [showConfirmRemoveAvatar, setShowConfirmRemoveAvatar] = useState<boolean>(false);
+  const [portraitModalError, setPortraitModalError] = useState<string | null>(null);
+  const [actionErrorMessage, setActionErrorMessage] = useState<string | null>(null);
 
   const fetchBio = async () => {
     if (!personId) return;
@@ -231,6 +234,7 @@ export default function PersonBiographyPage() {
   const handleOpenPortraitModal = () => {
     setPortraitUploadFile(null);
     setPortraitSearchQuery('');
+    setPortraitModalError(null);
     setShowPortraitModal(true);
     void fetchGalleryPortraitCandidates('');
     void (async () => {
@@ -252,10 +256,11 @@ export default function PersonBiographyPage() {
   const handleUploadNewPortrait = async () => {
     if (!bio || !portraitUploadFile) return;
     if (!selectedPortraitCollectionId) {
-      setErrorMessage('Wybierz istniejącą kolekcję dla wgrywanego portretu.');
+      setPortraitModalError('Wybierz istniejącą kolekcję dla wgrywanego portretu.');
       return;
     }
     setIsSubmittingPortrait(true);
+    setPortraitModalError(null);
     try {
       await mediaApi.uploadMedia({
         file: portraitUploadFile,
@@ -269,7 +274,7 @@ export default function PersonBiographyPage() {
       await fetchBio();
       setShowCropperModal(true);
     } catch {
-      setErrorMessage('Nie udało się wgrać nowego portretu.');
+      setPortraitModalError('Nie udało się wgrać nowego portretu.');
     } finally {
       setIsSubmittingPortrait(false);
     }
@@ -278,6 +283,7 @@ export default function PersonBiographyPage() {
   const handleSelectExistingAsPortrait = async (mediaId: number) => {
     if (!bio) return;
     setIsSubmittingPortrait(true);
+    setPortraitModalError(null);
     try {
       await mediaApi.linkExistingMedia({
         mediaIds: [mediaId],
@@ -293,7 +299,7 @@ export default function PersonBiographyPage() {
       await fetchBio();
       setShowCropperModal(true);
     } catch {
-      setErrorMessage('Nie udało się ustawić wybranego zdjęcia jako portretu.');
+      setPortraitModalError('Nie udało się ustawić wybranego zdjęcia jako portretu.');
     } finally {
       setIsSubmittingPortrait(false);
     }
@@ -311,25 +317,22 @@ export default function PersonBiographyPage() {
       setShowCropperModal(false);
       await fetchBio();
     } catch {
-      setErrorMessage('Nie udało się zapisać wykadrowanego awatara.');
+      setActionErrorMessage('Nie udało się zapisać wykadrowanego awatara.');
     }
   };
 
-  const handleRemoveAvatar = async () => {
+  const handleConfirmRemoveAvatar = async () => {
     if (!bio?.avatarMediaId) return;
-    const confirmed = window.confirm(
-      'Czy na pewno chcesz usunąć portret z profilu tej osoby? Plik multimedialny nadal pozostanie w galerii.'
-    );
-    if (!confirmed) return;
-
     setIsSubmittingPortrait(true);
+    setActionErrorMessage(null);
     try {
       await biographyApi.removeAvatar(bio.id);
       setShowPortraitModal(false);
       setShowCropperModal(false);
+      setShowConfirmRemoveAvatar(false);
       await fetchBio();
     } catch {
-      setErrorMessage('Nie udało się usunąć portretu z profilu.');
+      setActionErrorMessage('Nie udało się usunąć portretu z profilu.');
     } finally {
       setIsSubmittingPortrait(false);
     }
@@ -539,7 +542,8 @@ export default function PersonBiographyPage() {
                       type="button"
                       data-testid="remove-infobox-portrait-button"
                       onClick={() => {
-                        void handleRemoveAvatar();
+                        setActionErrorMessage(null);
+                        setShowConfirmRemoveAvatar(true);
                       }}
                       className={styles.btnSecondary}
                       style={{ padding: '0.32rem 0.7rem', fontSize: '0.78rem', color: '#b91c1c' }}
@@ -830,7 +834,7 @@ export default function PersonBiographyPage() {
                   type="button"
                   disabled={isSubmittingPortrait}
                   onClick={() => {
-                    void handleRemoveAvatar();
+                    setShowConfirmRemoveAvatar(true);
                   }}
                   className={styles.btnSecondary}
                   style={{
@@ -917,6 +921,12 @@ export default function PersonBiographyPage() {
               >
                 {isSubmittingPortrait ? 'Wgrywanie...' : 'Wgraj i ustaw jako portret'}
               </button>
+
+              {portraitModalError && (
+                <div role="alert" className={styles.AlertError} style={{ margin: '0.35rem 0' }}>
+                  {portraitModalError}
+                </div>
+              )}
             </div>
 
             {/* Option 2: Pick existing from Gallery */}
@@ -996,6 +1006,82 @@ export default function PersonBiographyPage() {
                   </button>
                 ))}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Confirm Remove Portrait */}
+      {isAdmin && showConfirmRemoveAvatar && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.6)',
+            zIndex: 1270,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem',
+          }}
+          onClick={() => {
+            setShowConfirmRemoveAvatar(false);
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#ffffff',
+              borderRadius: '10px',
+              maxWidth: '460px',
+              width: '100%',
+              padding: '1.5rem',
+              boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.25)',
+              textAlign: 'center',
+            }}
+            onClick={e => {
+              e.stopPropagation();
+            }}
+          >
+            <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '1.2rem', color: '#1e293b' }}>
+              🗑️ Usunąć portret profilu?
+            </h3>
+            <p style={{ fontSize: '0.92rem', color: '#64748b', lineHeight: 1.5, margin: '0 0 1.25rem 0' }}>
+              Czy na pewno chcesz usunąć portret z profilu tej osoby? Plik multimedialny nadal pozostanie zachowany w galerii.
+            </p>
+            {actionErrorMessage && (
+              <div role="alert" className={styles.AlertError} style={{ marginBottom: '1rem' }}>
+                {actionErrorMessage}
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '0.75rem' }}>
+              <button
+                type="button"
+                disabled={isSubmittingPortrait}
+                onClick={() => {
+                  setShowConfirmRemoveAvatar(false);
+                }}
+                className={styles.btnSecondary}
+              >
+                Anuluj
+              </button>
+              <button
+                type="button"
+                disabled={isSubmittingPortrait}
+                onClick={() => {
+                  void handleConfirmRemoveAvatar();
+                }}
+                style={{
+                  backgroundColor: '#dc2626',
+                  color: '#ffffff',
+                  border: 'none',
+                  padding: '0.5rem 1.1rem',
+                  borderRadius: '6px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                {isSubmittingPortrait ? 'Usuwanie...' : 'Tak, usuń portret'}
+              </button>
             </div>
           </div>
         </div>
@@ -1147,6 +1233,7 @@ export default function PersonBiographyPage() {
           </div>
         </div>
       )}
+
     </div>
   );
 }

@@ -278,6 +278,35 @@
   font-weight: 700;
   padding: 0.2rem 0.55rem;
   border-radius: 999px;
+  z-index: 10;
+}
+
+.collageThumbGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  width: 100%;
+  height: 100%;
+  gap: 2px;
+  background-color: #0f172a;
+}
+
+.collageThumbCell {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #1e293b;
+}
+
+.collageThumbImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .textPersonBadge {
@@ -735,6 +764,39 @@
   border-radius: 4px;
   display: inline-block;
   width: fit-content;
+}
+
+.personLinksGrid {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(200px, 1.2fr) minmax(280px, 1.6fr);
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+@media (max-width: 900px) {
+  .personLinksGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pillRemoveBtn {
+  background: none;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 0 0.2rem;
+  margin-left: 0.35rem;
+}
+
+.pillRemoveBtn:hover {
+  color: #dc2626;
+}
+
+.timeTripletGroup {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 @media (max-width: 640px) {

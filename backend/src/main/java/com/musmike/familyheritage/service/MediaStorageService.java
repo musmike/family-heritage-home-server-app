@@ -335,18 +335,18 @@ public class MediaStorageService {
                         ny = x;
                     }
                     case 6 -> {
-                        // Rotate 270 degrees CW (90 CCW) to correct standard phone portrait orientation
-                        nx = y;
-                        ny = w - 1 - x;
+                        // Rotate 90 degrees CW to correct standard phone portrait orientation
+                        nx = h - 1 - y;
+                        ny = x;
                     }
                     case 7 -> {
                         nx = h - 1 - y;
                         ny = w - 1 - x;
                     }
                     case 8 -> {
-                        // Rotate 90 degrees CW to correct inverted phone portrait orientation
-                        nx = h - 1 - y;
-                        ny = x;
+                        // Rotate 270 degrees CW (90 CCW) to correct inverted phone portrait orientation
+                        nx = y;
+                        ny = w - 1 - x;
                     }
                     default -> {
                     }

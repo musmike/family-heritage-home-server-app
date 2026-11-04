@@ -92,6 +92,19 @@
   align-items: end;
 }
 
+.personLinksGrid {
+  display: grid;
+  grid-template-columns: minmax(200px, 1.1fr) minmax(220px, 1.3fr) minmax(310px, 1.8fr);
+  gap: 0.85rem;
+  align-items: flex-start;
+}
+
+@media (max-width: 900px) {
+  .personLinksGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .formField {
   display: flex;
   flex-direction: column;
@@ -244,9 +257,26 @@
 
 .stagedInputsGrid {
   display: grid;
-  grid-template-columns: minmax(180px, 1.4fr) minmax(160px, 1.2fr) minmax(240px, 1.8fr);
-  gap: 0.6rem;
+  grid-template-columns: minmax(200px, 1.4fr) minmax(250px, 2fr) auto;
+  gap: 0.75rem;
   align-items: end;
+}
+
+.stagedDetailsPanel {
+  margin-top: 0.65rem;
+  padding: 0.85rem;
+  background-color: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.stagedDetailsRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem;
 }
 
 .compactDateTimeInputs {

@@ -42,7 +42,21 @@ public class MediaStorageService {
     }
 
     public Path resolveThumbnailPath(Long mediaId) {
-        return getRootDirectory().resolve(".thumbnails").resolve("thumb_" + mediaId + ".jpg");
+        return getRootDirectory().resolve(".thumbnails").resolve("thumb_v2_" + mediaId + ".jpg");
+    }
+
+    public void ensureThumbnailGenerated(Long mediaId, String relativePath) {
+        if (mediaId == null || relativePath == null || relativePath.isBlank()) {
+            return;
+        }
+        Path thumbPath = resolveThumbnailPath(mediaId);
+        if (Files.exists(thumbPath)) {
+            return;
+        }
+        byte[] bytes = readFileBytesIfExists(relativePath);
+        if (bytes != null) {
+            generateThumbnailIfPossible(mediaId, bytes);
+        }
     }
 
     public String toSnakeCase(String input) {

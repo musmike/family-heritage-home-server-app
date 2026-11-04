@@ -42,9 +42,8 @@ public class DashboardAndAnniversaryService {
         int generationsCount = calculateGenerationsCount(activePersonIds, allFamilies);
 
         long eventsCount = eventRepository.findAll().stream()
-                .filter(e -> e.getParentEvent() == null)
-                .filter(e -> !e.getParticipants().isEmpty())
-                .filter(e -> e.getParticipants().stream()
+                .filter(e -> !e.hasAnyParentEvent())
+                .filter(e -> e.getParticipants().isEmpty() || e.getParticipants().stream()
                         .anyMatch(ep -> ep.getPerson() == null || !Boolean.TRUE.equals(ep.getPerson().getIsArchived())))
                 .count();
 

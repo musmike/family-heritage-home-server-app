@@ -26,7 +26,7 @@ public class MediaCollectionDto {
     private long mediaCount;
     private LocalDateTime createdAt;
 
-    // Start DateDescriptor
+    // Start Date Descriptor
     private String startDateType;
     private String startQualifier;
     private Integer startYear;
@@ -37,8 +37,19 @@ public class MediaCollectionDto {
     private Integer startMinute;
     private Integer startSecond;
 
-    // Range / End DateDescriptor
+    private String startRangeEndQualifier;
+    private Integer startRangeEndYear;
+    private Integer startRangeEndMonth;
+    private Integer startRangeEndDay;
+    private String startRangeEndTimeQualifier;
+    private Integer startRangeEndHour;
+    private Integer startRangeEndMinute;
+    private Integer startRangeEndSecond;
+
+    // End Date Descriptor
     private Boolean isRange;
+    private boolean hasEndDate;
+    private String endDateType;
     private String endQualifier;
     private Integer endYear;
     private Integer endMonth;
@@ -47,4 +58,13 @@ public class MediaCollectionDto {
     private Integer endHour;
     private Integer endMinute;
     private Integer endSecond;
+
+    private String endRangeEndQualifier;
+    private Integer endRangeEndYear;
+    private Integer endRangeEndMonth;
+    private Integer endRangeEndDay;
+    private String endRangeEndTimeQualifier;
+    private Integer endRangeEndHour;
+    private Integer endRangeEndMinute;
+    private Integer endRangeEndSecond;
 }

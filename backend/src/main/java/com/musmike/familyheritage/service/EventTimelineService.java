@@ -107,10 +107,6 @@ public class EventTimelineService {
             List<EventParticipant> participants = new ArrayList<>(evt.getParticipants());
             List<Event> subEvents = subEventsByParentId.getOrDefault(evt.getId(), List.of());
 
-            if (participants.isEmpty() && subEvents.isEmpty()) {
-                continue;
-            }
-
             if (!includeArchived && !participants.isEmpty() && participants.stream()
                     .allMatch(ep -> ep.getPerson() != null && Boolean.TRUE.equals(ep.getPerson().getIsArchived()))) {
                 continue;

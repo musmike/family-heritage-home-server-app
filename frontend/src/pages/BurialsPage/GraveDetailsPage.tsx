@@ -80,6 +80,7 @@ export default function GraveDetailsPage() {
 
   // Admin Edit Grave Form
   const [isEditingGrave, setIsEditingGrave] = useState<boolean>(false);
+  const [showDeleteGraveConfirm, setShowDeleteGraveConfirm] = useState<boolean>(false);
   const [selectedCemeteryId, setSelectedCemeteryId] = useState<number | null>(null);
   const [section, setSection] = useState<string>('');
   const [sector, setSector] = useState<string>('');
@@ -334,7 +335,7 @@ export default function GraveDetailsPage() {
                 type="button"
                 data-testid="delete-grave-button"
                 onClick={() => {
-                  void handleDeleteGrave();
+                  setShowDeleteGraveConfirm(true);
                 }}
                 className={styles.btnDanger}
               >
@@ -351,162 +352,25 @@ export default function GraveDetailsPage() {
         </div>
       )}
 
-      {/* Admin Edit Grave Form (Using .formField so no extra empty vertical gap appears) */}
+      {/* Admin Edit Grave Modal */}
       {isAdmin && isEditingGrave && (
-        <section className={styles.adminFormCard} data-testid="edit-grave-form">
-          <h2 className={styles.cemeteryCardTitle}>
-            Edycja parametrów nagrobka i przypisania do cmentarza
-          </h2>
-          <form
-            onSubmit={e => {
-              void handleSaveGrave(e);
+        <div
+          className={styles.modalBackdrop}
+          data-testid="edit-grave-form"
+          onClick={() => {
+            setIsEditingGrave(false);
+          }}
+        >
+          <div
+            className={styles.largeModalDialog}
+            onClick={e => {
+              e.stopPropagation();
             }}
-            style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}
           >
-            <div className={styles.formGrid}>
-              <div className={styles.formField}>
-                <label htmlFor="grave-cemetery-select" className={styles.filterLabel}>
-                  Cmentarz
-                </label>
-                <select
-                  id="grave-cemetery-select"
-                  data-testid="grave-cemetery-select"
-                  value={selectedCemeteryId !== null ? String(selectedCemeteryId) : ''}
-                  onChange={e => {
-                    const val = e.target.value;
-                    setSelectedCemeteryId(val === '' ? null : Number(val));
-                  }}
-                  className={styles.selectInput}
-                >
-                  <option value="">Inne (nieprzypisany)</option>
-                  {cemeteries.map(c => (
-                    <option key={String(c.cemeteryId)} value={String(c.cemeteryId)}>
-                      {c.groupName} {c.locationName ? `(${c.locationName})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className={styles.formField}>
-                <label htmlFor="grave-type-select" className={styles.filterLabel}>
-                  Typ grobu
-                </label>
-                <select
-                  id="grave-type-select"
-                  data-testid="grave-type-select"
-                  value={graveType}
-                  onChange={e => {
-                    setGraveType(e.target.value);
-                  }}
-                  className={styles.selectInput}
-                >
-                  <option value="">— Nieokreślony —</option>
-                  {GRAVE_TYPE_OPTIONS.map(opt => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className={styles.formField}>
-                <label htmlFor="grave-section-input" className={styles.filterLabel}>
-                  Kwatera
-                </label>
-                <input
-                  id="grave-section-input"
-                  data-testid="grave-section-input"
-                  type="text"
-                  value={section}
-                  onChange={e => {
-                    setSection(e.target.value);
-                  }}
-                  className={styles.textInput}
-                />
-              </div>
-
-              <div className={styles.formField}>
-                <label htmlFor="grave-sector-input" className={styles.filterLabel}>
-                  Sektor
-                </label>
-                <input
-                  id="grave-sector-input"
-                  type="text"
-                  value={sector}
-                  onChange={e => {
-                    setSector(e.target.value);
-                  }}
-                  className={styles.textInput}
-                />
-              </div>
-
-              <div className={styles.formField}>
-                <label htmlFor="grave-row-input" className={styles.filterLabel}>
-                  Rząd
-                </label>
-                <input
-                  id="grave-row-input"
-                  type="text"
-                  value={rowNumber}
-                  onChange={e => {
-                    setRowNumber(e.target.value);
-                  }}
-                  className={styles.textInput}
-                />
-              </div>
-
-              <div className={styles.formField}>
-                <label htmlFor="grave-number-input" className={styles.filterLabel}>
-                  Numer grobu
-                </label>
-                <input
-                  id="grave-number-input"
-                  data-testid="grave-number-input"
-                  type="text"
-                  value={graveNumber}
-                  onChange={e => {
-                    setGraveNumber(e.target.value);
-                  }}
-                  className={styles.textInput}
-                />
-              </div>
-            </div>
-
-            <div className={styles.formField}>
-              <label htmlFor="grave-desc-input" className={styles.filterLabel}>
-                Opis lokalizacji / punkty orientacyjne (np. charakterystyczne drzewa, alejka)
-              </label>
-              <textarea
-                id="grave-desc-input"
-                ref={descRef}
-                data-testid="grave-desc-input"
-                value={description}
-                onChange={e => {
-                  setDescription(e.target.value);
-                  adjustTextareaHeight(e.target);
-                }}
-                className={styles.textareaInput}
-              />
-            </div>
-
-            <div className={styles.formField}>
-              <label htmlFor="grave-epitaph-input" className={styles.filterLabel}>
-                Epitafium na nagrobku
-              </label>
-              <textarea
-                id="grave-epitaph-input"
-                ref={epitaphRef}
-                data-testid="grave-epitaph-input"
-                value={epitaph}
-                onChange={e => {
-                  setEpitaph(e.target.value);
-                  adjustTextareaHeight(e.target);
-                }}
-                className={styles.textareaInput}
-              />
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
+            <div className={styles.modalHeader}>
+              <h2 className={styles.cemeteryCardTitle}>
+                Edycja parametrów nagrobka i przypisania do cmentarza
+              </h2>
               <button
                 type="button"
                 onClick={() => {
@@ -514,21 +378,230 @@ export default function GraveDetailsPage() {
                 }}
                 className={styles.btnSecondary}
               >
+                ✕ Zamknij
+              </button>
+            </div>
+            <div className={styles.modalBody}>
+              <form
+                onSubmit={e => {
+                  void handleSaveGrave(e);
+                }}
+                style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}
+              >
+                <div className={styles.formGrid}>
+                  <div className={styles.formField}>
+                    <label htmlFor="grave-cemetery-select" className={styles.filterLabel}>
+                      Cmentarz
+                    </label>
+                    <select
+                      id="grave-cemetery-select"
+                      data-testid="grave-cemetery-select"
+                      value={selectedCemeteryId !== null ? String(selectedCemeteryId) : ''}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setSelectedCemeteryId(val === '' ? null : Number(val));
+                      }}
+                      className={styles.selectInput}
+                    >
+                      <option value="">Inne (nieprzypisany)</option>
+                      {cemeteries.map(c => (
+                        <option key={String(c.cemeteryId)} value={String(c.cemeteryId)}>
+                          {c.groupName} {c.locationName ? `(${c.locationName})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className={styles.formField}>
+                    <label htmlFor="grave-type-select" className={styles.filterLabel}>
+                      Typ grobu
+                    </label>
+                    <select
+                      id="grave-type-select"
+                      data-testid="grave-type-select"
+                      value={graveType}
+                      onChange={e => {
+                        setGraveType(e.target.value);
+                      }}
+                      className={styles.selectInput}
+                    >
+                      <option value="">— Nieokreślony —</option>
+                      {GRAVE_TYPE_OPTIONS.map(opt => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className={styles.formField}>
+                    <label htmlFor="grave-section-input" className={styles.filterLabel}>
+                      Kwatera
+                    </label>
+                    <input
+                      id="grave-section-input"
+                      data-testid="grave-section-input"
+                      type="text"
+                      value={section}
+                      onChange={e => {
+                        setSection(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                  </div>
+
+                  <div className={styles.formField}>
+                    <label htmlFor="grave-sector-input" className={styles.filterLabel}>
+                      Sektor
+                    </label>
+                    <input
+                      id="grave-sector-input"
+                      type="text"
+                      value={sector}
+                      onChange={e => {
+                        setSector(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                  </div>
+
+                  <div className={styles.formField}>
+                    <label htmlFor="grave-row-input" className={styles.filterLabel}>
+                      Rząd
+                    </label>
+                    <input
+                      id="grave-row-input"
+                      type="text"
+                      value={rowNumber}
+                      onChange={e => {
+                        setRowNumber(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                  </div>
+
+                  <div className={styles.formField}>
+                    <label htmlFor="grave-number-input" className={styles.filterLabel}>
+                      Numer grobu
+                    </label>
+                    <input
+                      id="grave-number-input"
+                      data-testid="grave-number-input"
+                      type="text"
+                      value={graveNumber}
+                      onChange={e => {
+                        setGraveNumber(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                  </div>
+                </div>
+
+                <div className={styles.formField}>
+                  <label htmlFor="grave-desc-input" className={styles.filterLabel}>
+                    Opis lokalizacji / punkty orientacyjne (np. charakterystyczne drzewa, alejka)
+                  </label>
+                  <textarea
+                    id="grave-desc-input"
+                    ref={descRef}
+                    data-testid="grave-desc-input"
+                    value={description}
+                    onChange={e => {
+                      setDescription(e.target.value);
+                      adjustTextareaHeight(e.target);
+                    }}
+                    className={styles.textareaInput}
+                  />
+                </div>
+
+                <div className={styles.formField}>
+                  <label htmlFor="grave-epitaph-input" className={styles.filterLabel}>
+                    Epitafium na nagrobku
+                  </label>
+                  <textarea
+                    id="grave-epitaph-input"
+                    ref={epitaphRef}
+                    data-testid="grave-epitaph-input"
+                    value={epitaph}
+                    onChange={e => {
+                      setEpitaph(e.target.value);
+                      adjustTextareaHeight(e.target);
+                    }}
+                    className={styles.textareaInput}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsEditingGrave(false);
+                    }}
+                    className={styles.btnSecondary}
+                  >
+                    Anuluj
+                  </button>
+                  <button
+                    type="submit"
+                    data-testid="save-grave-button"
+                    className={styles.btnPrimary}
+                  >
+                    Zapisz nagrobek
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Small Confirmation Modal for Deleting Grave */}
+      {isAdmin && showDeleteGraveConfirm && (
+        <div
+          className={styles.modalBackdrop}
+          onClick={() => {
+            setShowDeleteGraveConfirm(false);
+          }}
+        >
+          <div
+            className={styles.smallModalDialog}
+            onClick={e => {
+              e.stopPropagation();
+            }}
+          >
+            <h3 style={{ fontSize: '1.2rem', color: '#0f172a', margin: 0 }}>
+              🗑️ Usunąć nagrobek?
+            </h3>
+            <p style={{ fontSize: '0.92rem', color: '#475569', lineHeight: 1.5, margin: 0 }}>
+              Czy na pewno chcesz usunąć ten nagrobek ({graveHeaderTitle})?
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '0.75rem', marginTop: '0.5rem' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteGraveConfirm(false);
+                }}
+                className={styles.btnSecondary}
+              >
                 Anuluj
               </button>
               <button
-                type="submit"
-                data-testid="save-grave-button"
-                className={styles.btnPrimary}
+                type="button"
+                data-testid="confirm-delete-grave-button"
+                onClick={() => {
+                  setShowDeleteGraveConfirm(false);
+                  void handleDeleteGrave();
+                }}
+                className={styles.btnDanger}
               >
-                Zapisz nagrobek
+                Tak, usuń nagrobek
               </button>
             </div>
-          </form>
-        </section>
+          </div>
+        </div>
       )}
 
-      {/* Grave Metadata & Epitaph Display (Compact height boxes) */}
+      {/* Grave Metadata & Epitaph Display */}
       <section className={styles.detailsSectionCard}>
         <div className={styles.graveMetadataGrid}>
           <div className={styles.metaBox}>
@@ -774,7 +847,8 @@ export default function GraveDetailsPage() {
           </div>
         )}
       </section>
-    <MediaGallerySection
+
+      <MediaGallerySection
         context="GRAVE"
         graveId={grave.graveId}
         primaryMediaId={grave.primaryMediaId}

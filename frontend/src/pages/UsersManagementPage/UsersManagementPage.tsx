@@ -37,6 +37,9 @@ export default function UsersManagementPage() {
   const [personSearchQuery, setPersonSearchQuery] = useState<string>('');
   const [personSearchResults, setPersonSearchResults] = useState<PersonListItemDto[]>([]);
 
+  // Confirmation modal for deleting a user
+  const [userToDelete, setUserToDelete] = useState<UserPersonAssignmentDto | null>(null);
+
   const loadUsers = async () => {
     setIsLoading(true);
     setErrorMessage(null);
@@ -385,7 +388,7 @@ export default function UsersManagementPage() {
                   type="button"
                   data-testid={`delete-user-${u.username}`}
                   onClick={() => {
-                    void handleDeleteUser(u.userId);
+                    setUserToDelete(u);
                   }}
                   className={styles.btnDanger}
                 >
@@ -396,6 +399,76 @@ export default function UsersManagementPage() {
           ))}
         </div>
       </section>
+
+      {/* Small Confirmation Modal for Deleting User */}
+      {userToDelete && (
+        <div
+          data-testid="confirm-delete-user-modal"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.6)',
+            zIndex: 1250,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem',
+          }}
+          onClick={() => {
+            setUserToDelete(null);
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#ffffff',
+              borderRadius: '12px',
+              border: '1px solid #cbd5e1',
+              maxWidth: '440px',
+              width: '100%',
+              padding: '1.5rem',
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1rem',
+              boxShadow: '0 20px 45px rgba(15, 23, 42, 0.25)',
+            }}
+            onClick={e => {
+              e.stopPropagation();
+            }}
+          >
+            <h3 style={{ margin: 0, fontSize: '1.18rem', color: '#0f172a' }}>
+              🗑️ Usunąć konto użytkownika?
+            </h3>
+            <p style={{ margin: 0, fontSize: '0.92rem', color: '#475569', lineHeight: 1.5 }}>
+              Czy na pewno chcesz usunąć konto użytkownika{' '}
+              <strong>„{userToDelete.username}”</strong>?
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '0.75rem' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setUserToDelete(null);
+                }}
+                className={styles.btnSecondary}
+              >
+                Anuluj
+              </button>
+              <button
+                type="button"
+                data-testid="confirm-delete-user-button"
+                onClick={() => {
+                  const id = userToDelete.userId;
+                  setUserToDelete(null);
+                  void handleDeleteUser(id);
+                }}
+                className={styles.btnDanger}
+              >
+                Tak, usuń użytkownika
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

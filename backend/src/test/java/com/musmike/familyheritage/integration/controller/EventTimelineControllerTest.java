@@ -303,4 +303,30 @@ class EventTimelineControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.totalEvents").value(8))
                 .andExpect(jsonPath("$.decades[*].years[*].year", hasItem(1952)));
     }
+
+    @Test
+    @Transactional
+    @WithMockUser(username = "admin", roles = {"ADMIN"})
+    void shouldKeepEventVisibleOnTimelineAfterRemovingAllParticipants() throws Exception {
+        SaveEventRequestDto removeParticipantsReq = SaveEventRequestDto.builder()
+                .typeCodes(List.of("VACATION"))
+                .title("Wakacje bez przypisanych osób")
+                .startYear(1960)
+                .startMonth(7)
+                .startDay(10)
+                .participants(List.of())
+                .build();
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/events/{id}", vacationEvent.getId())
+                        .cookie(new Cookie("XSRF-TOKEN", CSRF))
+                        .header("X-XSRF-TOKEN", CSRF)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(removeParticipantsReq)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.participants", hasSize(0)));
+
+        mockMvc.perform(get("/events"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.decades[*].years[*].events[*].title", hasItem("Wakacje bez przypisanych osób")));
+    }
 }

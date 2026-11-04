@@ -23,6 +23,7 @@ export default function PersonAvatar({
   avatarCropZoom,
 }: PersonAvatarProps) {
   const [mediaError, setMediaError] = useState<boolean>(false);
+  const [isLandscape, setIsLandscape] = useState<boolean>(true);
 
   const genderClass =
     sex === 'MALE'
@@ -46,14 +47,20 @@ export default function PersonAvatar({
   const cropX = avatarCropX ?? 50;
   const cropY = avatarCropY ?? 50;
   const cropZoom = avatarCropZoom ?? 1.0;
+  const zoomPercent = `${String(Math.round(cropZoom * 10000) / 100)}%`;
 
+  // Maps the circle of diameter min(W, H) / cropZoom centered at (cropX%, cropY%)
+  // to 100% of the circular avatarBox
   const mediaStyle: React.CSSProperties = {
-    width: '100%',
-    height: '100%',
-    objectFit: 'cover',
-    objectPosition: `${String(cropX)}% ${String(cropY)}%`,
-    transform: cropZoom !== 1.0 ? `scale(${String(cropZoom)})` : undefined,
-    transformOrigin: `${String(cropX)}% ${String(cropY)}%`,
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    width: isLandscape ? 'auto' : zoomPercent,
+    height: isLandscape ? zoomPercent : 'auto',
+    maxWidth: 'none',
+    maxHeight: 'none',
+    transform: `translate(-${String(cropX)}%, -${String(cropY)}%)`,
+    pointerEvents: 'none',
   };
 
   return (
@@ -70,6 +77,12 @@ export default function PersonAvatar({
             muted
             playsInline
             disablePictureInPicture
+            onLoadedMetadata={e => {
+              const v = e.currentTarget;
+              if (v.videoWidth > 0 && v.videoHeight > 0) {
+                setIsLandscape(v.videoWidth >= v.videoHeight);
+              }
+            }}
             onError={() => {
               setMediaError(true);
             }}
@@ -79,6 +92,12 @@ export default function PersonAvatar({
           <img
             src={mediaApi.getThumbnailUrl(avatarMediaId)}
             alt=""
+            onLoad={e => {
+              const img = e.currentTarget;
+              if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+                setIsLandscape(img.naturalWidth >= img.naturalHeight);
+              }
+            }}
             onError={() => {
               setMediaError(true);
             }}
@@ -86,7 +105,11 @@ export default function PersonAvatar({
           />
         )
       ) : (
-        <svg viewBox="0 0 64 64" fill="currentColor" className={styles.avatarSvg}>
+        <svg
+          viewBox="0 0 64 64"
+          fill="currentColor"
+          className={styles.avatarSvg}
+        >
           <circle cx="32" cy="22" r="12" />
           <path d="M12 56c0-11 9-18 20-18s20 7 20 18H12z" />
         </svg>

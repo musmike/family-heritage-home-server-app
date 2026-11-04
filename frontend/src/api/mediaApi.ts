@@ -445,7 +445,7 @@ export const mediaApi = {
 
   unlinkMediaFromContext: async (
     mediaId: number,
-    params: { graveId?: number; personId?: number; eventId?: number }
+    params: { graveId?: number; personId?: number; eventId?: number; targetCollectionId?: number }
   ): Promise<void> => {
     await api.delete(`/media/${String(mediaId)}/unlink`, { params });
   },
@@ -472,6 +472,11 @@ export const mediaApi = {
     const response = await api.get<EventMediaOverviewDto>(
       `/media/by-event/${String(eventId)}`
     );
+    return response.data;
+  },
+
+  getMediaById: async (mediaId: number): Promise<MediaItemDto> => {
+    const response = await api.get<MediaItemDto>(`/media/${String(mediaId)}`);
     return response.data;
   },
 };

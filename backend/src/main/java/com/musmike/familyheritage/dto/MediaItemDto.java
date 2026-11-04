@@ -112,4 +112,16 @@ public class MediaItemDto {
 
     @Builder.Default
     private List<Integer> eventStartYears = new ArrayList<>();
+
+    @Builder.Default
+    private List<Long> rootEventIds = new ArrayList<>();
+
+    @Builder.Default
+    private List<String> rootEventLabels = new ArrayList<>();
+
+    @Builder.Default
+    private List<Integer> rootEventStartYears = new ArrayList<>();
+
+    private Long subEventId;
+    private String subEventLabel;
 }

@@ -67,7 +67,6 @@ export interface MediaItemDto {
   inscriptionText?: string | null;
   description: string | null;
   sourceText?: string | null;
-
   dateType?: string | null;
   betweenRange?: boolean;
   dateQualifier?: string | null;
@@ -78,7 +77,6 @@ export interface MediaItemDto {
   hour?: number | null;
   minute?: number | null;
   second?: number | null;
-
   rangeEndQualifier?: string | null;
   rangeEndYear?: number | null;
   rangeEndMonth?: number | null;
@@ -87,10 +85,8 @@ export interface MediaItemDto {
   rangeEndHour?: number | null;
   rangeEndMinute?: number | null;
   rangeEndSecond?: number | null;
-
   dateText?: string | null;
   sortDateTime?: string | null;
-
   metadataYear?: number | null;
   metadataMonth?: number | null;
   metadataDay?: number | null;
@@ -100,7 +96,6 @@ export interface MediaItemDto {
   metadataDateText?: string | null;
   metadataDateSource?: string | null;
   availableMetadataDates?: MetadataDateOptionDto[];
-
   collectionId?: number | null;
   collectionName?: string | null;
   datedCollectionItem?: boolean;
@@ -119,6 +114,11 @@ export interface MediaItemDto {
   eventIds?: number[];
   eventLabels?: string[];
   eventStartYears?: number[];
+  rootEventIds?: number[];
+  rootEventLabels?: string[];
+  rootEventStartYears?: number[];
+  subEventId?: number | null;
+  subEventLabel?: string | null;
 }
 
 export interface MediaCollectionDto {
@@ -139,7 +139,17 @@ export interface MediaCollectionDto {
   startHour?: number | null;
   startMinute?: number | null;
   startSecond?: number | null;
+  startRangeEndQualifier?: string | null;
+  startRangeEndYear?: number | null;
+  startRangeEndMonth?: number | null;
+  startRangeEndDay?: number | null;
+  startRangeEndTimeQualifier?: string | null;
+  startRangeEndHour?: number | null;
+  startRangeEndMinute?: number | null;
+  startRangeEndSecond?: number | null;
   isRange?: boolean;
+  hasEndDate?: boolean;
+  endDateType?: string | null;
   endYear?: number | null;
   endMonth?: number | null;
   endDay?: number | null;
@@ -148,6 +158,14 @@ export interface MediaCollectionDto {
   endHour?: number | null;
   endMinute?: number | null;
   endSecond?: number | null;
+  endRangeEndQualifier?: string | null;
+  endRangeEndYear?: number | null;
+  endRangeEndMonth?: number | null;
+  endRangeEndDay?: number | null;
+  endRangeEndTimeQualifier?: string | null;
+  endRangeEndHour?: number | null;
+  endRangeEndMinute?: number | null;
+  endRangeEndSecond?: number | null;
   founderPersonId: number | null;
   founderPersonName: string | null;
   previewMediaId?: number | null;
@@ -161,6 +179,7 @@ export interface SaveMediaCollectionRequestDto {
   description?: string | null;
   parentCollectionId?: number | null;
   datedCollection?: boolean;
+  isStartBetweenRange?: boolean;
   startYear?: number | null;
   startMonth?: number | null;
   startDay?: number | null;
@@ -170,7 +189,17 @@ export interface SaveMediaCollectionRequestDto {
   startHour?: number | null;
   startMinute?: number | null;
   startSecond?: number | null;
+  startRangeEndQualifier?: string | null;
+  startRangeEndYear?: number | null;
+  startRangeEndMonth?: number | null;
+  startRangeEndDay?: number | null;
+  startRangeEndTimeQualifier?: string | null;
+  startRangeEndHour?: number | null;
+  startRangeEndMinute?: number | null;
+  startRangeEndSecond?: number | null;
   isRange?: boolean;
+  hasEndDate?: boolean;
+  isEndBetweenRange?: boolean;
   endYear?: number | null;
   endMonth?: number | null;
   endDay?: number | null;
@@ -179,6 +208,14 @@ export interface SaveMediaCollectionRequestDto {
   endHour?: number | null;
   endMinute?: number | null;
   endSecond?: number | null;
+  endRangeEndQualifier?: string | null;
+  endRangeEndYear?: number | null;
+  endRangeEndMonth?: number | null;
+  endRangeEndDay?: number | null;
+  endRangeEndTimeQualifier?: string | null;
+  endRangeEndHour?: number | null;
+  endRangeEndMinute?: number | null;
+  endRangeEndSecond?: number | null;
   founderPersonId?: number | null;
 }
 
@@ -269,6 +306,12 @@ export interface BulkUpdateMediaRequestDto {
   baseFileNameStem?: string | null;
   customFolderName?: string | null;
   contextEventId?: number | null;
+  targetCollectionId?: number | null;
+  title?: string | null;
+  sourceText?: string | null;
+  inscriptionText?: string | null;
+  description?: string | null;
+  personLinks?: SaveMediaPersonLinkRequestDto[];
   dateSourceMode?: 'NO_CHANGE' | 'MANUAL' | 'METADATA' | 'EVENT' | 'UNDATED' | null;
   selectedMetadataSourceTag?: string | null;
   isBetweenRange?: boolean;

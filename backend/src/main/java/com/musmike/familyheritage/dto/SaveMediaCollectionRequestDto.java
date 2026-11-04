@@ -17,7 +17,8 @@ public class SaveMediaCollectionRequestDto {
     private Boolean datedCollection;
     private Long founderPersonId;
 
-    // Start DateDescriptor
+    // Start Date Descriptor (SINGLE or RANGE "between A and B")
+    private Boolean isStartBetweenRange;
     private String startDateType;
     private String startQualifier;
     private Integer startYear;
@@ -28,8 +29,19 @@ public class SaveMediaCollectionRequestDto {
     private Integer startMinute;
     private Integer startSecond;
 
-    // Range / End DateDescriptor
+    private String startRangeEndQualifier;
+    private Integer startRangeEndYear;
+    private Integer startRangeEndMonth;
+    private Integer startRangeEndDay;
+    private String startRangeEndTimeQualifier;
+    private Integer startRangeEndHour;
+    private Integer startRangeEndMinute;
+    private Integer startRangeEndSecond;
+
+    // End Date Descriptor (when dated album spans a period "from ... to ...")
     private Boolean isRange;
+    private Boolean hasEndDate;
+    private Boolean isEndBetweenRange;
     private String endQualifier;
     private Integer endYear;
     private Integer endMonth;
@@ -38,4 +50,13 @@ public class SaveMediaCollectionRequestDto {
     private Integer endHour;
     private Integer endMinute;
     private Integer endSecond;
+
+    private String endRangeEndQualifier;
+    private Integer endRangeEndYear;
+    private Integer endRangeEndMonth;
+    private Integer endRangeEndDay;
+    private String endRangeEndTimeQualifier;
+    private Integer endRangeEndHour;
+    private Integer endRangeEndMinute;
+    private Integer endRangeEndSecond;
 }

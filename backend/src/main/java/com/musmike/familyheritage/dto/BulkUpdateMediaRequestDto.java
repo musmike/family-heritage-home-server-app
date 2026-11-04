@@ -19,6 +19,13 @@ public class BulkUpdateMediaRequestDto {
     private String baseFileNameStem;
     private String customFolderName;
     private Long contextEventId;
+    private Long targetCollectionId;
+
+    private String title;
+    private String sourceText;
+    private String inscriptionText;
+    private String description;
+    private List<SaveMediaPersonLinkRequestDto> personLinks;
 
     // "NO_CHANGE", "MANUAL", "METADATA", "EVENT", "UNDATED"
     private String dateSourceMode;

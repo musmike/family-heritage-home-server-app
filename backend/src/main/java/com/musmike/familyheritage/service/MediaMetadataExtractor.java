@@ -179,7 +179,8 @@ public class MediaMetadataExtractor {
             return 1;
         }
 
-        ByteBuffer buf = ByteBuffer.wrap(bytes, tiffStart, Math.min(tiffLength, bytes.length - tiffStart));
+        // Slice buffer so absolute offsets inside TIFF header start at index 0
+        ByteBuffer buf = ByteBuffer.wrap(bytes, tiffStart, Math.min(tiffLength, bytes.length - tiffStart)).slice();
         buf.order(byteOrder);
 
         int firstIfdOffset = buf.getInt(4);
@@ -274,7 +275,8 @@ public class MediaMetadataExtractor {
             return;
         }
 
-        ByteBuffer buf = ByteBuffer.wrap(bytes, tiffStart, Math.min(tiffLength, bytes.length - tiffStart));
+        // Slice buffer so absolute offsets inside TIFF header start at index 0
+        ByteBuffer buf = ByteBuffer.wrap(bytes, tiffStart, Math.min(tiffLength, bytes.length - tiffStart)).slice();
         buf.order(byteOrder);
 
         int firstIfdOffset = buf.getInt(4);

@@ -37,9 +37,12 @@ public interface EventRepository extends JpaRepository<Event, Long> {
 
     @Modifying
     @Query(value = "DELETE FROM events e WHERE e.parent_event_id IS NULL " +
+            "AND e.title IS NULL AND e.description IS NULL " +
             "AND NOT EXISTS (SELECT 1 FROM event_participants ep WHERE ep.event_id = e.id) " +
             "AND NOT EXISTS (SELECT 1 FROM families f WHERE f.primary_wedding_id = e.id) " +
             "AND NOT EXISTS (SELECT 1 FROM events child WHERE child.parent_event_id = e.id) " +
-            "AND NOT EXISTS (SELECT 1 FROM event_parent_links epl WHERE epl.parent_event_id = e.id)", nativeQuery = true)
+            "AND NOT EXISTS (SELECT 1 FROM event_parent_links epl WHERE epl.parent_event_id = e.id) " +
+            "AND NOT EXISTS (SELECT 1 FROM media_events me WHERE me.event_id = e.id)",
+            nativeQuery = true)
     void deleteOrphanEvents();
 }

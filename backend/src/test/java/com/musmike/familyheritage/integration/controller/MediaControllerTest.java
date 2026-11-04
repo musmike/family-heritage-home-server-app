@@ -334,4 +334,70 @@ class MediaControllerTest extends AbstractIntegrationTest {
         assertThat(updatedJan.getAvatarCropY()).isEqualTo(20);
         assertThat(updatedJan.getAvatarCropZoom()).isEqualTo(1.8);
     }
+
+    @Test
+    @Transactional
+    @WithMockUser(username = "admin", roles = {"ADMIN"})
+    void shouldPreserveEventDatePrefixInCustomFolderAndMoveFileToCollectionWhenUnlinked() throws Exception {
+        TimelineEventDto evt = eventTimelineService.createEvent(SaveEventRequestDto.builder()
+                .typeCodes(List.of("SUMMER_VACATION"))
+                .title("Wyjazd w Bieszczady")
+                .startYear(1998)
+                .startMonth(8)
+                .startDay(15)
+                .build());
+
+        // 1. Custom folder name must keep untouchable event date prefix 1998_08_15_
+        mockMvc.perform(get("/media/preview-filename")
+                        .param("primaryContext", "EVENT")
+                        .param("eventId", String.valueOf(evt.getEventId()))
+                        .param("customFolderName", "nasz_wlasny_folder")
+                        .param("originalFilename", "bieszczady.jpg"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.directoryPath").value("dated/1990s/1998/1998_08_15_nasz_wlasny_folder"));
+
+        MockMultipartFile photo = new MockMultipartFile(
+                "file", "bieszczady.jpg", "image/jpeg", new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF}
+        );
+        MvcResult uploadRes = mockMvc.perform(multipart("/media/upload")
+                        .file(photo)
+                        .param("primaryContext", "EVENT")
+                        .param("eventId", String.valueOf(evt.getEventId()))
+                        .cookie(new Cookie("XSRF-TOKEN", CSRF))
+                        .header("X-XSRF-TOKEN", CSRF))
+                .andExpect(status().isCreated())
+                .andReturn();
+        Long mediaId = objectMapper.readTree(uploadRes.getResponse().getContentAsString()).get("id").asLong();
+
+        // 2. Unlinking last reference without targetCollectionId must fail with 400
+        mockMvc.perform(delete("/media/{id}/unlink", mediaId)
+                        .param("eventId", String.valueOf(evt.getEventId()))
+                        .cookie(new Cookie("XSRF-TOKEN", CSRF))
+                        .header("X-XSRF-TOKEN", CSRF))
+                .andExpect(status().isBadRequest());
+
+        // 3. Create target collection and unlink with targetCollectionId -> file moves to collection folder
+        MvcResult colRes = mockMvc.perform(post("/media/collections")
+                        .cookie(new Cookie("XSRF-TOKEN", CSRF))
+                        .header("X-XSRF-TOKEN", CSRF)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                SaveMediaCollectionRequestDto.builder().name("Archiwum Domowe").build()
+                        )))
+                .andExpect(status().isCreated())
+                .andReturn();
+        Long colId = objectMapper.readTree(colRes.getResponse().getContentAsString()).get("id").asLong();
+
+        mockMvc.perform(delete("/media/{id}/unlink", mediaId)
+                        .param("eventId", String.valueOf(evt.getEventId()))
+                        .param("targetCollectionId", String.valueOf(colId))
+                        .cookie(new Cookie("XSRF-TOKEN", CSRF))
+                        .header("X-XSRF-TOKEN", CSRF))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/media/{id}", mediaId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.collectionId").value(colId))
+                .andExpect(jsonPath("$.relativePath", startsWith("collections/archiwum_domowe/")));
+    }
 }

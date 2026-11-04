@@ -88,6 +88,9 @@ export default function BurialsPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isCemeteryDescExpanded, setIsCemeteryDescExpanded] = useState<boolean>(false);
 
+  // Confirmation modal for deleting a cemetery
+  const [cemeteryToDelete, setCemeteryToDelete] = useState<CemeteryGroupDto | null>(null);
+
   // Filters
   const [search, setSearch] = useState<string>('');
   const [sexFilter, setSexFilter] = useState<string>('ALL');
@@ -481,9 +484,7 @@ export default function BurialsPage() {
                   type="button"
                   data-testid="delete-cemetery-button"
                   onClick={() => {
-                    if (activeCemeteryGroup.cemeteryId !== null) {
-                      void handleDeleteCemetery(activeCemeteryGroup.cemeteryId);
-                    }
+                    setCemeteryToDelete(activeCemeteryGroup);
                   }}
                   className={styles.btnDanger}
                 >
@@ -511,117 +512,25 @@ export default function BurialsPage() {
         </div>
       </div>
 
-      {/* Admin Create / Edit Cemetery Form */}
+      {/* Admin Create/Edit Cemetery Modal */}
       {isAdmin && showCemeteryForm && (
-        <section className={styles.adminFormCard} data-testid="cemetery-form-section">
-          <h2 className={styles.cemeteryCardTitle}>
-            {editingCemeteryId === null ? 'Dodaj nowy cmentarz' : 'Edycja cmentarza'}
-          </h2>
-          <form
-            onSubmit={e => {
-              void handleSaveCemetery(e);
+        <div
+          className={styles.modalBackdrop}
+          data-testid="cemetery-form-section"
+          onClick={() => {
+            setShowCemeteryForm(false);
+          }}
+        >
+          <div
+            className={styles.largeModalDialog}
+            onClick={e => {
+              e.stopPropagation();
             }}
-            style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}
           >
-            <div className={styles.formGrid}>
-              <div className={styles.formField}>
-                <label htmlFor="cem-name-input" className={styles.filterLabel}>
-                  Nazwa cmentarza *
-                </label>
-                <input
-                  id="cem-name-input"
-                  data-testid="cem-name-input"
-                  type="text"
-                  required
-                  placeholder="np. Cmentarz Rakowicki"
-                  value={cemName}
-                  onChange={e => {
-                    setCemName(e.target.value);
-                  }}
-                  className={styles.textInput}
-                />
-              </div>
-
-              <div className={styles.formField}>
-                <label htmlFor="cem-mgmt-select" className={styles.filterLabel}>
-                  Sposób zarządzania
-                </label>
-                <select
-                  id="cem-mgmt-select"
-                  data-testid="cem-mgmt-select"
-                  value={cemManagementType}
-                  onChange={e => {
-                    setCemManagementType(e.target.value);
-                  }}
-                  className={styles.selectInput}
-                >
-                  <option value="">— Brak / Nieokreślony —</option>
-                  {MANAGEMENT_TYPE_OPTIONS.map(opt => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className={styles.formField}>
-                <label htmlFor="cem-denom-select" className={styles.filterLabel}>
-                  Wyznanie
-                </label>
-                <select
-                  id="cem-denom-select"
-                  data-testid="cem-denom-select"
-                  value={cemDenomination}
-                  onChange={e => {
-                    setCemDenomination(e.target.value);
-                  }}
-                  className={styles.selectInput}
-                >
-                  <option value="">— Brak / Nieokreślony —</option>
-                  {DENOMINATION_OPTIONS.map(opt => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className={styles.formField}>
-                <label htmlFor="cem-loc-input" className={styles.filterLabel}>
-                  Miejscowość
-                </label>
-                <input
-                  id="cem-loc-input"
-                  type="text"
-                  placeholder="np. Kraków"
-                  value={cemLocationName}
-                  onChange={e => {
-                    setCemLocationName(e.target.value);
-                  }}
-                  className={styles.textInput}
-                />
-              </div>
-            </div>
-
-            <div className={styles.formField}>
-              <label htmlFor="cem-desc-input" className={styles.filterLabel}>
-                Opis tekstowy cmentarza (wyświetlany na karcie oraz po wejściu w cmentarz)
-              </label>
-              <textarea
-                id="cem-desc-input"
-                ref={cemDescRef}
-                data-testid="cem-desc-input"
-                placeholder="Dodatkowe informacje o historii cmentarza, godzinach otwarcia lub położeniu..."
-                value={cemDescription}
-                onChange={e => {
-                  setCemDescription(e.target.value);
-                  adjustTextareaHeight(e.target);
-                }}
-                className={styles.textareaInput}
-              />
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
+            <div className={styles.modalHeader}>
+              <h2 className={styles.cemeteryCardTitle}>
+                {editingCemeteryId === null ? 'Dodaj nowy cmentarz' : 'Edycja cmentarza'}
+              </h2>
               <button
                 type="button"
                 onClick={() => {
@@ -629,231 +538,155 @@ export default function BurialsPage() {
                 }}
                 className={styles.btnSecondary}
               >
-                Anuluj
+                ✕ Zamknij
               </button>
-              <button
-                type="submit"
-                data-testid="save-cemetery-button"
-                className={styles.btnPrimary}
+            </div>
+            <div className={styles.modalBody}>
+              <form
+                onSubmit={e => {
+                  void handleSaveCemetery(e);
+                }}
+                style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}
               >
-                Zapisz cmentarz
-              </button>
-            </div>
-          </form>
-        </section>
-      )}
+                <div className={styles.formGrid}>
+                  <div className={styles.formField}>
+                    <label htmlFor="cem-name-input" className={styles.filterLabel}>
+                      Nazwa cmentarza *
+                    </label>
+                    <input
+                      id="cem-name-input"
+                      data-testid="cem-name-input"
+                      type="text"
+                      required
+                      placeholder="np. Cmentarz Rakowicki"
+                      value={cemName}
+                      onChange={e => {
+                        setCemName(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                  </div>
 
-      {/* Admin Create New Grave Form */}
-      {isAdmin && showCreateGraveForm && (
-        <section className={styles.adminFormCard} data-testid="create-grave-form-section">
-          <h2 className={styles.cemeteryCardTitle}>Dodaj nowy nagrobek</h2>
-          <form
-            onSubmit={e => {
-              void handleCreateGrave(e);
-            }}
-            style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}
-          >
-            <div className={styles.formGrid}>
-              <div className={styles.formField}>
-                <label htmlFor="new-grave-cem-select" className={styles.filterLabel}>
-                  Cmentarz
-                </label>
-                <select
-                  id="new-grave-cem-select"
-                  value={newGraveCemeteryId !== null ? String(newGraveCemeteryId) : ''}
-                  onChange={e => {
-                    const val = e.target.value;
-                    setNewGraveCemeteryId(val === '' ? null : Number(val));
-                  }}
-                  className={styles.selectInput}
-                >
-                  <option value="">Inne (nieprzypisany)</option>
-                  {customCemeteries.map(c => (
-                    <option key={String(c.cemeteryId)} value={String(c.cemeteryId)}>
-                      {c.groupName} {c.locationName ? `(${c.locationName})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                  <div className={styles.formField}>
+                    <label htmlFor="cem-mgmt-select" className={styles.filterLabel}>
+                      Sposób zarządzania
+                    </label>
+                    <select
+                      id="cem-mgmt-select"
+                      data-testid="cem-mgmt-select"
+                      value={cemManagementType}
+                      onChange={e => {
+                        setCemManagementType(e.target.value);
+                      }}
+                      className={styles.selectInput}
+                    >
+                      <option value="">— Brak / Nieokreślony —</option>
+                      {MANAGEMENT_TYPE_OPTIONS.map(opt => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-              <div className={styles.formField}>
-                <label htmlFor="new-grave-type-select" className={styles.filterLabel}>
-                  Typ grobu
-                </label>
-                <select
-                  id="new-grave-type-select"
-                  value={newGraveType}
-                  onChange={e => {
-                    setNewGraveType(e.target.value);
-                  }}
-                  className={styles.selectInput}
-                >
-                  <option value="">— Nieokreślony —</option>
-                  {GRAVE_TYPE_OPTIONS.map(opt => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                  <div className={styles.formField}>
+                    <label htmlFor="cem-denom-select" className={styles.filterLabel}>
+                      Wyznanie
+                    </label>
+                    <select
+                      id="cem-denom-select"
+                      data-testid="cem-denom-select"
+                      value={cemDenomination}
+                      onChange={e => {
+                        setCemDenomination(e.target.value);
+                      }}
+                      className={styles.selectInput}
+                    >
+                      <option value="">— Brak / Nieokreślony —</option>
+                      {DENOMINATION_OPTIONS.map(opt => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-              <div className={styles.formField}>
-                <label htmlFor="new-grave-section-input" className={styles.filterLabel}>
-                  Kwatera
-                </label>
-                <input
-                  id="new-grave-section-input"
-                  data-testid="new-grave-section-input"
-                  type="text"
-                  value={newGraveSection}
-                  onChange={e => {
-                    setNewGraveSection(e.target.value);
-                  }}
-                  className={styles.textInput}
-                />
-              </div>
+                  <div className={styles.formField}>
+                    <label htmlFor="cem-loc-input" className={styles.filterLabel}>
+                      Miejscowość
+                    </label>
+                    <input
+                      id="cem-loc-input"
+                      type="text"
+                      placeholder="np. Kraków"
+                      value={cemLocationName}
+                      onChange={e => {
+                        setCemLocationName(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                  </div>
+                </div>
 
-              <div className={styles.formField}>
-                <label htmlFor="new-grave-sector-input" className={styles.filterLabel}>
-                  Sektor
-                </label>
-                <input
-                  id="new-grave-sector-input"
-                  type="text"
-                  value={newGraveSector}
-                  onChange={e => {
-                    setNewGraveSector(e.target.value);
-                  }}
-                  className={styles.textInput}
-                />
-              </div>
+                <div className={styles.formField}>
+                  <label htmlFor="cem-desc-input" className={styles.filterLabel}>
+                    Opis tekstowy cmentarza (wyświetlany na karcie oraz po wejściu w cmentarz)
+                  </label>
+                  <textarea
+                    id="cem-desc-input"
+                    ref={cemDescRef}
+                    data-testid="cem-desc-input"
+                    placeholder="Dodatkowe informacje o historii cmentarza, godzinach otwarcia lub położeniu..."
+                    value={cemDescription}
+                    onChange={e => {
+                      setCemDescription(e.target.value);
+                      adjustTextareaHeight(e.target);
+                    }}
+                    className={styles.textareaInput}
+                  />
+                </div>
 
-              <div className={styles.formField}>
-                <label htmlFor="new-grave-row-input" className={styles.filterLabel}>
-                  Rząd
-                </label>
-                <input
-                  id="new-grave-row-input"
-                  type="text"
-                  value={newGraveRow}
-                  onChange={e => {
-                    setNewGraveRow(e.target.value);
-                  }}
-                  className={styles.textInput}
-                />
-              </div>
-
-              <div className={styles.formField}>
-                <label htmlFor="new-grave-number-input" className={styles.filterLabel}>
-                  Numer grobu
-                </label>
-                <input
-                  id="new-grave-number-input"
-                  type="text"
-                  value={newGraveNumber}
-                  onChange={e => {
-                    setNewGraveNumber(e.target.value);
-                  }}
-                  className={styles.textInput}
-                />
-              </div>
-            </div>
-
-            <div className={styles.formField}>
-              <label htmlFor="new-grave-desc-input" className={styles.filterLabel}>
-                Opis lokalizacji / punkty orientacyjne (np. charakterystyczne drzewa, alejka)
-              </label>
-              <textarea
-                id="new-grave-desc-input"
-                ref={newGraveDescRef}
-                value={newGraveDesc}
-                onChange={e => {
-                  setNewGraveDesc(e.target.value);
-                  adjustTextareaHeight(e.target);
-                }}
-                className={styles.textareaInput}
-              />
-            </div>
-
-            <div className={styles.formField}>
-              <label htmlFor="new-grave-epitaph-input" className={styles.filterLabel}>
-                Epitafium na nagrobku
-              </label>
-              <textarea
-                id="new-grave-epitaph-input"
-                ref={newGraveEpitaphRef}
-                value={newGraveEpitaph}
-                onChange={e => {
-                  setNewGraveEpitaph(e.target.value);
-                  adjustTextareaHeight(e.target);
-                }}
-                className={styles.textareaInput}
-              />
-            </div>
-
-            <div className={styles.formField}>
-              <span className={styles.filterLabel}>
-                Pierwsza pochowana osoba (opcjonalnie):{' '}
-                <strong style={{ color: '#0f172a' }}>
-                  {newGravePersonLabel ?? 'Brak wybranej osoby'}
-                </strong>
-              </span>
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <input
-                  type="text"
-                  placeholder="Wyszukaj osobę po imieniu lub nazwisku..."
-                  value={newGravePersonSearch}
-                  onChange={e => {
-                    setNewGravePersonSearch(e.target.value);
-                  }}
-                  className={styles.textInput}
-                  style={{ flex: 1, minWidth: '200px' }}
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    void handleSearchNewGravePerson();
-                  }}
-                  className={styles.btnSecondary}
-                >
-                  Szukaj osoby
-                </button>
-                {newGravePersonId !== null && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
                   <button
                     type="button"
                     onClick={() => {
-                      setNewGravePersonId(null);
-                      setNewGravePersonLabel(null);
+                      setShowCemeteryForm(false);
                     }}
                     className={styles.btnSecondary}
                   >
-                    Wyczyść wybór
+                    Anuluj
                   </button>
-                )}
-              </div>
-
-              {newGravePersonResults.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.45rem', marginTop: '0.4rem' }}>
-                  {newGravePersonResults.map(p => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => {
-                        setNewGravePersonId(p.id);
-                        setNewGravePersonLabel(formatPersonDisplayName(p));
-                        setNewGravePersonResults([]);
-                      }}
-                      className={styles.btnSecondary}
-                    >
-                      ✓ Wybierz: {formatPersonDisplayName(p)} ({p.birthYear ?? '?'}–
-                      {p.deathYear ?? '?'})
-                    </button>
-                  ))}
+                  <button
+                    type="submit"
+                    data-testid="save-cemetery-button"
+                    className={styles.btnPrimary}
+                  >
+                    Zapisz cmentarz
+                  </button>
                 </div>
-              )}
+              </form>
             </div>
+          </div>
+        </div>
+      )}
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
+      {/* Admin Create New Grave Modal */}
+      {isAdmin && showCreateGraveForm && (
+        <div
+          className={styles.modalBackdrop}
+          data-testid="create-grave-form-section"
+          onClick={() => {
+            setShowCreateGraveForm(false);
+          }}
+        >
+          <div
+            className={styles.largeModalDialog}
+            onClick={e => {
+              e.stopPropagation();
+            }}
+          >
+            <div className={styles.modalHeader}>
+              <h2 className={styles.cemeteryCardTitle}>Dodaj nowy nagrobek</h2>
               <button
                 type="button"
                 onClick={() => {
@@ -861,136 +694,431 @@ export default function BurialsPage() {
                 }}
                 className={styles.btnSecondary}
               >
-                Anuluj
-              </button>
-              <button
-                type="submit"
-                data-testid="submit-create-grave-button"
-                className={styles.btnPrimary}
-              >
-                Utwórz nagrobek
+                ✕ Zamknij
               </button>
             </div>
-          </form>
-        </section>
+            <div className={styles.modalBody}>
+              <form
+                onSubmit={e => {
+                  void handleCreateGrave(e);
+                }}
+                style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}
+              >
+                <div className={styles.formGrid}>
+                  <div className={styles.formField}>
+                    <label htmlFor="new-grave-cem-select" className={styles.filterLabel}>
+                      Cmentarz
+                    </label>
+                    <select
+                      id="new-grave-cem-select"
+                      value={newGraveCemeteryId !== null ? String(newGraveCemeteryId) : ''}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setNewGraveCemeteryId(val === '' ? null : Number(val));
+                      }}
+                      className={styles.selectInput}
+                    >
+                      <option value="">Inne (nieprzypisany)</option>
+                      {customCemeteries.map(c => (
+                        <option key={String(c.cemeteryId)} value={String(c.cemeteryId)}>
+                          {c.groupName} {c.locationName ? `(${c.locationName})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className={styles.formField}>
+                    <label htmlFor="new-grave-type-select" className={styles.filterLabel}>
+                      Typ grobu
+                    </label>
+                    <select
+                      id="new-grave-type-select"
+                      value={newGraveType}
+                      onChange={e => {
+                        setNewGraveType(e.target.value);
+                      }}
+                      className={styles.selectInput}
+                    >
+                      <option value="">— Nieokreślony —</option>
+                      {GRAVE_TYPE_OPTIONS.map(opt => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className={styles.formField}>
+                    <label htmlFor="new-grave-section-input" className={styles.filterLabel}>
+                      Kwatera
+                    </label>
+                    <input
+                      id="new-grave-section-input"
+                      data-testid="new-grave-section-input"
+                      type="text"
+                      value={newGraveSection}
+                      onChange={e => {
+                        setNewGraveSection(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                  </div>
+
+                  <div className={styles.formField}>
+                    <label htmlFor="new-grave-sector-input" className={styles.filterLabel}>
+                      Sektor
+                    </label>
+                    <input
+                      id="new-grave-sector-input"
+                      type="text"
+                      value={newGraveSector}
+                      onChange={e => {
+                        setNewGraveSector(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                  </div>
+
+                  <div className={styles.formField}>
+                    <label htmlFor="new-grave-row-input" className={styles.filterLabel}>
+                      Rząd
+                    </label>
+                    <input
+                      id="new-grave-row-input"
+                      type="text"
+                      value={newGraveRow}
+                      onChange={e => {
+                        setNewGraveRow(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                  </div>
+
+                  <div className={styles.formField}>
+                    <label htmlFor="new-grave-number-input" className={styles.filterLabel}>
+                      Numer grobu
+                    </label>
+                    <input
+                      id="new-grave-number-input"
+                      type="text"
+                      value={newGraveNumber}
+                      onChange={e => {
+                        setNewGraveNumber(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                  </div>
+                </div>
+
+                <div className={styles.formField}>
+                  <label htmlFor="new-grave-desc-input" className={styles.filterLabel}>
+                    Opis lokalizacji / punkty orientacyjne (np. charakterystyczne drzewa, alejka)
+                  </label>
+                  <textarea
+                    id="new-grave-desc-input"
+                    ref={newGraveDescRef}
+                    value={newGraveDesc}
+                    onChange={e => {
+                      setNewGraveDesc(e.target.value);
+                      adjustTextareaHeight(e.target);
+                    }}
+                    className={styles.textareaInput}
+                  />
+                </div>
+
+                <div className={styles.formField}>
+                  <label htmlFor="new-grave-epitaph-input" className={styles.filterLabel}>
+                    Epitafium na nagrobku
+                  </label>
+                  <textarea
+                    id="new-grave-epitaph-input"
+                    ref={newGraveEpitaphRef}
+                    value={newGraveEpitaph}
+                    onChange={e => {
+                      setNewGraveEpitaph(e.target.value);
+                      adjustTextareaHeight(e.target);
+                    }}
+                    className={styles.textareaInput}
+                  />
+                </div>
+
+                <div className={styles.formField}>
+                  <span className={styles.filterLabel}>
+                    Pierwsza pochowana osoba (opcjonalnie):{' '}
+                    <strong style={{ color: '#0f172a' }}>
+                      {newGravePersonLabel ?? 'Brak wybranej osoby'}
+                    </strong>
+                  </span>
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <input
+                      type="text"
+                      placeholder="Wyszukaj osobę po imieniu lub nazwisku..."
+                      value={newGravePersonSearch}
+                      onChange={e => {
+                        setNewGravePersonSearch(e.target.value);
+                      }}
+                      className={styles.textInput}
+                      style={{ flex: 1, minWidth: '200px' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleSearchNewGravePerson();
+                      }}
+                      className={styles.btnSecondary}
+                    >
+                      Szukaj osoby
+                    </button>
+                    {newGravePersonId !== null && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewGravePersonId(null);
+                          setNewGravePersonLabel(null);
+                        }}
+                        className={styles.btnSecondary}
+                      >
+                        Wyczyść wybór
+                      </button>
+                    )}
+                  </div>
+
+                  {newGravePersonResults.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.45rem', marginTop: '0.4rem' }}>
+                      {newGravePersonResults.map(p => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => {
+                            setNewGravePersonId(p.id);
+                            setNewGravePersonLabel(formatPersonDisplayName(p));
+                            setNewGravePersonResults([]);
+                          }}
+                          className={styles.btnSecondary}
+                        >
+                          ✓ Wybierz: {formatPersonDisplayName(p)} ({p.birthYear ?? '?'}–
+                          {p.deathYear ?? '?'})
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCreateGraveForm(false);
+                    }}
+                    className={styles.btnSecondary}
+                  >
+                    Anuluj
+                  </button>
+                  <button
+                    type="submit"
+                    data-testid="submit-create-grave-button"
+                    className={styles.btnPrimary}
+                  >
+                    Utwórz nagrobek
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
       )}
 
-      {/* Admin Bulk Assign Panel inside a Specific Cemetery */}
+      {/* Admin Bulk Assign Panel Modal */}
       {isAdmin &&
         showBulkAssignPanel &&
         activeCemeteryGroup &&
         !activeCemeteryGroup.otherGroup &&
         activeCemeteryGroup.cemeteryId !== null && (
-          <section className={styles.adminFormCard} data-testid="bulk-assign-panel">
-            <div className={styles.bulkToolbar}>
-              <div>
-                <h2 className={styles.cemeteryCardTitle}>
-                  Przypisz groby z kategorii „Inne” do: {activeCemeteryGroup.groupName}
-                </h2>
-                <p className={styles.pageSubtitle}>
-                  Zaznacz groby na podstawie miejsca pochówku z pliku GEDCOM i przypisz je jednym kliknięciem.
-                </p>
-              </div>
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedGraveIds(filteredUnassignedForModal.map(g => g.graveId));
-                  }}
-                  className={styles.btnSecondary}
-                >
-                  Zaznacz wszystkie widoczne ({filteredUnassignedForModal.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedGraveIds([]);
-                  }}
-                  className={styles.btnSecondary}
-                >
-                  Odznacz wszystkie
-                </button>
-              </div>
-            </div>
-
-            <input
-              type="text"
-              placeholder="Filtruj groby z kategorii Inne (np. wpisz miejscowość lub nazwę cmentarza z GEDCOM)..."
-              value={bulkSearchQuery}
-              onChange={e => {
-                setBulkSearchQuery(e.target.value);
+          <div
+            className={styles.modalBackdrop}
+            data-testid="bulk-assign-panel"
+            onClick={() => {
+              setShowBulkAssignPanel(false);
+            }}
+          >
+            <div
+              className={styles.largeModalDialog}
+              onClick={e => {
+                e.stopPropagation();
               }}
-              className={styles.textInput}
-            />
-
-            <div className={styles.bulkAssignList}>
-              {filteredUnassignedForModal.map(g => {
-                const isChecked = selectedGraveIds.includes(g.graveId);
-                const peopleNames = g.burials
-                  .map(b => `${formatPersonDisplayName(b)} (${formatCompactYears(b)})`)
-                  .join(', ');
-                const gedcomPlaces = Array.from(
-                  new Set(
-                    g.burials
-                      .map(b => b.placeDescription)
-                      .filter((p): p is string => Boolean(p))
-                  )
-                ).join(' | ');
-
-                return (
-                  <label
-                    key={g.graveId}
-                    className={`${styles.bulkAssignItem} ${
-                      isChecked ? styles.bulkAssignItemSelected : ''
-                    }`}
+            >
+              <div className={styles.modalHeader}>
+                <div>
+                  <h2 className={styles.cemeteryCardTitle}>
+                    Przypisz groby z kategorii „Inne” do: {activeCemeteryGroup.groupName}
+                  </h2>
+                  <p className={styles.pageSubtitle}>
+                    Zaznacz groby na podstawie miejsca pochówku z pliku GEDCOM i przypisz je jednym kliknięciem.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowBulkAssignPanel(false);
+                  }}
+                  className={styles.btnSecondary}
+                >
+                  ✕ Zamknij
+                </button>
+              </div>
+              <div className={styles.modalBody}>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedGraveIds(filteredUnassignedForModal.map(g => g.graveId));
+                    }}
+                    className={styles.btnSecondary}
                   >
-                    <input
-                      type="checkbox"
-                      data-testid={`bulk-checkbox-grave-${String(g.graveId)}`}
-                      checked={isChecked}
-                      onChange={() => {
-                        toggleGraveSelection(g.graveId);
-                      }}
-                    />
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-                      <strong style={{ fontSize: '0.9rem', color: '#0f172a' }}>
-                        {peopleNames || 'Pusty nagrobek'}
-                      </strong>
-                      {gedcomPlaces && (
-                        <span className={styles.compactGedcomPlace}>
-                          Pochowano w: {gedcomPlaces}
-                        </span>
-                      )}
-                    </div>
-                  </label>
-                );
-              })}
-            </div>
+                    Zaznacz wszystkie widoczne ({filteredUnassignedForModal.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedGraveIds([]);
+                    }}
+                    className={styles.btnSecondary}
+                  >
+                    Odznacz wszystkie
+                  </button>
+                </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
+                <input
+                  type="text"
+                  placeholder="Filtruj groby z kategorii Inne (np. wpisz miejscowość lub nazwę cmentarza z GEDCOM)..."
+                  value={bulkSearchQuery}
+                  onChange={e => {
+                    setBulkSearchQuery(e.target.value);
+                  }}
+                  className={styles.textInput}
+                />
+
+                <div className={styles.bulkAssignList}>
+                  {filteredUnassignedForModal.map(g => {
+                    const isChecked = selectedGraveIds.includes(g.graveId);
+                    const peopleNames = g.burials
+                      .map(b => `${formatPersonDisplayName(b)} (${formatCompactYears(b)})`)
+                      .join(', ');
+                    const gedcomPlaces = Array.from(
+                      new Set(
+                        g.burials
+                          .map(b => b.placeDescription)
+                          .filter((p): p is string => Boolean(p))
+                      )
+                    ).join(' | ');
+
+                    return (
+                      <label
+                        key={g.graveId}
+                        className={`${styles.bulkAssignItem} ${
+                          isChecked ? styles.bulkAssignItemSelected : ''
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          data-testid={`bulk-checkbox-grave-${String(g.graveId)}`}
+                          checked={isChecked}
+                          onChange={() => {
+                            toggleGraveSelection(g.graveId);
+                          }}
+                        />
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                          <strong style={{ fontSize: '0.9rem', color: '#0f172a' }}>
+                            {peopleNames || 'Pusty nagrobek'}
+                          </strong>
+                          {gedcomPlaces && (
+                            <span className={styles.compactGedcomPlace}>
+                              Pochowano w: {gedcomPlaces}
+                            </span>
+                          )}
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowBulkAssignPanel(false);
+                    }}
+                    className={styles.btnSecondary}
+                  >
+                    Zamknij
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="confirm-bulk-assign-button"
+                    disabled={selectedGraveIds.length === 0}
+                    onClick={() => {
+                      void handleBulkAssignToCemetery(activeCemeteryGroup.cemeteryId);
+                    }}
+                    className={styles.btnPrimary}
+                  >
+                    ✓ Przypisz zaznaczone groby ({selectedGraveIds.length}) do tego cmentarza
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+      {/* Small Confirmation Modal for Deleting Cemetery */}
+      {isAdmin && cemeteryToDelete?.cemeteryId != null && (
+        <div
+          className={styles.modalBackdrop}
+          data-testid="confirm-delete-cemetery-modal"
+          onClick={() => {
+            setCemeteryToDelete(null);
+          }}
+        >
+          <div
+            className={styles.smallModalDialog}
+            onClick={e => {
+              e.stopPropagation();
+            }}
+          >
+            <h3 style={{ fontSize: '1.2rem', color: '#0f172a', margin: 0 }}>
+              🗑️ Usunąć cmentarz?
+            </h3>
+            <p style={{ fontSize: '0.92rem', color: '#475569', lineHeight: 1.5, margin: 0 }}>
+              Czy na pewno chcesz usunąć cmentarz{' '}
+              <strong>„{cemeteryToDelete.groupName}”</strong>? Przypisane do niego nagrobki nie zostaną usunięte – trafią z powrotem do kategorii „Inne”.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '0.75rem', marginTop: '0.5rem' }}>
               <button
                 type="button"
                 onClick={() => {
-                  setShowBulkAssignPanel(false);
+                  setCemeteryToDelete(null);
                 }}
                 className={styles.btnSecondary}
               >
-                Zamknij
+                Anuluj
               </button>
               <button
                 type="button"
-                data-testid="confirm-bulk-assign-button"
-                disabled={selectedGraveIds.length === 0}
+                data-testid="confirm-delete-cemetery-button"
                 onClick={() => {
-                  void handleBulkAssignToCemetery(activeCemeteryGroup.cemeteryId);
+                  const idToDelete = cemeteryToDelete.cemeteryId;
+                  setCemeteryToDelete(null);
+                  if (idToDelete !== null) {
+                    void handleDeleteCemetery(idToDelete);
+                  }
                 }}
-                className={styles.btnPrimary}
+                className={styles.btnDanger}
               >
-                ✓ Przypisz zaznaczone groby ({selectedGraveIds.length}) do tego cmentarza
+                Tak, usuń cmentarz
               </button>
             </div>
-          </section>
-        )}
+          </div>
+        </div>
+      )}
 
       {/* Admin Bulk Assign Bar directly inside the "Inne" View (Only when at least 1 cemetery exists) */}
       {isAdmin && activeCemeteryGroup?.otherGroup && customCemeteries.length > 0 && (

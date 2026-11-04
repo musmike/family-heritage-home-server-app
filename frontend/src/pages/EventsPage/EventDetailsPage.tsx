@@ -59,6 +59,7 @@ export default function EventDetailsPage() {
 
   // Admin Full Edit State
   const [isEditing, setIsEditing] = useState<boolean>(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<boolean>(false);
   const [typeCodes, setTypeCodes] = useState<string[]>([]);
   const [typeSearch, setTypeSearch] = useState<string>('');
   const [titleInput, setTitleInput] = useState<string>('');
@@ -444,7 +445,7 @@ export default function EventDetailsPage() {
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-        {/* Row 1: Date Qualifier + Calendar Picker (with weekday) + Year + Month + Day */}
+        {/* Row 1: Date Qualifier + Calendar Picker (with weekday in label) + Year + Month + Day */}
         <div className={styles.dateRowGrid}>
           <div className={styles.formField}>
             <label htmlFor={`${params.idPrefix}-dqual`} className={styles.filterLabel}>
@@ -468,25 +469,22 @@ export default function EventDetailsPage() {
 
           <div className={styles.formField}>
             <label htmlFor={`${params.idPrefix}-cal`} className={styles.filterLabel}>
-              Wybór z kalendarza {weekday ? `(${weekday})` : ''}
+              Wybór z kalendarza {weekday ? `(📅 ${weekday})` : ''}
             </label>
-            <div className={styles.calendarPickerGroup}>
-              <input
-                id={`${params.idPrefix}-cal`}
-                type="date"
-                value={isoVal}
-                onChange={e => {
-                  applyCalendarPick(
-                    e.target.value,
-                    params.setYear,
-                    params.setMonth,
-                    params.setDay
-                  );
-                }}
-                className={styles.textInput}
-              />
-              {weekday && <span className={styles.weekdayBadge}>📅 {weekday}</span>}
-            </div>
+            <input
+              id={`${params.idPrefix}-cal`}
+              type="date"
+              value={isoVal}
+              onChange={e => {
+                applyCalendarPick(
+                  e.target.value,
+                  params.setYear,
+                  params.setMonth,
+                  params.setDay
+                );
+              }}
+              className={styles.textInput}
+            />
           </div>
 
           <div className={styles.formField}>
@@ -669,9 +667,7 @@ export default function EventDetailsPage() {
       <div className={styles.pageHeader}>
         <div>
           <h1 className={styles.pageTitle}>
-            {eventData.title
-              ? `${eventData.title} (${displayTypeLabels})`
-              : displayTypeLabels}
+            {eventData.title ?? displayTypeLabels}
           </h1>
           <p className={styles.pageSubtitle}>Szczegóły wydarzenia rodzinnego</p>
         </div>
@@ -686,12 +682,13 @@ export default function EventDetailsPage() {
                 }}
                 className={styles.btnPrimary}
               >
-                {isEditing ? 'Zamknij edycję' : '✏️ Edytuj wydarzenie'}
+                ✏️ Edytuj wydarzenie
               </button>
               <button
                 type="button"
+                data-testid="delete-event-button"
                 onClick={() => {
-                  void handleDeleteEvent();
+                  setShowDeleteConfirm(true);
                 }}
                 className={styles.btnDanger}
               >
@@ -711,551 +708,25 @@ export default function EventDetailsPage() {
         </div>
       )}
 
-      {/* Admin Full Edit Form */}
+      {/* Admin Full Edit Event Modal */}
       {isAdmin && isEditing && (
-        <section className={styles.detailsCard} data-testid="edit-event-details-form">
-          <h2 className={styles.sectionSubtitle}>
-            Edycja typów, zakresów dat i czasu, uczestników oraz wydarzeń nadrzędnych
-          </h2>
-          <form
-            onSubmit={e => {
-              void handleSaveFullEvent(e);
+        <div
+          className={styles.modalBackdrop}
+          data-testid="edit-event-details-form"
+          onClick={() => {
+            setIsEditing(false);
+          }}
+        >
+          <div
+            className={styles.largeModalDialog}
+            onClick={e => {
+              e.stopPropagation();
             }}
-            style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}
           >
-            {/* 1. Modern Multi-Type Pill Selector */}
-            {availableTypes.length > 0 && (
-              <div className={styles.selectorPanel}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-                  <span className={styles.filterLabel}>
-                    Przypisane typy wydarzenia (wybrano: {String(typeCodes.length)}) *
-                  </span>
-                  {typeCodes.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTypeCodes([]);
-                      }}
-                      className={styles.popoverActionBtn}
-                    >
-                      Wyczyść wszystkie typy
-                    </button>
-                  )}
-                </div>
-
-                <div className={styles.selectedPillsRow}>
-                  {typeCodes.length === 0 ? (
-                    <span style={{ fontSize: '0.82rem', color: '#dc2626', fontWeight: 600 }}>
-                      Brak wybranego typu – kliknij przynajmniej jeden typ poniżej.
-                    </span>
-                  ) : (
-                    typeCodes.map(code => {
-                      const label = availableTypes.find(t => t.code === code)?.label ?? code;
-                      return (
-                        <span key={code} className={styles.selectedTypePill}>
-                          <span>{label}</span>
-                          <button
-                            type="button"
-                            aria-label={`Usuń typ ${label}`}
-                            onClick={() => {
-                              toggleFormTypeCode(code);
-                            }}
-                            className={styles.pillRemoveBtn}
-                          >
-                            ✕
-                          </button>
-                        </span>
-                      );
-                    })
-                  )}
-                </div>
-
-                <input
-                  type="text"
-                  placeholder="Filtruj dostępne typy wydarzenia..."
-                  value={typeSearch}
-                  onChange={e => {
-                    setTypeSearch(e.target.value);
-                  }}
-                  className={styles.textInput}
-                />
-
-                <div className={styles.availableTypePillsGrid}>
-                  {filteredFormTypes.map(opt => {
-                    const isSelected = typeCodes.includes(opt.code);
-                    return (
-                      <button
-                        key={opt.code}
-                        type="button"
-                        onClick={() => {
-                          toggleFormTypeCode(opt.code);
-                        }}
-                        className={`${styles.typeChoiceChip} ${
-                          isSelected ? styles.typeChoiceChipSelected : ''
-                        }`}
-                      >
-                        <span>{isSelected ? '✓' : '+'}</span>
-                        <span>{opt.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* 2. Title & Location */}
-            <div className={styles.detailsGrid}>
-              <div className={styles.formField}>
-                <label htmlFor="evt-title-input" className={styles.filterLabel}>
-                  Własny tytuł wydarzenia{' '}
-                  {editParticipants.length > 3 ? '* (wymagany przy >3 uczestnikach)' : ''}
-                </label>
-                <input
-                  id="evt-title-input"
-                  type="text"
-                  required={editParticipants.length > 3}
-                  value={titleInput}
-                  onChange={e => {
-                    setTitleInput(e.target.value);
-                  }}
-                  className={styles.textInput}
-                />
-              </div>
-
-              <div className={styles.formField}>
-                <label htmlFor="evt-loc-input" className={styles.filterLabel}>
-                  Miejsce / miejscowość
-                </label>
-                <input
-                  id="evt-loc-input"
-                  type="text"
-                  value={locInput}
-                  onChange={e => {
-                    setLocInput(e.target.value);
-                  }}
-                  className={styles.textInput}
-                />
-              </div>
-            </div>
-
-            {/* 3. Start Date & Time Section (Point 7: Date + Calendar row, separate Time row) */}
-            <div className={styles.dateSectionBox}>
-              <div className={styles.dateSectionHeader}>
-                <span className={styles.filterLabel}>
-                  📅 Data i czas rozpoczęcia (lub jedyna data wydarzenia)
-                </span>
-                <label className={styles.inlineToggleLabel}>
-                  <input
-                    type="checkbox"
-                    checked={isStartBetween}
-                    onChange={e => {
-                      setIsStartBetween(e.target.checked);
-                    }}
-                  />
-                  <span>Przedział niepewności „między … a …”</span>
-                </label>
-              </div>
-
-              {renderDateAndTimeBlock({
-                idPrefix: 'edit-evt-start',
-                dateQualLabel: 'Kwalifikator daty',
-                dateQual: startQual,
-                setDateQual: setStartQual,
-                year: startYear,
-                setYear: setStartYear,
-                month: startMonth,
-                setMonth: setStartMonth,
-                day: startDay,
-                setDay: setStartDay,
-                timeQual: startTimeQual,
-                setTimeQual: setStartTimeQual,
-                hour: startHour,
-                setHour: setStartHour,
-                minute: startMinute,
-                setMinute: setStartMinute,
-                second: startSecond,
-                setSecond: setStartSecond,
-              })}
-
-              {isStartBetween && (
-                <div style={{ paddingTop: '0.75rem', borderTop: '1px dashed #cbd5e1' }}>
-                  {renderDateAndTimeBlock({
-                    idPrefix: 'edit-evt-start-range-end',
-                    dateQualLabel: 'Druga granica („… a …”)',
-                    dateQual: startRangeEndQual,
-                    setDateQual: setStartRangeEndQual,
-                    year: startRangeEndYear,
-                    setYear: setStartRangeEndYear,
-                    month: startRangeEndMonth,
-                    setMonth: setStartRangeEndMonth,
-                    day: startRangeEndDay,
-                    setDay: setStartRangeEndDay,
-                    timeQual: startRangeEndTimeQual,
-                    setTimeQual: setStartRangeEndTimeQual,
-                    hour: startRangeEndHour,
-                    setHour: setStartRangeEndHour,
-                    minute: startRangeEndMinute,
-                    setMinute: setStartRangeEndMinute,
-                    second: startRangeEndSecond,
-                    setSecond: setStartRangeEndSecond,
-                    yearPlaceholder: startYear || 'RRRR',
-                  })}
-                </div>
-              )}
-
-              <div style={{ paddingTop: '0.4rem', borderTop: '1px solid #e2e8f0' }}>
-                <label className={styles.inlineToggleLabel}>
-                  <input
-                    type="checkbox"
-                    checked={hasEndDate}
-                    onChange={e => {
-                      setHasEndDate(e.target.checked);
-                    }}
-                  />
-                  <span>
-                    Wydarzenie trwało w czasie – dodaj datę lub godzinę zakończenia („od … do …”)
-                  </span>
-                </label>
-              </div>
-            </div>
-
-            {/* 4. End Date & Time Section */}
-            {hasEndDate && (
-              <div className={styles.dateSectionBox}>
-                <div className={styles.dateSectionHeader}>
-                  <span className={styles.filterLabel}>🏁 Data i czas zakończenia („do …”)</span>
-                  <label className={styles.inlineToggleLabel}>
-                    <input
-                      type="checkbox"
-                      checked={isEndBetween}
-                      onChange={e => {
-                        setIsEndBetween(e.target.checked);
-                      }}
-                    />
-                    <span>Przedział niepewności „między … a …” dla końca wydarzenia</span>
-                  </label>
-                </div>
-
-                {renderDateAndTimeBlock({
-                  idPrefix: 'edit-evt-end',
-                  dateQualLabel: 'Kwalifikator daty końcowej',
-                  dateQual: endQual,
-                  setDateQual: setEndQual,
-                  year: endYear,
-                  setYear: setEndYear,
-                  month: endMonth,
-                  setMonth: setEndMonth,
-                  day: endDay,
-                  setDay: setEndDay,
-                  timeQual: endTimeQual,
-                  setTimeQual: setEndTimeQual,
-                  hour: endHour,
-                  setHour: setEndHour,
-                  minute: endMinute,
-                  setMinute: setEndMinute,
-                  second: endSecond,
-                  setSecond: setEndSecond,
-                  yearPlaceholder: startYear || 'RRRR',
-                })}
-
-                {isEndBetween && (
-                  <div style={{ paddingTop: '0.75rem', borderTop: '1px dashed #cbd5e1' }}>
-                    {renderDateAndTimeBlock({
-                      idPrefix: 'edit-evt-end-range-end',
-                      dateQualLabel: 'Druga granica końca („… a …”)',
-                      dateQual: endRangeEndQual,
-                      setDateQual: setEndRangeEndQual,
-                      year: endRangeEndYear,
-                      setYear: setEndRangeEndYear,
-                      month: endRangeEndMonth,
-                      setMonth: setEndRangeEndMonth,
-                      day: endRangeEndDay,
-                      setDay: setEndRangeEndDay,
-                      timeQual: endRangeEndTimeQual,
-                      setTimeQual: setEndRangeEndTimeQual,
-                      hour: endRangeEndHour,
-                      setHour: setEndRangeEndHour,
-                      minute: endRangeEndMinute,
-                      setMinute: setEndRangeEndMinute,
-                      second: endRangeEndSecond,
-                      setSecond: setEndRangeEndSecond,
-                      yearPlaceholder: endYear || startYear || 'RRRR',
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* 5. Multiple Parent Events Search & Picker */}
-            <div className={styles.selectorPanel}>
-              <span className={styles.filterLabel}>
-                Wydarzenia nadrzędne (pierwsze wydarzenie na liście określa folder macierzysty dla zdjęć):
-              </span>
-
-              {parentEventIds.length > 0 && (
-                <div className={styles.selectedParentsList}>
-                  {parentEventIds.map((pid, idx) => {
-                    const found = candidateParentEvents.find(ev => ev.eventId === pid);
-                    const existingSummary = eventData.parentEvents?.find(pe => pe.eventId === pid);
-                    const titleStr = found
-                      ? found.title
-                        ? `${found.title} (${found.typeLabel})`
-                        : found.typeLabel
-                      : (existingSummary?.label ?? 'Wybrane wydarzenie nadrzędne');
-
-                    return (
-                      <div key={pid} className={styles.selectedParentCard}>
-                        <div className={styles.parentCandidateInfo}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                            <span className={styles.parentCandidateTitle}>
-                              {String(idx + 1)}. {titleStr}
-                            </span>
-                            {idx === 0 && (
-                              <span className={styles.primaryFolderBadge}>
-                                📁 Główny rodzic
-                              </span>
-                            )}
-                          </div>
-                          {found && (
-                            <div className={styles.parentCandidateMeta}>
-                              {found.dateText && <span>📅 {found.dateText}</span>}
-                              <span>👤 {formatParticipantsSummary(found)}</span>
-                              {found.locationName && <span>📍 {found.locationName}</span>}
-                            </div>
-                          )}
-                        </div>
-
-                        <div style={{ display: 'flex', gap: '0.35rem' }}>
-                          <button
-                            type="button"
-                            disabled={idx === 0}
-                            onClick={() => {
-                              handleMoveParentOrder(idx, -1);
-                            }}
-                            className={styles.btnSecondary}
-                          >
-                            ↑
-                          </button>
-                          <button
-                            type="button"
-                            disabled={idx === parentEventIds.length - 1}
-                            onClick={() => {
-                              handleMoveParentOrder(idx, 1);
-                            }}
-                            className={styles.btnSecondary}
-                          >
-                            ↓
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setParentEventIds(prev => prev.filter(id => id !== pid));
-                            }}
-                            className={styles.btnDanger}
-                          >
-                            ✕ Usuń
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              <input
-                type="text"
-                placeholder="Wyszukaj wydarzenie nadrzędne po uczestnikach, tytule, typie, dacie lub miejscowości..."
-                value={parentSearchQuery}
-                onChange={e => {
-                  setParentSearchQuery(e.target.value);
-                }}
-                className={styles.textInput}
-              />
-
-              {filteredParentCandidates.length > 0 && (
-                <div className={styles.parentCandidateList}>
-                  {filteredParentCandidates.map(cand => {
-                    const typesStr = (cand.assignedTypeLabels ?? [cand.typeLabel]).join(' • ');
-                    return (
-                      <div key={cand.eventId} className={styles.parentCandidateRow}>
-                        <div className={styles.parentCandidateInfo}>
-                          <span className={styles.parentCandidateTitle}>
-                            {cand.title ? `${cand.title} (${typesStr})` : typesStr}
-                          </span>
-                          <div className={styles.parentCandidateMeta}>
-                            <span>📅 {cand.dateText ?? cand.year ?? 'Bez daty'}</span>
-                            <span>👤 {formatParticipantsSummary(cand)}</span>
-                            {cand.locationName && <span>📍 {cand.locationName}</span>}
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setParentEventIds(prev => [...prev, cand.eventId]);
-                          }}
-                          className={styles.btnSecondary}
-                        >
-                          + Dodaj jako nadrzędne
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* 6. Participants Management in Edit Form */}
-            <div className={styles.selectorPanel}>
-              <span className={styles.filterLabel}>
-                Uczestnicy wydarzenia ({String(editParticipants.length)}):
-              </span>
-              <div className={styles.detailsGrid}>
-                <div className={styles.formField}>
-                  <span className={styles.filterLabel}>Rola</span>
-                  <select
-                    value={partRoleCode}
-                    onChange={e => {
-                      setPartRoleCode(e.target.value);
-                    }}
-                    className={styles.selectInput}
-                  >
-                    {allowedRolesForSelectedTypes.map(r => (
-                      <option key={r} value={r}>
-                        {ROLE_LABELS[r] ?? r}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className={styles.formField}>
-                  <span className={styles.filterLabel}>Dodaj osobę z drzewa</span>
-                  <div style={{ display: 'flex', gap: '0.4rem' }}>
-                    <input
-                      type="text"
-                      placeholder="Szukaj..."
-                      value={partPersonQuery}
-                      onChange={e => {
-                        setPartPersonQuery(e.target.value);
-                      }}
-                      className={styles.textInput}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void handleSearchPerson();
-                      }}
-                      className={styles.btnSecondary}
-                    >
-                      Szukaj
-                    </button>
-                  </div>
-                </div>
-
-                <div className={styles.formField}>
-                  <span className={styles.filterLabel}>Lub wpis tekstowy spoza bazy</span>
-                  <div style={{ display: 'flex', gap: '0.4rem' }}>
-                    <input
-                      type="text"
-                      placeholder="np. Jan Nowak (świadek)"
-                      value={partTextInput}
-                      onChange={e => {
-                        setPartTextInput(e.target.value);
-                      }}
-                      className={styles.textInput}
-                    />
-                    <select
-                      value={partTextSex}
-                      onChange={e => {
-                        setPartTextSex(e.target.value as PersonSex);
-                      }}
-                      className={styles.selectInput}
-                      style={{ width: '90px' }}
-                    >
-                      <option value="MALE">M</option>
-                      <option value="FEMALE">K</option>
-                      <option value="UNKNOWN">?</option>
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (partTextInput.trim() === '') return;
-                        const txt = partTextInput.trim();
-                        setEditParticipants(prev => [
-                          ...prev,
-                          {
-                            participantText: txt,
-                            participantSex: partTextSex,
-                            roleCode: partRoleCode,
-                            displayLabel: `${txt} [spoza drzewa] (${ROLE_LABELS[partRoleCode] ?? partRoleCode})`,
-                          },
-                        ]);
-                        setPartTextInput('');
-                      }}
-                      className={styles.btnSecondary}
-                    >
-                      + Dodaj
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {partPersonResults.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                  {partPersonResults.map(p => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => {
-                        const lbl = `${p.givenName ?? ''} ${p.surname ?? ''}`.trim();
-                        setEditParticipants(prev => [
-                          ...prev,
-                          {
-                            personId: p.id,
-                            roleCode: partRoleCode,
-                            displayLabel: `${lbl} (${ROLE_LABELS[partRoleCode] ?? partRoleCode})`,
-                          },
-                        ]);
-                        setPartPersonResults([]);
-                        setPartPersonQuery('');
-                      }}
-                      className={styles.btnSecondary}
-                    >
-                      + Wybierz: {p.givenName} {p.surname} ({p.birthYear ?? '?'})
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {editParticipants.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.45rem' }}>
-                  {editParticipants.map((ep, idx) => (
-                    <span
-                      key={`${ep.displayLabel}-${String(idx)}`}
-                      className={styles.decadeCountPill}
-                    >
-                      👤 {ep.displayLabel}{' '}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditParticipants(prev => prev.filter((_, i) => i !== idx));
-                        }}
-                        style={{
-                          marginLeft: '0.35rem',
-                          border: 'none',
-                          background: 'none',
-                          cursor: 'pointer',
-                          fontWeight: 800,
-                        }}
-                      >
-                        ✕
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+            <div className={styles.modalHeader}>
+              <h2 className={styles.sectionSubtitle} style={{ border: 'none', padding: 0 }}>
+                Edycja typów, zakresów dat i czasu, uczestników oraz wydarzeń nadrzędnych
+              </h2>
               <button
                 type="button"
                 onClick={() => {
@@ -1263,17 +734,622 @@ export default function EventDetailsPage() {
                 }}
                 className={styles.btnSecondary}
               >
-                Anuluj
-              </button>
-              <button type="submit" className={styles.btnPrimary}>
-                ✓ Zapisz zmiany
+                ✕ Zamknij
               </button>
             </div>
-          </form>
-        </section>
+            <div className={styles.modalBody}>
+              {errorMessage && (
+                <div role="alert" className={styles.AlertError}>
+                  {errorMessage}
+                </div>
+              )}
+              <form
+                onSubmit={e => {
+                  void handleSaveFullEvent(e);
+                }}
+                style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}
+              >
+                {/* 1. Modern Multi-Type Pill Selector */}
+                {availableTypes.length > 0 && (
+                  <div className={styles.selectorPanel}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <span className={styles.filterLabel}>
+                        Przypisane typy wydarzenia (wybrano: {String(typeCodes.length)}) *
+                      </span>
+                      {typeCodes.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTypeCodes([]);
+                          }}
+                          className={styles.popoverActionBtn}
+                        >
+                          Wyczyść wszystkie typy
+                        </button>
+                      )}
+                    </div>
+
+                    <div className={styles.selectedPillsRow}>
+                      {typeCodes.length === 0 ? (
+                        <span style={{ fontSize: '0.82rem', color: '#dc2626', fontWeight: 600 }}>
+                          Brak wybranego typu – kliknij przynajmniej jeden typ poniżej.
+                        </span>
+                      ) : (
+                        typeCodes.map(code => {
+                          const label = availableTypes.find(t => t.code === code)?.label ?? code;
+                          return (
+                            <span key={code} className={styles.selectedTypePill}>
+                              <span>{label}</span>
+                              <button
+                                type="button"
+                                aria-label={`Usuń typ ${label}`}
+                                onClick={() => {
+                                  toggleFormTypeCode(code);
+                                }}
+                                className={styles.pillRemoveBtn}
+                              >
+                                ✕
+                              </button>
+                            </span>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    <input
+                      type="text"
+                      placeholder="Filtruj dostępne typy wydarzenia..."
+                      value={typeSearch}
+                      onChange={e => {
+                        setTypeSearch(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+
+                    <div className={styles.availableTypePillsGrid}>
+                      {filteredFormTypes.map(opt => {
+                        const isSelected = typeCodes.includes(opt.code);
+                        return (
+                          <button
+                            key={opt.code}
+                            type="button"
+                            onClick={() => {
+                              toggleFormTypeCode(opt.code);
+                            }}
+                            className={`${styles.typeChoiceChip} ${
+                              isSelected ? styles.typeChoiceChipSelected : ''
+                            }`}
+                          >
+                            <span>{isSelected ? '✓' : '+'}</span>
+                            <span>{opt.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. Title & Location */}
+                <div className={styles.detailsGrid}>
+                  <div className={styles.formField}>
+                    <label htmlFor="evt-title-input" className={styles.filterLabel}>
+                      Własny tytuł wydarzenia{' '}
+                      {editParticipants.length > 3 ? '* (wymagany przy >3 uczestnikach)' : ''}
+                    </label>
+                    <input
+                      id="evt-title-input"
+                      type="text"
+                      required={editParticipants.length > 3}
+                      value={titleInput}
+                      onChange={e => {
+                        setTitleInput(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                  </div>
+
+                  <div className={styles.formField}>
+                    <label htmlFor="evt-loc-input" className={styles.filterLabel}>
+                      Miejsce / miejscowość
+                    </label>
+                    <input
+                      id="evt-loc-input"
+                      type="text"
+                      value={locInput}
+                      onChange={e => {
+                        setLocInput(e.target.value);
+                      }}
+                      className={styles.textInput}
+                    />
+                  </div>
+                </div>
+
+                {/* 3. Start Date & Time Section */}
+                <div className={styles.dateSectionBox}>
+                  <div className={styles.dateSectionHeader}>
+                    <span className={styles.filterLabel}>
+                      📅 Data i czas rozpoczęcia (lub jedyna data wydarzenia)
+                    </span>
+                    <label className={styles.inlineToggleLabel}>
+                      <input
+                        type="checkbox"
+                        checked={isStartBetween}
+                        onChange={e => {
+                          setIsStartBetween(e.target.checked);
+                        }}
+                      />
+                      <span>Przedział niepewności „między … a …”</span>
+                    </label>
+                  </div>
+
+                  {renderDateAndTimeBlock({
+                    idPrefix: 'edit-evt-start',
+                    dateQualLabel: 'Kwalifikator daty',
+                    dateQual: startQual,
+                    setDateQual: setStartQual,
+                    year: startYear,
+                    setYear: setStartYear,
+                    month: startMonth,
+                    setMonth: setStartMonth,
+                    day: startDay,
+                    setDay: setStartDay,
+                    timeQual: startTimeQual,
+                    setTimeQual: setStartTimeQual,
+                    hour: startHour,
+                    setHour: setStartHour,
+                    minute: startMinute,
+                    setMinute: setStartMinute,
+                    second: startSecond,
+                    setSecond: setStartSecond,
+                  })}
+
+                  {isStartBetween && (
+                    <div style={{ paddingTop: '0.75rem', borderTop: '1px dashed #cbd5e1' }}>
+                      {renderDateAndTimeBlock({
+                        idPrefix: 'edit-evt-start-range-end',
+                        dateQualLabel: 'Druga granica („… a …”)',
+                        dateQual: startRangeEndQual,
+                        setDateQual: setStartRangeEndQual,
+                        year: startRangeEndYear,
+                        setYear: setStartRangeEndYear,
+                        month: startRangeEndMonth,
+                        setMonth: setStartRangeEndMonth,
+                        day: startRangeEndDay,
+                        setDay: setStartRangeEndDay,
+                        timeQual: startRangeEndTimeQual,
+                        setTimeQual: setStartRangeEndTimeQual,
+                        hour: startRangeEndHour,
+                        setHour: setStartRangeEndHour,
+                        minute: startRangeEndMinute,
+                        setMinute: setStartRangeEndMinute,
+                        second: startRangeEndSecond,
+                        setSecond: setStartRangeEndSecond,
+                        yearPlaceholder: startYear || 'RRRR',
+                      })}
+                    </div>
+                  )}
+
+                  <div style={{ paddingTop: '0.4rem', borderTop: '1px solid #e2e8f0' }}>
+                    <label className={styles.inlineToggleLabel}>
+                      <input
+                        type="checkbox"
+                        checked={hasEndDate}
+                        onChange={e => {
+                          setHasEndDate(e.target.checked);
+                        }}
+                      />
+                      <span>
+                        Wydarzenie trwało w czasie – dodaj datę lub godzinę zakończenia („od … do …”)
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* 4. End Date & Time Section */}
+                {hasEndDate && (
+                  <div className={styles.dateSectionBox}>
+                    <div className={styles.dateSectionHeader}>
+                      <span className={styles.filterLabel}>🏁 Data i czas zakończenia („do …”)</span>
+                      <label className={styles.inlineToggleLabel}>
+                        <input
+                          type="checkbox"
+                          checked={isEndBetween}
+                          onChange={e => {
+                            setIsEndBetween(e.target.checked);
+                          }}
+                        />
+                        <span>Przedział niepewności „między … a …” dla końca wydarzenia</span>
+                      </label>
+                    </div>
+
+                    {renderDateAndTimeBlock({
+                      idPrefix: 'edit-evt-end',
+                      dateQualLabel: 'Kwalifikator daty końcowej',
+                      dateQual: endQual,
+                      setDateQual: setEndQual,
+                      year: endYear,
+                      setYear: setEndYear,
+                      month: endMonth,
+                      setMonth: setEndMonth,
+                      day: endDay,
+                      setDay: setEndDay,
+                      timeQual: endTimeQual,
+                      setTimeQual: setEndTimeQual,
+                      hour: endHour,
+                      setHour: setEndHour,
+                      minute: endMinute,
+                      setMinute: setEndMinute,
+                      second: endSecond,
+                      setSecond: setEndSecond,
+                      yearPlaceholder: startYear || 'RRRR',
+                    })}
+
+                    {isEndBetween && (
+                      <div style={{ paddingTop: '0.75rem', borderTop: '1px dashed #cbd5e1' }}>
+                        {renderDateAndTimeBlock({
+                          idPrefix: 'edit-evt-end-range-end',
+                          dateQualLabel: 'Druga granica końca („… a …”)',
+                          dateQual: endRangeEndQual,
+                          setDateQual: setEndRangeEndQual,
+                          year: endRangeEndYear,
+                          setYear: setEndRangeEndYear,
+                          month: endRangeEndMonth,
+                          setMonth: setEndRangeEndMonth,
+                          day: endRangeEndDay,
+                          setDay: setEndRangeEndDay,
+                          timeQual: endRangeEndTimeQual,
+                          setTimeQual: setEndRangeEndTimeQual,
+                          hour: endRangeEndHour,
+                          setHour: setEndRangeEndHour,
+                          minute: endRangeEndMinute,
+                          setMinute: setEndRangeEndMinute,
+                          second: endRangeEndSecond,
+                          setSecond: setEndRangeEndSecond,
+                          yearPlaceholder: endYear || startYear || 'RRRR',
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 5. Multiple Parent Events Search & Picker */}
+                <div className={styles.selectorPanel}>
+                  <span className={styles.filterLabel}>
+                    Wydarzenia nadrzędne (pierwsze wydarzenie na liście określa folder macierzysty dla zdjęć):
+                  </span>
+
+                  {parentEventIds.length > 0 && (
+                    <div className={styles.selectedParentsList}>
+                      {parentEventIds.map((pid, idx) => {
+                        const found = candidateParentEvents.find(ev => ev.eventId === pid);
+                        const existingSummary = eventData.parentEvents?.find(pe => pe.eventId === pid);
+                        const titleStr = found
+                          ? found.title
+                            ? `${found.title} (${found.typeLabel})`
+                            : found.typeLabel
+                          : (existingSummary?.label ?? 'Wybrane wydarzenie nadrzędne');
+
+                        return (
+                          <div key={pid} className={styles.selectedParentCard}>
+                            <div className={styles.parentCandidateInfo}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                <span className={styles.parentCandidateTitle}>
+                                  {String(idx + 1)}. {titleStr}
+                                </span>
+                                {idx === 0 && (
+                                  <span className={styles.primaryFolderBadge}>
+                                    📁 Główny rodzic
+                                  </span>
+                                )}
+                              </div>
+                              {found && (
+                                <div className={styles.parentCandidateMeta}>
+                                  {found.dateText && <span>📅 {found.dateText}</span>}
+                                  <span>👤 {formatParticipantsSummary(found)}</span>
+                                  {found.locationName && <span>📍 {found.locationName}</span>}
+                                </div>
+                              )}
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '0.35rem' }}>
+                              <button
+                                type="button"
+                                disabled={idx === 0}
+                                onClick={() => {
+                                  handleMoveParentOrder(idx, -1);
+                                }}
+                                className={styles.btnSecondary}
+                              >
+                                ↑
+                              </button>
+                              <button
+                                type="button"
+                                disabled={idx === parentEventIds.length - 1}
+                                onClick={() => {
+                                  handleMoveParentOrder(idx, 1);
+                                }}
+                                className={styles.btnSecondary}
+                              >
+                                ↓
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setParentEventIds(prev => prev.filter(id => id !== pid));
+                                }}
+                                className={styles.btnDanger}
+                              >
+                                ✕ Usuń
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <input
+                    type="text"
+                    placeholder="Wyszukaj wydarzenie nadrzędne po uczestnikach, tytule, typie, dacie lub miejscowości..."
+                    value={parentSearchQuery}
+                    onChange={e => {
+                      setParentSearchQuery(e.target.value);
+                    }}
+                    className={styles.textInput}
+                  />
+
+                  {filteredParentCandidates.length > 0 && (
+                    <div className={styles.parentCandidateList}>
+                      {filteredParentCandidates.map(cand => {
+                        const typesStr = (cand.assignedTypeLabels ?? [cand.typeLabel]).join(' • ');
+                        return (
+                          <div key={cand.eventId} className={styles.parentCandidateRow}>
+                            <div className={styles.parentCandidateInfo}>
+                              <span className={styles.parentCandidateTitle}>
+                                {cand.title ? `${cand.title} (${typesStr})` : typesStr}
+                              </span>
+                              <div className={styles.parentCandidateMeta}>
+                                <span>📅 {cand.dateText ?? cand.year ?? 'Bez daty'}</span>
+                                <span>👤 {formatParticipantsSummary(cand)}</span>
+                                {cand.locationName && <span>📍 {cand.locationName}</span>}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setParentEventIds(prev => [...prev, cand.eventId]);
+                              }}
+                              className={styles.btnSecondary}
+                            >
+                              + Dodaj jako nadrzędne
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* 6. Participants Management in Edit Form */}
+                <div className={styles.selectorPanel}>
+                  <span className={styles.filterLabel}>
+                    Uczestnicy wydarzenia ({String(editParticipants.length)}):
+                  </span>
+                  <div className={styles.detailsGrid}>
+                    <div className={styles.formField}>
+                      <span className={styles.filterLabel}>Rola</span>
+                      <select
+                        value={partRoleCode}
+                        onChange={e => {
+                          setPartRoleCode(e.target.value);
+                        }}
+                        className={styles.selectInput}
+                      >
+                        {allowedRolesForSelectedTypes.map(r => (
+                          <option key={r} value={r}>
+                            {ROLE_LABELS[r] ?? r}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className={styles.formField}>
+                      <span className={styles.filterLabel}>Dodaj osobę z drzewa</span>
+                      <div style={{ display: 'flex', gap: '0.4rem' }}>
+                        <input
+                          type="text"
+                          placeholder="Szukaj..."
+                          value={partPersonQuery}
+                          onChange={e => {
+                            setPartPersonQuery(e.target.value);
+                          }}
+                          className={styles.textInput}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleSearchPerson();
+                          }}
+                          className={styles.btnSecondary}
+                        >
+                          Szukaj
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className={styles.formField}>
+                      <span className={styles.filterLabel}>Lub wpis tekstowy spoza bazy</span>
+                      <div style={{ display: 'flex', gap: '0.4rem' }}>
+                        <input
+                          type="text"
+                          placeholder="np. Jan Nowak (świadek)"
+                          value={partTextInput}
+                          onChange={e => {
+                            setPartTextInput(e.target.value);
+                          }}
+                          className={styles.textInput}
+                        />
+                        <select
+                          value={partTextSex}
+                          onChange={e => {
+                            setPartTextSex(e.target.value as PersonSex);
+                          }}
+                          className={styles.selectInput}
+                          style={{ width: '90px' }}
+                        >
+                          <option value="MALE">M</option>
+                          <option value="FEMALE">K</option>
+                          <option value="UNKNOWN">?</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (partTextInput.trim() === '') return;
+                            const txt = partTextInput.trim();
+                            setEditParticipants(prev => [
+                              ...prev,
+                              {
+                                participantText: txt,
+                                participantSex: partTextSex,
+                                roleCode: partRoleCode,
+                                displayLabel: `${txt} [spoza drzewa] (${ROLE_LABELS[partRoleCode] ?? partRoleCode})`,
+                              },
+                            ]);
+                            setPartTextInput('');
+                          }}
+                          className={styles.btnSecondary}
+                        >
+                          + Dodaj
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {partPersonResults.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                      {partPersonResults.map(p => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => {
+                            const lbl = `${p.givenName ?? ''} ${p.surname ?? ''}`.trim();
+                            setEditParticipants(prev => [
+                              ...prev,
+                              {
+                                personId: p.id,
+                                roleCode: partRoleCode,
+                                displayLabel: `${lbl} (${ROLE_LABELS[partRoleCode] ?? partRoleCode})`,
+                              },
+                            ]);
+                            setPartPersonResults([]);
+                            setPartPersonQuery('');
+                          }}
+                          className={styles.btnSecondary}
+                        >
+                          + Wybierz: {p.givenName} {p.surname} ({p.birthYear ?? '?'})
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {editParticipants.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.45rem' }}>
+                      {editParticipants.map((ep, idx) => (
+                        <span
+                          key={`${ep.displayLabel}-${String(idx)}`}
+                          className={styles.decadeCountPill}
+                        >
+                          👤 {ep.displayLabel}{' '}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditParticipants(prev => prev.filter((_, i) => i !== idx));
+                            }}
+                            style={{
+                              marginLeft: '0.35rem',
+                              border: 'none',
+                              background: 'none',
+                              cursor: 'pointer',
+                              fontWeight: 800,
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsEditing(false);
+                    }}
+                    className={styles.btnSecondary}
+                  >
+                    Anuluj
+                  </button>
+                  <button type="submit" className={styles.btnPrimary}>
+                    ✓ Zapisz zmiany
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
       )}
 
-      {/* Main Info Card (Point 4: No "Folder wydarzenia na dysku" tile here) */}
+      {/* Small Confirmation Modal for Deleting Event */}
+      {isAdmin && showDeleteConfirm && (
+        <div
+          className={styles.modalBackdrop}
+          data-testid="confirm-delete-event-modal"
+          onClick={() => {
+            setShowDeleteConfirm(false);
+          }}
+        >
+          <div
+            className={styles.smallModalDialog}
+            onClick={e => {
+              e.stopPropagation();
+            }}
+          >
+            <h3 style={{ fontSize: '1.2rem', color: '#0f172a', margin: 0 }}>
+              🗑️ Usunąć to wydarzenie?
+            </h3>
+            <p style={{ fontSize: '0.92rem', color: '#475569', lineHeight: 1.5, margin: 0 }}>
+              Czy na pewno chcesz bezpowrotnie usunąć wydarzenie{' '}
+              <strong>„{eventData.title ?? displayTypeLabels}”</strong>?
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '0.75rem', marginTop: '0.5rem' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                }}
+                className={styles.btnSecondary}
+              >
+                Anuluj
+              </button>
+              <button
+                type="button"
+                data-testid="confirm-delete-event-button"
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  void handleDeleteEvent();
+                }}
+                className={styles.btnDanger}
+              >
+                Tak, usuń wydarzenie
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Main Info Card */}
       <section className={styles.detailsCard}>
         <div className={styles.detailsGrid}>
           <div className={styles.infoBox}>

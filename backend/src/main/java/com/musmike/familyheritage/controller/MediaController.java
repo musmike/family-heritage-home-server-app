@@ -42,12 +42,10 @@ public class MediaController {
             @RequestParam(name = "size", defaultValue = "36") int size
     ) {
         List<Long> personIds = parseIdsList(personIdsParam);
-        return ResponseEntity.ok(
-                mediaService.getGalleryPage(
-                        search, mediaType, primaryContext, collectionId, personIds, matchAllPersons,
-                        datedMode, sortBy, page, size, isCurrentUserAdmin()
-                )
-        );
+        return ResponseEntity.ok(mediaService.getGalleryPage(
+                search, mediaType, primaryContext, collectionId, personIds,
+                matchAllPersons, datedMode, sortBy, page, size, isCurrentUserAdmin()
+        ));
     }
 
     @GetMapping("/collections")
@@ -94,13 +92,11 @@ public class MediaController {
             @RequestParam(name = "personsCount", required = false) Integer personsCount
     ) {
         ensureAdmin();
-        return ResponseEntity.ok(
-                mediaService.previewFilenameWithFolder(
-                        primaryContext, graveId, personId, eventId, collectionId,
-                        customYear, customFolderName, customFileName, originalFilename, mimeType,
-                        portraitMedia, unknownMedia, personsCount
-                )
-        );
+        return ResponseEntity.ok(mediaService.previewFilenameWithFolder(
+                primaryContext, graveId, personId, eventId, collectionId,
+                customYear, customFolderName, customFileName, originalFilename, mimeType,
+                portraitMedia, unknownMedia, personsCount
+        ));
     }
 
     @PostMapping(value = "/upload", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -143,43 +139,16 @@ public class MediaController {
     ) throws IOException {
         ensureAdmin();
         List<Long> personIds = parseIdsList(personIdsParam);
-
         MediaItemDto created = mediaService.uploadMediaExtended(
-                file,
-                primaryContext,
-                customFolderName,
-                customFileName,
-                title,
-                inscriptionText,
-                description,
-                sourceText,
-                graveId,
-                eventId,
-                collectionId,
-                portraitMedia,
-                unknownMedia,
-                isBetweenRange,
-                dateQualifier,
-                customYear,
-                customMonth,
-                customDay,
-                timeQualifier,
-                customHour,
-                customMinute,
-                customSecond,
-                rangeEndQualifier,
-                rangeEndYear,
-                rangeEndMonth,
-                rangeEndDay,
-                rangeEndTimeQualifier,
-                rangeEndHour,
-                rangeEndMinute,
-                rangeEndSecond,
-                selectedMetadataSourceTag,
-                clientLastModifiedMs,
-                personIds,
-                setAsPersonAvatar,
-                setAsGravePrimary
+                file, primaryContext, customFolderName, customFileName,
+                title, inscriptionText, description, sourceText,
+                graveId, eventId, collectionId, portraitMedia, unknownMedia,
+                isBetweenRange, dateQualifier, customYear, customMonth, customDay,
+                timeQualifier, customHour, customMinute, customSecond,
+                rangeEndQualifier, rangeEndYear, rangeEndMonth, rangeEndDay,
+                rangeEndTimeQualifier, rangeEndHour, rangeEndMinute, rangeEndSecond,
+                selectedMetadataSourceTag, clientLastModifiedMs, personIds,
+                setAsPersonAvatar, setAsGravePrimary
         );
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
@@ -209,30 +178,18 @@ public class MediaController {
     ) throws IOException {
         ensureAdmin();
         List<Long> personIds = parseIdsList(personIdsParam);
-
         List<MediaItemDto> created = mediaService.uploadBatchMediaExtended(
-                files,
-                primaryContext,
-                customFolderName,
-                customFileNames,
-                titles,
-                customYears,
-                customMonths,
-                customDays,
-                customHours,
-                customMinutes,
-                customSeconds,
-                selectedMetadataSourceTags,
-                clientLastModifiedList,
-                graveId,
-                eventId,
-                collectionId,
-                portraitMedia,
-                unknownMedia,
-                defaultYear,
-                personIds
+                files, primaryContext, customFolderName, customFileNames, titles,
+                customYears, customMonths, customDays, customHours, customMinutes, customSeconds,
+                selectedMetadataSourceTags, clientLastModifiedList,
+                graveId, eventId, collectionId, portraitMedia, unknownMedia, defaultYear, personIds
         );
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
+    }
+
+    @GetMapping("/{mediaId}")
+    public ResponseEntity<MediaItemDto> getMediaById(@PathVariable Long mediaId) {
+        return ResponseEntity.ok(mediaService.getMediaById(mediaId, isCurrentUserAdmin()));
     }
 
     @PutMapping("/{mediaId}")
@@ -290,17 +247,13 @@ public class MediaController {
     }
 
     @PutMapping("/bulk-update")
-    public ResponseEntity<List<MediaItemDto>> bulkUpdateMedia(
-            @RequestBody BulkUpdateMediaRequestDto request
-    ) {
+    public ResponseEntity<List<MediaItemDto>> bulkUpdateMedia(@RequestBody BulkUpdateMediaRequestDto request) {
         ensureAdmin();
         return ResponseEntity.ok(mediaService.bulkUpdateMedia(request));
     }
 
     @PostMapping("/link-existing")
-    public ResponseEntity<List<MediaItemDto>> linkExistingMedia(
-            @RequestBody LinkExistingMediaRequestDto request
-    ) {
+    public ResponseEntity<List<MediaItemDto>> linkExistingMedia(@RequestBody LinkExistingMediaRequestDto request) {
         ensureAdmin();
         return ResponseEntity.ok(mediaService.linkExistingMedia(request));
     }
@@ -310,10 +263,11 @@ public class MediaController {
             @PathVariable Long mediaId,
             @RequestParam(name = "graveId", required = false) Long graveId,
             @RequestParam(name = "personId", required = false) Long personId,
-            @RequestParam(name = "eventId", required = false) Long eventId
+            @RequestParam(name = "eventId", required = false) Long eventId,
+            @RequestParam(name = "targetCollectionId", required = false) Long targetCollectionId
     ) {
         ensureAdmin();
-        mediaService.unlinkMediaFromContext(mediaId, graveId, personId, eventId);
+        mediaService.unlinkMediaFromContext(mediaId, graveId, personId, eventId, targetCollectionId);
         return ResponseEntity.noContent().build();
     }
 
@@ -354,6 +308,7 @@ public class MediaController {
         Resource resource = mediaService.getThumbnailResource(mediaId);
         String mime = mediaService.getMimeType(mediaId);
         boolean hasCustomThumb = mediaService.hasThumbnail(mediaId);
+
         org.springframework.http.MediaType contentType;
         if (hasCustomThumb) {
             contentType = org.springframework.http.MediaType.IMAGE_JPEG;
@@ -366,6 +321,7 @@ public class MediaController {
         } else {
             contentType = org.springframework.http.MediaType.IMAGE_JPEG;
         }
+
         return ResponseEntity.ok()
                 .contentType(contentType)
                 .cacheControl(CacheControl.maxAge(1, TimeUnit.DAYS).cachePrivate())
@@ -380,6 +336,12 @@ public class MediaController {
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorResponse> handleBadRequest(IllegalArgumentException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ErrorResponse("BAD_REQUEST", ex.getMessage()));
+    }
+
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<ErrorResponse> handleConflictOrIllegalState(IllegalStateException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(new ErrorResponse("BAD_REQUEST", ex.getMessage()));
     }

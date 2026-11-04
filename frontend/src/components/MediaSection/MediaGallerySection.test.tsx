@@ -20,6 +20,10 @@ vi.mock('../../api/mediaApi', () => ({
     deleteMedia: vi.fn(),
     getThumbnailUrl: (id: number) => `http://mock/media/${String(id)}/thumbnail`,
     getFileUrl: (id: number) => `http://mock/media/${String(id)}/file`,
+    getAllCollections: vi.fn().mockResolvedValue([]),
+    getMediaById: vi.fn(),
+    getVersionFileUrl: (id: number, vId: number) =>
+      `http://mock/media/${String(id)}/versions/${String(vId)}/file`,
   },
 }));
 
@@ -202,7 +206,9 @@ describe('MediaGallerySection Component', () => {
     fireEvent.click(screen.getByTestId('toggle-media-details-drawer'));
     fireEvent.click(screen.getByTestId('start-edit-media-item-button'));
 
-    const descField = screen.getByLabelText(/Opis tekstowy \(zwykły tekst\)/i);
-    expect(descField.tagName.toLowerCase()).toBe('textarea');
+    await waitFor(() => {
+      const descField = screen.getByLabelText(/Opis tekstowy \(zwykły tekst\)/i);
+      expect(descField.tagName.toLowerCase()).toBe('textarea');
+    });
   });
 });

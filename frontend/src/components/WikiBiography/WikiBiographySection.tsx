@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useId, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { biographyApi } from '../../api/biographyApi';
 import { mediaApi } from '../../api/mediaApi';
+import MediaItemLightboxModal from '../MediaSection/MediaItemLightboxModal';
 import styles from './WikiBiographySection.module.css';
 import type { PersonBiographyDto, PersonListItemDto } from '../../types/biography';
 import type { MediaItemDto } from '../../types/media';
@@ -322,9 +323,18 @@ export default function WikiBiographySection({
   const [mediaSearchQuery, setMediaSearchQuery] = useState<string>('');
   const [mediaGalleryResults, setMediaGalleryResults] = useState<MediaItemDto[]>([]);
   const [mediaAlign, setMediaAlign] = useState<'right' | 'left' | 'center'>('right');
-  const [lightboxMedia, setLightboxMedia] = useState<{ id: number; kind: string; caption: string } | null>(null);
+  const [lightboxItem, setLightboxItem] = useState<MediaItemDto | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const handleOpenEmbeddedMediaLightbox = async (mediaId: number) => {
+    try {
+      const fullItem = await mediaApi.getMediaById(mediaId);
+      setLightboxItem(fullItem);
+    } catch {
+      // Fallback if media item is not found in DB
+    }
+  };
 
   useEffect(() => {
     const syncHeight = () => {
@@ -638,7 +648,7 @@ export default function WikiBiographySection({
           }}
           className={styles.toolBtn}
         >
-          „” Cytat w ramce
+          „" Cytat w ramce
         </button>
 
         {/* Text Alignment Toolbar Group */}
@@ -1044,8 +1054,8 @@ export default function WikiBiographySection({
                     </span>
                   </h3>
                 )}
-                {renderSectionBody(sec.bodyLines, `prev-sec-${String(sec.index)}`, (id, kind, caption) => {
-                  setLightboxMedia({ id, kind, caption });
+                {renderSectionBody(sec.bodyLines, `prev-sec-${String(sec.index)}`, id => {
+                  void handleOpenEmbeddedMediaLightbox(id);
                 })}
               </div>
             ))}
@@ -1181,8 +1191,8 @@ export default function WikiBiographySection({
                   </h3>
                 )}
 
-                {renderSectionBody(sec.bodyLines, `sec-${String(sec.index)}`, (id, kind, caption) => {
-                  setLightboxMedia({ id, kind, caption });
+                {renderSectionBody(sec.bodyLines, `sec-${String(sec.index)}`, id => {
+                  void handleOpenEmbeddedMediaLightbox(id);
                 })}
               </div>
             );
@@ -1190,90 +1200,29 @@ export default function WikiBiographySection({
         </div>
       )}
 
-      {/* Fullscreen Lightbox for Embedded Media */}
-      {lightboxMedia && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(5, 8, 15, 0.95)',
-            zIndex: 1400,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '1.5rem',
+      {/* Fullscreen Lightbox with Details & Options for Embedded Media (Point 28) */}
+      {lightboxItem && (
+        <MediaItemLightboxModal
+          items={[lightboxItem]}
+          activeIndex={0}
+          context="PERSON"
+          personId={personId}
+          isAdmin={isAdmin}
+          onClose={() => {
+            setLightboxItem(null);
           }}
-          onClick={() => {
-            setLightboxMedia(null);
+          onNavigateIndex={() => {
+            // Single item preview
           }}
-        >
-          <div
-            style={{
-              position: 'absolute',
-              top: '1rem',
-              right: '1rem',
-              zIndex: 10,
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => {
-                setLightboxMedia(null);
-              }}
-              className={styles.toolBtn}
-              style={{
-                backgroundColor: 'rgba(255, 255, 255, 0.15)',
-                color: '#ffffff',
-                border: 'none',
-                padding: '0.5rem 1rem',
-                fontSize: '0.95rem',
-              }}
-            >
-              ✕ Zamknij
-            </button>
-          </div>
-          <div
-            onClick={e => {
-              e.stopPropagation();
-            }}
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              maxWidth: '92vw',
-              maxHeight: '85vh',
-            }}
-          >
-            {lightboxMedia.kind === 'video' ? (
-              <video
-                src={mediaApi.getFileUrl(lightboxMedia.id)}
-                controls
-                autoPlay
-                style={{ maxWidth: '92vw', maxHeight: '78vh', objectFit: 'contain' }}
-              />
-            ) : (
-              <img
-                src={mediaApi.getFileUrl(lightboxMedia.id)}
-                alt={lightboxMedia.caption}
-                style={{ maxWidth: '92vw', maxHeight: '78vh', objectFit: 'contain', borderRadius: '4px' }}
-              />
-            )}
-            {lightboxMedia.caption && (
-              <div
-                style={{
-                  marginTop: '0.85rem',
-                  color: '#e2e8f0',
-                  fontSize: '0.95rem',
-                  textAlign: 'center',
-                  maxWidth: '700px',
-                }}
-              >
-                {lightboxMedia.caption}
-              </div>
-            )}
-          </div>
-        </div>
+          onMediaUpdated={async () => {
+            try {
+              const refreshed = await mediaApi.getMediaById(lightboxItem.id);
+              setLightboxItem(refreshed);
+            } catch {
+              setLightboxItem(null);
+            }
+          }}
+        />
       )}
     </section>
   );

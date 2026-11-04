@@ -2,36 +2,48 @@ import { useState, useEffect, useId, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { mediaApi } from '../../api/mediaApi';
 import { biographyApi } from '../../api/biographyApi';
-import { Pagination } from '../Pagination/Pagination';
 import {
   extractAllClientFileMetadata,
   type ClientExtractedMetadata,
 } from '../../utils/clientMetadataExtractor';
-import InteractiveAvatarCropper from '../PersonAvatar/InteractiveAvatarCropper';
+import GalleryBrowserModal from './GalleryBrowserModal';
+import MediaItemLightboxModal from './MediaItemLightboxModal';
 import styles from './MediaGallerySection.module.css';
 import type {
+  MediaCollectionDto,
   MediaItemDto,
   MediaPrimaryContext,
+  MediaType,
   SaveMediaPersonLinkRequestDto,
   SubEventMediaGroupDto,
 } from '../../types/media';
 import type { PersonListItemDto, PersonSex } from '../../types/biography';
 
-interface MediaGallerySectionProps {
+export interface MediaGallerySectionProps {
   context: MediaPrimaryContext;
   graveId?: number;
   personId?: number;
   eventId?: number;
+  collectionId?: number | null;
   defaultEventYear?: number | null;
   defaultPersonIds?: number[];
   primaryMediaId?: number | null;
   isAdmin: boolean;
   sectionTitle: string;
+  hideSectionChrome?: boolean;
+  externalOpenUpload?: boolean;
+  onExternalCloseUpload?: () => void;
+  externalOpenBulkEdit?: boolean;
+  onExternalCloseBulkEdit?: () => void;
+  externalItems?: MediaItemDto[];
   onMediaChanged?: () => void;
 }
 
 interface StagedUploadFile {
   file: File;
+  previewUrl: string;
+  mediaType: MediaType;
+  selectedForBulk: boolean;
   customFileName: string;
   title: string;
   sourceText?: string;
@@ -39,14 +51,55 @@ interface StagedUploadFile {
   description?: string;
   personLinks?: (SaveMediaPersonLinkRequestDto & { displayLabel: string })[];
   showDetails?: boolean;
+  isBetweenRange: boolean;
+  dateQualifier: string;
   year: string;
   month: string;
   day: string;
+  timeQualifier: string;
   hour: string;
   minute: string;
   second: string;
+  rangeEndQualifier: string;
+  rangeEndYear: string;
+  rangeEndMonth: string;
+  rangeEndDay: string;
+  rangeEndTimeQualifier: string;
+  rangeEndHour: string;
+  rangeEndMinute: string;
+  rangeEndSecond: string;
   metadataOptions: ClientExtractedMetadata[];
   selectedMetadataTag: string;
+}
+
+interface BulkEditDraftItem {
+  id: number;
+  mediaType: MediaType;
+  selected: boolean;
+  fileName: string;
+  title: string;
+  sourceText: string;
+  inscriptionText: string;
+  description: string;
+  personLinks: (SaveMediaPersonLinkRequestDto & { displayLabel: string })[];
+  showDetails: boolean;
+  isBetweenRange: boolean;
+  dateQualifier: string;
+  year: string;
+  month: string;
+  day: string;
+  timeQualifier: string;
+  hour: string;
+  minute: string;
+  second: string;
+  rangeEndQualifier: string;
+  rangeEndYear: string;
+  rangeEndMonth: string;
+  rangeEndDay: string;
+  rangeEndTimeQualifier: string;
+  rangeEndHour: string;
+  rangeEndMinute: string;
+  rangeEndSecond: string;
 }
 
 type DateSourceMode = 'EVENT_OR_MANUAL' | 'FILE_METADATA' | 'UNDATED';
@@ -80,15 +133,12 @@ const toIsoDateInputValue = (y: string, m: string, d: string): string => {
 const QUALIFIER_OPTIONS = [
   { value: 'EXACT', label: 'Dokładnie' },
   { value: 'ABOUT', label: 'Około (ok.)' },
+  { value: 'ESTIMATED', label: 'Szacunkowo' },
   { value: 'BEFORE', label: 'Przed' },
   { value: 'AFTER', label: 'Po' },
-  { value: 'ESTIMATED', label: 'Szacunkowo' },
 ];
 
-const PERSON_LINK_TYPE_LABELS: Record<
-  'DEPICTED' | 'RELATED' | 'AUTHOR',
-  string
-> = {
+const PERSON_LINK_TYPE_LABELS: Record<'DEPICTED' | 'RELATED' | 'AUTHOR', string> = {
   DEPICTED: '👁️ Na zdjęciu/filmie',
   RELATED: '🔗 Powiązana',
   AUTHOR: '📷 Autor',
@@ -110,32 +160,72 @@ const optTrim = (val: string | null | undefined): string | undefined => {
 const numToStr = (val: number | null | undefined): string =>
   val !== undefined && val !== null ? String(val) : '';
 
+const detectFileMediaType = (file: File): MediaType => {
+  const t = file.type.toLowerCase();
+  if (t.startsWith('video/')) return 'VIDEO';
+  if (
+    t.startsWith('audio/') ||
+    /\.(mp3|wav|ogg|flac|aac|m4a)$/i.test(file.name)
+  ) {
+    return 'AUDIO';
+  }
+  return 'IMAGE';
+};
+
 export default function MediaGallerySection({
   context,
   graveId,
   personId,
   eventId,
+  collectionId,
   defaultEventYear,
   defaultPersonIds,
   primaryMediaId,
   isAdmin,
   sectionTitle,
+  hideSectionChrome = false,
+  externalOpenUpload,
+  onExternalCloseUpload,
+  externalOpenBulkEdit,
+  onExternalCloseBulkEdit,
+  externalItems,
   onMediaChanged,
 }: MediaGallerySectionProps) {
   const fileInputId = useId();
-  const versionFileInputId = useId();
-
   const [items, setItems] = useState<MediaItemDto[]>([]);
   const [subEventGroups, setSubEventGroups] = useState<SubEventMediaGroupDto[]>([]);
-  const [showUpload, setShowUpload] = useState<boolean>(false);
+  const [availableCollections, setAvailableCollections] = useState<MediaCollectionDto[]>([]);
 
-  // Filtering (All / Images / Videos) & Sorting
+  const [internalShowUpload, setInternalShowUpload] = useState<boolean>(false);
+  const [internalBulkEditMode, setInternalBulkEditMode] = useState<boolean>(false);
+
+  const showUpload = externalOpenUpload ?? internalShowUpload;
+  const isBulkEditMode = externalOpenBulkEdit ?? internalBulkEditMode;
+
+  const closeUploadModal = () => {
+    setInternalShowUpload(false);
+    onExternalCloseUpload?.();
+  };
+
+  const closeBulkEditModal = () => {
+    setInternalBulkEditMode(false);
+    onExternalCloseBulkEdit?.();
+  };
+
+  // Filtering & Sorting
   const [typeFilter, setTypeFilter] = useState<SectionMediaTypeFilter>('ALL');
   const [sortMode, setSortMode] = useState<SectionSortMode>('DATE_ASC');
 
   // Batch & Single Upload Staging state
   const [stagedFiles, setStagedFiles] = useState<StagedUploadFile[]>([]);
   const [customFolderName, setCustomFolderName] = useState<string>('');
+  const [uploadCollectionId, setUploadCollectionId] = useState<string>(
+    collectionId ? String(collectionId) : ''
+  );
+  const [uploadIsPortrait, setUploadIsPortrait] = useState<boolean>(context === 'PERSON');
+  const [uploadPortraitType, setUploadPortraitType] = useState<'SINGLE' | 'GROUP'>('SINGLE');
+  const [uploadIsUnknown, setUploadIsUnknown] = useState<boolean>(false);
+
   const [dateSourceMode, setDateSourceMode] = useState<DateSourceMode>(
     defaultEventYear ? 'EVENT_OR_MANUAL' : 'FILE_METADATA'
   );
@@ -158,14 +248,14 @@ export default function MediaGallerySection({
   const [manualBulkRangeEndHour, setManualBulkRangeEndHour] = useState<string>('');
   const [manualBulkRangeEndMinute, setManualBulkRangeEndMinute] = useState<string>('');
   const [manualBulkRangeEndSecond, setManualBulkRangeEndSecond] = useState<string>('');
-  const [uploadPortraitType, setUploadPortraitType] = useState<'SINGLE' | 'GROUP'>('SINGLE');
+
   const [bulkBaseName, setBulkBaseName] = useState<string>('');
   const [directoryPreview, setDirectoryPreview] = useState<string>('');
   const [setAsPrimary, setSetAsPrimary] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Staged Upload Details & Bulk Details State (Point 5)
+  // Staged Upload Bulk Details State
   const [showBulkDetails, setShowBulkDetails] = useState<boolean>(false);
   const [bulkTitle, setBulkTitle] = useState<string>('');
   const [bulkSourceText, setBulkSourceText] = useState<string>('');
@@ -174,9 +264,9 @@ export default function MediaGallerySection({
   const [bulkPersonLinks, setBulkPersonLinks] = useState<
     (SaveMediaPersonLinkRequestDto & { displayLabel: string })[]
   >([]);
-  const [bulkLinkRoleType, setBulkLinkRoleType] = useState<
-    'DEPICTED' | 'RELATED' | 'AUTHOR'
-  >('DEPICTED');
+  const [bulkLinkRoleType, setBulkLinkRoleType] = useState<'DEPICTED' | 'RELATED' | 'AUTHOR'>(
+    'DEPICTED'
+  );
   const [bulkLinkPersonQuery, setBulkLinkPersonQuery] = useState<string>('');
   const [bulkLinkPersonResults, setBulkLinkPersonResults] = useState<PersonListItemDto[]>([]);
   const [bulkLinkTextInput, setBulkLinkTextInput] = useState<string>('');
@@ -186,17 +276,24 @@ export default function MediaGallerySection({
   const [activeStagedSearchIdx, setActiveStagedSearchIdx] = useState<number | null>(null);
   const [stagedPersonQuery, setStagedPersonQuery] = useState<string>('');
   const [stagedPersonResults, setStagedPersonResults] = useState<PersonListItemDto[]>([]);
-  const [stagedLinkRoleType, setStagedLinkRoleType] = useState<
-    'DEPICTED' | 'RELATED' | 'AUTHOR'
-  >('DEPICTED');
+  const [stagedLinkRoleType, setStagedLinkRoleType] = useState<'DEPICTED' | 'RELATED' | 'AUTHOR'>(
+    'DEPICTED'
+  );
   const [stagedTextPersonInput, setStagedTextPersonInput] = useState<string>('');
   const [stagedTextPersonSex, setStagedTextPersonSex] = useState<PersonSex>('UNKNOWN');
 
-  // Post-Upload Bulk Edit Mode state
-  const [isBulkEditMode, setIsBulkEditMode] = useState<boolean>(false);
-  const [selectedBulkIds, setSelectedBulkIds] = useState<number[]>([]);
+  // Preview Modal for Staged or Bulk-Edited File (Point 1 & Point 6)
+  const [previewModalItem, setPreviewModalItem] = useState<{
+    url: string;
+    mediaType: MediaType;
+    title: string;
+  } | null>(null);
+
+  // Post-Upload Bulk Edit Modal State (Points 6 & 33)
+  const [bulkDraftItems, setBulkDraftItems] = useState<BulkEditDraftItem[]>([]);
   const [bulkEditFolder, setBulkEditFolder] = useState<string>('');
   const [bulkEditStem, setBulkEditStem] = useState<string>('');
+  const [bulkEditTargetCollectionId, setBulkEditTargetCollectionId] = useState<string>('');
   const [bulkEditDateMode, setBulkEditDateMode] = useState<
     'NO_CHANGE' | 'MANUAL' | 'METADATA' | 'EVENT' | 'UNDATED'
   >('NO_CHANGE');
@@ -210,7 +307,6 @@ export default function MediaGallerySection({
   const [bulkEditHour, setBulkEditHour] = useState<string>('');
   const [bulkEditMinute, setBulkEditMinute] = useState<string>('');
   const [bulkEditSecond, setBulkEditSecond] = useState<string>('');
-
   const [bulkEditRangeEndQual, setBulkEditRangeEndQual] = useState<string>('EXACT');
   const [bulkEditRangeEndYear, setBulkEditRangeEndYear] = useState<string>('');
   const [bulkEditRangeEndMonth, setBulkEditRangeEndMonth] = useState<string>('');
@@ -220,77 +316,13 @@ export default function MediaGallerySection({
   const [bulkEditRangeEndMinute, setBulkEditRangeEndMinute] = useState<string>('');
   const [bulkEditRangeEndSecond, setBulkEditRangeEndSecond] = useState<string>('');
 
-  // Link Existing Media from Gallery Modal state
+  // Link Existing Media from Gallery Modal state (Point 3)
   const [showLinkExistingModal, setShowLinkExistingModal] = useState<boolean>(false);
-  const [gallerySearchQuery, setGallerySearchQuery] = useState<string>('');
-  const [galleryTypeFilter, setGalleryTypeFilter] = useState<string>('ALL');
-  const [gallerySortBy, setGallerySortBy] = useState<string>('NEWEST_UPLOAD');
-  const [galleryPage, setGalleryPage] = useState<number>(0);
-  const [galleryTotalPages, setGalleryTotalPages] = useState<number>(1);
-  const [galleryCandidates, setGalleryCandidates] = useState<MediaItemDto[]>([]);
-  const [selectedExistingIds, setSelectedExistingIds] = useState<number[]>([]);
 
-  // Fullscreen Lightbox state & Version Switcher (Points 15 & 17)
+  // Fullscreen Lightbox state
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
-  const [selectedVersionId, setSelectedVersionId] = useState<number | null>(null);
-  const [zoom, setZoom] = useState<number>(1);
-  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
-  const [pinchStartDist, setPinchStartDist] = useState<number | null>(null);
-  const [showDetailsDrawer, setShowDetailsDrawer] = useState<boolean>(false);
 
-  // Add Version / Reverse Side Form inside Lightbox
-  const [showVersionUpload, setShowVersionUpload] = useState<boolean>(false);
-  const [versionFile, setVersionFile] = useState<File | null>(null);
-  const [versionTypeInput, setVersionTypeInput] = useState<string>('RESTORED');
-  const [versionLabelInput, setVersionLabelInput] = useState<string>('');
-  const [versionSetAsMain, setVersionSetAsMain] = useState<boolean>(true);
-
-  // Single Item Edit inside Lightbox (Points 13, 14, 15)
-  const [isEditingItem, setIsEditingItem] = useState<boolean>(false);
-  const [editFileName, setEditFileName] = useState<string>('');
-  const [editFolderName, setEditFolderName] = useState<string>('');
-  const [editTitle, setEditTitle] = useState<string>('');
-  const [editInscription, setEditInscription] = useState<string>('');
-  const [editDescription, setEditDescription] = useState<string>('');
-  const [editSourceText, setEditSourceText] = useState<string>('');
-  const [editDateMode, setEditDateMode] = useState<
-    'MANUAL' | 'METADATA' | 'EVENT' | 'UNDATED'
-  >('MANUAL');
-  const [editSelectedMetadataTag, setEditSelectedMetadataTag] = useState<string>('');
-  const [editIsBetween, setEditIsBetween] = useState<boolean>(false);
-  const [editDateQual, setEditDateQual] = useState<string>('EXACT');
-  const [editYear, setEditYear] = useState<string>('');
-  const [editMonth, setEditMonth] = useState<string>('');
-  const [editDay, setEditDay] = useState<string>('');
-  const [editTimeQual, setEditTimeQual] = useState<string>('EXACT');
-  const [editHour, setEditHour] = useState<string>('');
-  const [editMinute, setEditMinute] = useState<string>('');
-  const [editSecond, setEditSecond] = useState<string>('');
-
-  const [editRangeEndQual, setEditRangeEndQual] = useState<string>('EXACT');
-  const [editRangeEndYear, setEditRangeEndYear] = useState<string>('');
-  const [editRangeEndMonth, setEditRangeEndMonth] = useState<string>('');
-  const [editRangeEndDay, setEditRangeEndDay] = useState<string>('');
-  const [editRangeEndTimeQual, setEditRangeEndTimeQual] = useState<string>('EXACT');
-  const [editRangeEndHour, setEditRangeEndHour] = useState<string>('');
-  const [editRangeEndMinute, setEditRangeEndMinute] = useState<string>('');
-  const [editRangeEndSecond, setEditRangeEndSecond] = useState<string>('');
-
-  // Person Links in Edit Form (DEPICTED, RELATED, AUTHOR - DB or Text)
-  const [editPersonLinks, setEditPersonLinks] = useState<
-    (SaveMediaPersonLinkRequestDto & { displayLabel: string })[]
-  >([]);
-  const [linkRoleType, setLinkRoleType] = useState<'DEPICTED' | 'RELATED' | 'AUTHOR'>(
-    'DEPICTED'
-  );
-  const [linkPersonQuery, setLinkPersonQuery] = useState<string>('');
-  const [linkPersonResults, setLinkPersonResults] = useState<PersonListItemDto[]>([]);
-  const [linkTextInput, setLinkTextInput] = useState<string>('');
-  const [linkTextSex, setLinkTextSex] = useState<PersonSex>('UNKNOWN');
-
-  // Interactive Avatar Cropper state (Point 12)
-  const [showCropper, setShowCropper] = useState<boolean>(false);
+  const effectiveItems = externalItems ?? items;
 
   const filterAndSortList = (list: MediaItemDto[]): MediaItemDto[] => {
     const filtered = list.filter(item => {
@@ -309,14 +341,11 @@ export default function MediaGallerySection({
       if (sortMode === 'NEWEST_ADDED') {
         return b.id - a.id;
       }
-
       const dtA = a.sortDateTime ?? (a.year ? `${String(a.year)}-01-01T00:00:00` : null);
       const dtB = b.sortDateTime ?? (b.year ? `${String(b.year)}-01-01T00:00:00` : null);
-
       if (dtA === null && dtB === null) return a.id - b.id;
       if (dtA === null) return 1;
       if (dtB === null) return -1;
-
       const cmp = dtA.localeCompare(dtB);
       if (cmp !== 0) {
         return sortMode === 'DATE_DESC' ? -cmp : cmp;
@@ -326,8 +355,8 @@ export default function MediaGallerySection({
   };
 
   const displayedDirectItems = useMemo(
-    () => filterAndSortList(items),
-    [items, typeFilter, sortMode]
+    () => filterAndSortList(effectiveItems),
+    [effectiveItems, typeFilter, sortMode]
   );
 
   const displayedSubGroups = useMemo(
@@ -342,40 +371,33 @@ export default function MediaGallerySection({
   );
 
   const allViewableItems = useMemo(
-    () => [
-      ...displayedDirectItems,
-      ...displayedSubGroups.flatMap(g => g.media),
-    ],
+    () => [...displayedDirectItems, ...displayedSubGroups.flatMap(g => g.media)],
     [displayedDirectItems, displayedSubGroups]
   );
 
   const totalRawItemsCount =
-    items.length + subEventGroups.reduce((acc, g) => acc + g.media.length, 0);
+    effectiveItems.length + subEventGroups.reduce((acc, g) => acc + g.media.length, 0);
   const totalImagesCount =
-    items.filter(i => i.mediaType === 'IMAGE').length +
+    effectiveItems.filter(i => i.mediaType === 'IMAGE').length +
     subEventGroups.reduce(
       (acc, g) => acc + g.media.filter(i => i.mediaType === 'IMAGE').length,
       0
     );
   const totalVideosCount =
-    items.filter(i => i.mediaType === 'VIDEO').length +
+    effectiveItems.filter(i => i.mediaType === 'VIDEO').length +
     subEventGroups.reduce(
       (acc, g) => acc + g.media.filter(i => i.mediaType === 'VIDEO').length,
       0
     );
   const totalAudiosCount =
-    items.filter(i => i.mediaType === 'AUDIO').length +
+    effectiveItems.filter(i => i.mediaType === 'AUDIO').length +
     subEventGroups.reduce(
       (acc, g) => acc + g.media.filter(i => i.mediaType === 'AUDIO').length,
       0
     );
 
-  const activeItem =
-    activeIndex !== null && activeIndex >= 0 && activeIndex < allViewableItems.length
-      ? allViewableItems[activeIndex]
-      : null;
-
   const loadMedia = async () => {
+    if (externalItems !== undefined) return;
     try {
       if (graveId !== undefined) {
         const data = await mediaApi.getMediaByGrave(graveId);
@@ -400,67 +422,155 @@ export default function MediaGallerySection({
   }, [graveId, personId, eventId]);
 
   useEffect(() => {
-    if (activeIndex === null) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setActiveIndex(null);
-      } else if (e.key === 'ArrowLeft' && allViewableItems.length > 1) {
-        setZoom(1);
-        setPan({ x: 0, y: 0 });
-        setSelectedVersionId(null);
-        setActiveIndex(prev =>
-          prev !== null
-            ? (prev - 1 + allViewableItems.length) % allViewableItems.length
-            : null
-        );
-      } else if (e.key === 'ArrowRight' && allViewableItems.length > 1) {
-        setZoom(1);
-        setPan({ x: 0, y: 0 });
-        setSelectedVersionId(null);
-        setActiveIndex(prev =>
-          prev !== null ? (prev + 1) % allViewableItems.length : null
-        );
+    if (!showUpload && !isBulkEditMode) return;
+    const fetchCols = async () => {
+      try {
+        const cols = await mediaApi.getAllCollections();
+        setAvailableCollections(cols);
+        if (collectionId) {
+          setUploadCollectionId(String(collectionId));
+        } else if (cols.length > 0 && uploadCollectionId === '') {
+          const firstCol = cols.at(0);
+          if (firstCol) {
+            setUploadCollectionId(String(firstCol.id));
+          }
+        }
+      } catch {
+        setAvailableCollections([]);
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
+    void fetchCols();
+  }, [showUpload, isBulkEditMode, collectionId]);
+
+  // Revoke object URLs on unmount or stagedFiles clear
+  useEffect(() => {
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
+      for (const st of stagedFiles) {
+        if (st.previewUrl) {
+          URL.revokeObjectURL(st.previewUrl);
+        }
+      }
     };
-  }, [activeIndex, allViewableItems.length]);
+  }, [stagedFiles]);
+
+  // Initialize bulk edit draft list whenever bulk edit mode opens
+  useEffect(() => {
+    if (!isBulkEditMode) return;
+    setBulkDraftItems(
+      effectiveItems.map(item => {
+        const combinedLinks: (SaveMediaPersonLinkRequestDto & { displayLabel: string })[] = [];
+        for (const d of item.depictedPersons ?? []) {
+          combinedLinks.push({
+            personId: d.personId,
+            personText: d.personText,
+            personSex: d.sex,
+            linkType: 'DEPICTED',
+            displayLabel: `${PERSON_LINK_TYPE_LABELS.DEPICTED}: ${d.displayName}`,
+          });
+        }
+        for (const r of item.relatedPersons ?? []) {
+          combinedLinks.push({
+            personId: r.personId,
+            personText: r.personText,
+            personSex: r.sex,
+            linkType: 'RELATED',
+            displayLabel: `${PERSON_LINK_TYPE_LABELS.RELATED}: ${r.displayName}`,
+          });
+        }
+        for (const a of item.authors ?? []) {
+          combinedLinks.push({
+            personId: a.personId,
+            personText: a.personText,
+            personSex: a.sex,
+            linkType: 'AUTHOR',
+            displayLabel: `${PERSON_LINK_TYPE_LABELS.AUTHOR}: ${a.displayName}`,
+          });
+        }
+        return {
+          id: item.id,
+          mediaType: item.mediaType,
+          selected: true,
+          fileName: item.fileName,
+          title: item.title ?? '',
+          sourceText: item.sourceText ?? '',
+          inscriptionText: item.inscriptionText ?? '',
+          description: item.description ?? '',
+          personLinks: combinedLinks,
+          showDetails: false,
+          isBetweenRange: item.betweenRange === true,
+          dateQualifier: item.dateQualifier ?? 'EXACT',
+          year: numToStr(item.year),
+          month: numToStr(item.month),
+          day: numToStr(item.day),
+          timeQualifier: item.timeQualifier ?? 'EXACT',
+          hour: numToStr(item.hour),
+          minute: numToStr(item.minute),
+          second: numToStr(item.second),
+          rangeEndQualifier: item.rangeEndQualifier ?? 'EXACT',
+          rangeEndYear: numToStr(item.rangeEndYear),
+          rangeEndMonth: numToStr(item.rangeEndMonth),
+          rangeEndDay: numToStr(item.rangeEndDay),
+          rangeEndTimeQualifier: item.rangeEndTimeQualifier ?? 'EXACT',
+          rangeEndHour: numToStr(item.rangeEndHour),
+          rangeEndMinute: numToStr(item.rangeEndMinute),
+          rangeEndSecond: numToStr(item.rangeEndSecond),
+        };
+      })
+    );
+  }, [isBulkEditMode, effectiveItems]);
+
+  // Keep directory preview updated with untouchable event date prefix (Point 12)
+  const refreshDirectoryPreview = async (
+    firstFile: File | undefined,
+    folderNameOverride: string,
+    colIdStr: string
+  ) => {
+    if (!firstFile) {
+      setDirectoryPreview('');
+      return 'family_media';
+    }
+    try {
+      const parsedManualYear =
+        manualBulkYear.trim() !== '' ? Number(manualBulkYear) : undefined;
+      const preview = await mediaApi.previewFilename({
+        primaryContext: uploadIsPortrait ? 'PERSON' : context,
+        graveId,
+        personId,
+        eventId,
+        collectionId: colIdStr !== '' ? Number(colIdStr) : undefined,
+        customYear: dateSourceMode === 'EVENT_OR_MANUAL' ? parsedManualYear : undefined,
+        customFolderName: folderNameOverride.trim() || undefined,
+        originalFilename: firstFile.name,
+        mimeType: firstFile.type,
+        portraitMedia: uploadIsPortrait,
+        unknownMedia: uploadIsUnknown,
+        personsCount: uploadPortraitType === 'GROUP' ? 2 : 1,
+      });
+      setDirectoryPreview(preview.directoryPath);
+      return preview.suggestedFileName.replace(/\.[^.]+$/, '').replace(/_\d+$/, '');
+    } catch {
+      return 'family_media';
+    }
+  };
 
   const handleFilesSelected = async (fileList: FileList | null) => {
+    for (const old of stagedFiles) {
+      if (old.previewUrl) URL.revokeObjectURL(old.previewUrl);
+    }
     if (!fileList || fileList.length === 0) {
       setStagedFiles([]);
       setDirectoryPreview('');
       return;
     }
-
     const filesArray = Array.from(fileList);
     const firstFile = filesArray[0];
 
-    let baseStem = 'family_media';
-    try {
-      const parsedManualYear =
-        manualBulkYear.trim() !== '' ? Number(manualBulkYear) : undefined;
-      const preview = await mediaApi.previewFilename({
-        primaryContext: context,
-        graveId,
-        personId,
-        eventId,
-        customYear:
-          dateSourceMode === 'EVENT_OR_MANUAL' ? parsedManualYear : undefined,
-        customFolderName: customFolderName.trim() || undefined,
-        originalFilename: firstFile.name,
-        mimeType: firstFile.type,
-      });
-      setDirectoryPreview(preview.directoryPath);
-      baseStem = preview.suggestedFileName
-        .replace(/\.[^.]+$/, '')
-        .replace(/_\d+$/, '');
-      setBulkBaseName(baseStem);
-    } catch {
-      setBulkBaseName(baseStem);
-    }
+    const baseStem = await refreshDirectoryPreview(
+      firstFile,
+      customFolderName,
+      uploadCollectionId
+    );
+    setBulkBaseName(baseStem);
 
     const extractedLists = await Promise.all(
       filesArray.map(f => extractAllClientFileMetadata(f))
@@ -479,7 +589,6 @@ export default function MediaGallerySection({
       let h = '';
       let min = '';
       let sec = '';
-
       if (dateSourceMode === 'FILE_METADATA' && primaryMeta) {
         y = String(primaryMeta.year);
         m = String(primaryMeta.month);
@@ -497,8 +606,14 @@ export default function MediaGallerySection({
       }
 
       const suffix = String(idx + 1).padStart(2, '0');
+      const previewUrl =
+        typeof URL.createObjectURL === 'function' ? URL.createObjectURL(f) : '';
+
       return {
         file: f,
+        previewUrl,
+        mediaType: detectFileMediaType(f),
+        selectedForBulk: true,
         customFileName: `${baseStem}_${suffix}.${ext}`,
         title: bulkTitle.trim() || '',
         sourceText: bulkSourceText.trim() || undefined,
@@ -506,12 +621,23 @@ export default function MediaGallerySection({
         description: bulkDescription.trim() || undefined,
         personLinks: bulkPersonLinks.length > 0 ? [...bulkPersonLinks] : [],
         showDetails: false,
+        isBetweenRange: dateSourceMode === 'EVENT_OR_MANUAL' ? uploadIsRange : false,
+        dateQualifier: dateSourceMode === 'FILE_METADATA' ? 'EXACT' : manualBulkQual,
         year: y,
         month: m,
         day: d,
+        timeQualifier: dateSourceMode === 'FILE_METADATA' ? 'EXACT' : manualBulkTimeQual,
         hour: h,
         minute: min,
         second: sec,
+        rangeEndQualifier: manualBulkRangeEndQual,
+        rangeEndYear: manualBulkRangeEndYear,
+        rangeEndMonth: manualBulkRangeEndMonth,
+        rangeEndDay: manualBulkRangeEndDay,
+        rangeEndTimeQualifier: manualBulkRangeEndTimeQual,
+        rangeEndHour: manualBulkRangeEndHour,
+        rangeEndMinute: manualBulkRangeEndMinute,
+        rangeEndSecond: manualBulkRangeEndSecond,
         metadataOptions: metaList,
         selectedMetadataTag: primaryMeta ? primaryMeta.sourceTag : '',
       };
@@ -520,16 +646,21 @@ export default function MediaGallerySection({
     setStagedFiles(staged);
   };
 
-  const handleApplyBulkDetailsToAll = () => {
+  const handleApplyBulkDetailsToSelectedStaged = () => {
     setStagedFiles(prev =>
-      prev.map(item => ({
-        ...item,
-        title: bulkTitle.trim() || item.title,
-        sourceText: bulkSourceText.trim() || item.sourceText,
-        inscriptionText: bulkInscriptionText.trim() || item.inscriptionText,
-        description: bulkDescription.trim() || item.description,
-        personLinks: bulkPersonLinks.length > 0 ? [...bulkPersonLinks] : item.personLinks,
-      }))
+      prev.map(item =>
+        !item.selectedForBulk
+          ? item
+          : {
+              ...item,
+              title: bulkTitle.trim() || item.title,
+              sourceText: bulkSourceText.trim() || item.sourceText,
+              inscriptionText: bulkInscriptionText.trim() || item.inscriptionText,
+              description: bulkDescription.trim() || item.description,
+              personLinks:
+                bulkPersonLinks.length > 0 ? [...bulkPersonLinks] : item.personLinks,
+            }
+      )
     );
   };
 
@@ -659,7 +790,18 @@ export default function MediaGallerySection({
     nextH: string,
     nextMin: string,
     nextSec: string,
-    nextBaseStem: string
+    nextBaseStem: string,
+    nextIsRange = uploadIsRange,
+    nextQual = manualBulkQual,
+    nextTimeQual = manualBulkTimeQual,
+    nextREndQual = manualBulkRangeEndQual,
+    nextREndY = manualBulkRangeEndYear,
+    nextREndM = manualBulkRangeEndMonth,
+    nextREndD = manualBulkRangeEndDay,
+    nextREndTQual = manualBulkRangeEndTimeQual,
+    nextREndH = manualBulkRangeEndHour,
+    nextREndMin = manualBulkRangeEndMinute,
+    nextREndSec = manualBulkRangeEndSecond
   ) => {
     const cleanStem =
       nextBaseStem
@@ -670,6 +812,7 @@ export default function MediaGallerySection({
 
     setStagedFiles(prev =>
       prev.map((item, idx) => {
+        if (!item.selectedForBulk) return item;
         const ext = item.file.name.includes('.')
           ? item.file.name.slice(item.file.name.lastIndexOf('.') + 1).toLowerCase()
           : 'jpg';
@@ -681,7 +824,6 @@ export default function MediaGallerySection({
         let h = '';
         let min = '';
         let sec = '';
-
         const chosenMeta =
           item.metadataOptions.find(o => o.sourceTag === item.selectedMetadataTag) ??
           item.metadataOptions.at(0);
@@ -705,32 +847,61 @@ export default function MediaGallerySection({
         return {
           ...item,
           customFileName: `${cleanStem}_${suffix}.${ext}`,
+          isBetweenRange: nextMode === 'EVENT_OR_MANUAL' ? nextIsRange : false,
+          dateQualifier: nextMode === 'FILE_METADATA' ? 'EXACT' : nextQual,
           year: y,
           month: m,
           day: d,
+          timeQualifier: nextMode === 'FILE_METADATA' ? 'EXACT' : nextTimeQual,
           hour: h,
           minute: min,
           second: sec,
+          rangeEndQualifier: nextREndQual,
+          rangeEndYear: nextREndY,
+          rangeEndMonth: nextREndM,
+          rangeEndDay: nextREndD,
+          rangeEndTimeQualifier: nextREndTQual,
+          rangeEndHour: nextREndH,
+          rangeEndMinute: nextREndMin,
+          rangeEndSecond: nextREndSec,
         };
       })
     );
   };
 
+  const needsCollectionForUpload =
+    context === 'COLLECTION' ||
+    (context === 'EVENT' && !defaultEventYear) ||
+    (context === 'PERSON' && stagedFiles.some(s => s.year.trim() === ''));
+
   const handleUploadSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (stagedFiles.length === 0) return;
+
+    const resolvedColId =
+      uploadCollectionId.trim() !== '' ? Number(uploadCollectionId) : undefined;
+    if (needsCollectionForUpload && resolvedColId === undefined && context !== 'GRAVE') {
+      const anyUndated = stagedFiles.some(s => s.year.trim() === '') || (context === 'EVENT' && !defaultEventYear);
+      if (anyUndated) {
+        setErrorMessage('Wybierz kolekcję docelową dla wgrywanych plików bez ustalonej daty.');
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     setErrorMessage(null);
 
     const targetPersonIds =
       personId !== undefined ? [personId] : (defaultPersonIds ?? []);
+    const effectiveContext: MediaPrimaryContext =
+      uploadIsPortrait && context === 'COLLECTION' ? 'PERSON' : context;
 
     try {
       if (stagedFiles.length === 1) {
         const single = stagedFiles[0];
         const created = await mediaApi.uploadMedia({
           file: single.file,
-          primaryContext: context,
+          primaryContext: effectiveContext,
           customFolderName: optTrim(customFolderName),
           customFileName: single.customFileName,
           title: optTrim(single.title),
@@ -739,27 +910,48 @@ export default function MediaGallerySection({
           description: optTrim(single.description),
           graveId,
           eventId,
-          isBetweenRange: uploadIsRange,
-          dateQualifier: dateSourceMode === 'FILE_METADATA' ? 'EXACT' : manualBulkQual,
+          collectionId: resolvedColId,
+          isBetweenRange: single.isBetweenRange,
+          dateQualifier: single.dateQualifier,
           customYear: parseOptInt(single.year) ?? undefined,
           customMonth: parseOptInt(single.month) ?? undefined,
           customDay: parseOptInt(single.day) ?? undefined,
-          timeQualifier: dateSourceMode === 'FILE_METADATA' ? 'EXACT' : manualBulkTimeQual,
+          timeQualifier: single.timeQualifier,
           customHour: parseOptInt(single.hour) ?? undefined,
           customMinute: parseOptInt(single.minute) ?? undefined,
           customSecond: parseOptInt(single.second) ?? undefined,
-          rangeEndQualifier: uploadIsRange ? manualBulkRangeEndQual : undefined,
-          rangeEndYear: uploadIsRange ? parseOptInt(manualBulkRangeEndYear) ?? undefined : undefined,
-          rangeEndMonth: uploadIsRange ? parseOptInt(manualBulkRangeEndMonth) ?? undefined : undefined,
-          rangeEndDay: uploadIsRange ? parseOptInt(manualBulkRangeEndDay) ?? undefined : undefined,
-          rangeEndTimeQualifier: uploadIsRange ? manualBulkRangeEndTimeQual : undefined,
-          rangeEndHour: uploadIsRange ? parseOptInt(manualBulkRangeEndHour) ?? undefined : undefined,
-          rangeEndMinute: uploadIsRange ? parseOptInt(manualBulkRangeEndMinute) ?? undefined : undefined,
-          rangeEndSecond: uploadIsRange ? parseOptInt(manualBulkRangeEndSecond) ?? undefined : undefined,
+          rangeEndQualifier: single.isBetweenRange ? single.rangeEndQualifier : undefined,
+          rangeEndYear: single.isBetweenRange
+            ? (parseOptInt(single.rangeEndYear) ?? undefined)
+            : undefined,
+          rangeEndMonth: single.isBetweenRange
+            ? (parseOptInt(single.rangeEndMonth) ?? undefined)
+            : undefined,
+          rangeEndDay: single.isBetweenRange
+            ? (parseOptInt(single.rangeEndDay) ?? undefined)
+            : undefined,
+          rangeEndTimeQualifier: single.isBetweenRange
+            ? single.rangeEndTimeQualifier
+            : undefined,
+          rangeEndHour: single.isBetweenRange
+            ? (parseOptInt(single.rangeEndHour) ?? undefined)
+            : undefined,
+          rangeEndMinute: single.isBetweenRange
+            ? (parseOptInt(single.rangeEndMinute) ?? undefined)
+            : undefined,
+          rangeEndSecond: single.isBetweenRange
+            ? (parseOptInt(single.rangeEndSecond) ?? undefined)
+            : undefined,
           selectedMetadataSourceTag: optTrim(single.selectedMetadataTag),
-          clientLastModifiedMs: single.file.lastModified > 0 ? single.file.lastModified : undefined,
-          personIds: targetPersonIds,
-          portraitMedia: context === 'PERSON' ? uploadPortraitType === 'SINGLE' : undefined,
+          clientLastModifiedMs:
+            single.file.lastModified > 0 ? single.file.lastModified : undefined,
+          personIds:
+            uploadPortraitType === 'GROUP' && targetPersonIds.length <= 1
+              ? [...targetPersonIds, -1].filter(id => id > 0)
+              : targetPersonIds,
+          portraitMedia:
+            effectiveContext === 'PERSON' ? uploadPortraitType === 'SINGLE' : uploadIsPortrait,
+          unknownMedia: uploadIsUnknown,
           setAsPersonAvatar: context === 'PERSON' && setAsPrimary,
           setAsGravePrimary: context === 'GRAVE' && setAsPrimary,
         });
@@ -781,7 +973,7 @@ export default function MediaGallerySection({
       } else {
         const createdBatch = await mediaApi.uploadBatchMedia({
           files: stagedFiles.map(s => s.file),
-          primaryContext: context,
+          primaryContext: effectiveContext,
           customFolderName: optTrim(customFolderName),
           customFileNames: stagedFiles.map(s => s.customFileName),
           titles: stagedFiles.map(s => s.title),
@@ -794,30 +986,56 @@ export default function MediaGallerySection({
           selectedMetadataSourceTags: stagedFiles.map(
             s => optTrim(s.selectedMetadataTag) ?? null
           ),
-          clientLastModifiedList: stagedFiles.map(s => s.file.lastModified > 0 ? s.file.lastModified : null),
+          clientLastModifiedList: stagedFiles.map(s =>
+            s.file.lastModified > 0 ? s.file.lastModified : null
+          ),
           graveId,
           eventId,
+          collectionId: resolvedColId,
           defaultYear:
             dateSourceMode === 'EVENT_OR_MANUAL' ? parseOptInt(manualBulkYear) : null,
           personIds: targetPersonIds,
-          portraitMedia: context === 'PERSON' ? uploadPortraitType === 'SINGLE' : undefined,
+          portraitMedia:
+            effectiveContext === 'PERSON' ? uploadPortraitType === 'SINGLE' : uploadIsPortrait,
+          unknownMedia: uploadIsUnknown,
         });
 
         for (let i = 0; i < createdBatch.length; i++) {
           const st = stagedFiles[i];
           const createdItem = createdBatch[i];
-          const hasDetails =
+          const hasExtraDetails =
+            st.isBetweenRange ||
+            st.dateQualifier !== 'EXACT' ||
+            st.timeQualifier !== 'EXACT' ||
             Boolean(optTrim(st.sourceText)) ||
             Boolean(optTrim(st.inscriptionText)) ||
             Boolean(optTrim(st.description)) ||
             (st.personLinks !== undefined && st.personLinks.length > 0);
 
-          if (hasDetails) {
+          if (hasExtraDetails) {
             await mediaApi.updateMedia(createdItem.id, {
               title: optTrim(st.title) ?? createdItem.title,
               sourceText: optTrim(st.sourceText) ?? createdItem.sourceText,
               inscriptionText: optTrim(st.inscriptionText) ?? createdItem.inscriptionText,
               description: optTrim(st.description) ?? createdItem.description,
+              dateSourceMode: 'MANUAL',
+              isBetweenRange: st.isBetweenRange,
+              dateQualifier: st.dateQualifier,
+              year: parseOptInt(st.year),
+              month: parseOptInt(st.month),
+              day: parseOptInt(st.day),
+              timeQualifier: st.timeQualifier,
+              hour: parseOptInt(st.hour),
+              minute: parseOptInt(st.minute),
+              second: parseOptInt(st.second),
+              rangeEndQualifier: st.isBetweenRange ? st.rangeEndQualifier : null,
+              rangeEndYear: st.isBetweenRange ? parseOptInt(st.rangeEndYear) : null,
+              rangeEndMonth: st.isBetweenRange ? parseOptInt(st.rangeEndMonth) : null,
+              rangeEndDay: st.isBetweenRange ? parseOptInt(st.rangeEndDay) : null,
+              rangeEndTimeQualifier: st.isBetweenRange ? st.rangeEndTimeQualifier : null,
+              rangeEndHour: st.isBetweenRange ? parseOptInt(st.rangeEndHour) : null,
+              rangeEndMinute: st.isBetweenRange ? parseOptInt(st.rangeEndMinute) : null,
+              rangeEndSecond: st.isBetweenRange ? parseOptInt(st.rangeEndSecond) : null,
               personLinks: st.personLinks?.map(l => ({
                 personId: l.personId,
                 personText: l.personText,
@@ -829,7 +1047,7 @@ export default function MediaGallerySection({
         }
       }
 
-      setShowUpload(false);
+      closeUploadModal();
       setStagedFiles([]);
       setCustomFolderName('');
       await loadMedia();
@@ -841,48 +1059,16 @@ export default function MediaGallerySection({
     }
   };
 
-  const fetchGalleryCandidates = async (
-    queryStr: string,
-    mType: string,
-    sBy = gallerySortBy,
-    pNum = 0
-  ) => {
-    try {
-      const page = await mediaApi.getGalleryPage({
-        search: queryStr,
-        mediaType: mType,
-        sortBy: sBy,
-        page: pNum,
-        size: 24,
-      });
-      const existingIds = new Set(items.map(i => i.id));
-      setGalleryCandidates(page.content.filter(c => !existingIds.has(c.id)));
-      setGalleryTotalPages(page.totalPages);
-      setGalleryPage(pNum);
-    } catch {
-      setErrorMessage('Nie udało się pobrać mediów z galerii.');
-    }
-  };
-
-  const handleOpenLinkExistingModal = () => {
-    setSelectedExistingIds([]);
-    setGallerySearchQuery('');
-    setGalleryTypeFilter('ALL');
-    setGallerySortBy('NEWEST_UPLOAD');
-    setGalleryPage(0);
-    setShowLinkExistingModal(true);
-    void fetchGalleryCandidates('', 'ALL', 'NEWEST_UPLOAD', 0);
-  };
-
-  const handleConfirmLinkExisting = async () => {
-    if (selectedExistingIds.length === 0) return;
+  const handleConfirmLinkExisting = async (selectedIds: number[]) => {
+    if (selectedIds.length === 0) return;
     setIsSubmitting(true);
     try {
       await mediaApi.linkExistingMedia({
-        mediaIds: selectedExistingIds,
+        mediaIds: selectedIds,
         graveId: graveId ?? null,
         personId: personId ?? null,
         eventId: eventId ?? null,
+        collectionId: collectionId ?? null,
       });
       setShowLinkExistingModal(false);
       await loadMedia();
@@ -894,17 +1080,96 @@ export default function MediaGallerySection({
     }
   };
 
+  const handleApplyBulkToDraftList = () => {
+    const cleanStem =
+      bulkEditStem
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '') || '';
+
+    let counter = 1;
+    setBulkDraftItems(prev =>
+      prev.map(d => {
+        if (!d.selected) return d;
+        const ext = d.fileName.includes('.')
+          ? d.fileName.slice(d.fileName.lastIndexOf('.') + 1).toLowerCase()
+          : 'jpg';
+        const nextFileName = cleanStem
+          ? `${cleanStem}_${String(counter++).padStart(2, '0')}.${ext}`
+          : d.fileName;
+
+        return {
+          ...d,
+          fileName: nextFileName,
+          title: bulkTitle.trim() || d.title,
+          sourceText: bulkSourceText.trim() || d.sourceText,
+          inscriptionText: bulkInscriptionText.trim() || d.inscriptionText,
+          description: bulkDescription.trim() || d.description,
+          personLinks: bulkPersonLinks.length > 0 ? [...bulkPersonLinks] : d.personLinks,
+          isBetweenRange:
+            bulkEditDateMode === 'MANUAL' ? bulkEditIsBetween : d.isBetweenRange,
+          dateQualifier:
+            bulkEditDateMode === 'MANUAL' ? bulkEditDateQual : d.dateQualifier,
+          year: bulkEditDateMode === 'MANUAL' ? bulkEditYear : d.year,
+          month: bulkEditDateMode === 'MANUAL' ? bulkEditMonth : d.month,
+          day: bulkEditDateMode === 'MANUAL' ? bulkEditDay : d.day,
+          timeQualifier:
+            bulkEditDateMode === 'MANUAL' ? bulkEditTimeQual : d.timeQualifier,
+          hour: bulkEditDateMode === 'MANUAL' ? bulkEditHour : d.hour,
+          minute: bulkEditDateMode === 'MANUAL' ? bulkEditMinute : d.minute,
+          second: bulkEditDateMode === 'MANUAL' ? bulkEditSecond : d.second,
+          rangeEndQualifier:
+            bulkEditDateMode === 'MANUAL' ? bulkEditRangeEndQual : d.rangeEndQualifier,
+          rangeEndYear:
+            bulkEditDateMode === 'MANUAL' ? bulkEditRangeEndYear : d.rangeEndYear,
+          rangeEndMonth:
+            bulkEditDateMode === 'MANUAL' ? bulkEditRangeEndMonth : d.rangeEndMonth,
+          rangeEndDay:
+            bulkEditDateMode === 'MANUAL' ? bulkEditRangeEndDay : d.rangeEndDay,
+          rangeEndTimeQualifier:
+            bulkEditDateMode === 'MANUAL'
+              ? bulkEditRangeEndTimeQual
+              : d.rangeEndTimeQualifier,
+          rangeEndHour:
+            bulkEditDateMode === 'MANUAL' ? bulkEditRangeEndHour : d.rangeEndHour,
+          rangeEndMinute:
+            bulkEditDateMode === 'MANUAL' ? bulkEditRangeEndMinute : d.rangeEndMinute,
+          rangeEndSecond:
+            bulkEditDateMode === 'MANUAL' ? bulkEditRangeEndSecond : d.rangeEndSecond,
+        };
+      })
+    );
+  };
+
   const handleApplyBulkEdit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (selectedBulkIds.length === 0) return;
+    const selectedDrafts = bulkDraftItems.filter(d => d.selected);
+    if (selectedDrafts.length === 0) return;
+
     setIsSubmitting(true);
     setErrorMessage(null);
     try {
       await mediaApi.bulkUpdateMedia({
-        mediaIds: selectedBulkIds,
+        mediaIds: selectedDrafts.map(d => d.id),
         baseFileNameStem: bulkEditStem.trim() || null,
         customFolderName: bulkEditFolder.trim() || null,
         contextEventId: eventId ?? null,
+        targetCollectionId:
+          bulkEditTargetCollectionId !== '' ? Number(bulkEditTargetCollectionId) : null,
+        title: bulkTitle.trim() || null,
+        sourceText: bulkSourceText.trim() || null,
+        inscriptionText: bulkInscriptionText.trim() || null,
+        description: bulkDescription.trim() || null,
+        personLinks:
+          bulkPersonLinks.length > 0
+            ? bulkPersonLinks.map(l => ({
+                personId: l.personId,
+                personText: l.personText,
+                personSex: l.personSex,
+                linkType: l.linkType,
+              }))
+            : undefined,
         dateSourceMode: bulkEditDateMode,
         selectedMetadataSourceTag: bulkEditMetadataTag || null,
         isBetweenRange: bulkEditIsBetween,
@@ -925,10 +1190,69 @@ export default function MediaGallerySection({
         rangeEndMinute: parseOptInt(bulkEditRangeEndMinute),
         rangeEndSecond: parseOptInt(bulkEditRangeEndSecond),
       });
-      setIsBulkEditMode(false);
-      setSelectedBulkIds([]);
+
+      // Also persist any per-item edits made directly on the draft rows
+      if (bulkEditStem.trim() === '' && bulkEditDateMode === 'NO_CHANGE') {
+        for (const d of selectedDrafts) {
+          const orig = effectiveItems.find(m => m.id === d.id);
+          if (!orig) continue;
+          const fileNameChanged = d.fileName.trim() !== '' && d.fileName !== orig.fileName;
+          const titleChanged = d.title !== (orig.title ?? '');
+          const descChanged = d.description !== (orig.description ?? '');
+          const inscrChanged = d.inscriptionText !== (orig.inscriptionText ?? '');
+          const srcChanged = d.sourceText !== (orig.sourceText ?? '');
+          const yearChanged = d.year !== numToStr(orig.year);
+          const betweenChanged = d.isBetweenRange !== (orig.betweenRange === true);
+
+          if (
+            fileNameChanged ||
+            titleChanged ||
+            descChanged ||
+            inscrChanged ||
+            srcChanged ||
+            yearChanged ||
+            betweenChanged ||
+            d.showDetails
+          ) {
+            await mediaApi.updateMedia(d.id, {
+              fileName: d.fileName,
+              title: d.title,
+              sourceText: d.sourceText,
+              inscriptionText: d.inscriptionText,
+              description: d.description,
+              dateSourceMode: 'MANUAL',
+              isBetweenRange: d.isBetweenRange,
+              dateQualifier: d.dateQualifier,
+              year: parseOptInt(d.year),
+              month: parseOptInt(d.month),
+              day: parseOptInt(d.day),
+              timeQualifier: d.timeQualifier,
+              hour: parseOptInt(d.hour),
+              minute: parseOptInt(d.minute),
+              second: parseOptInt(d.second),
+              rangeEndQualifier: d.isBetweenRange ? d.rangeEndQualifier : null,
+              rangeEndYear: d.isBetweenRange ? parseOptInt(d.rangeEndYear) : null,
+              rangeEndMonth: d.isBetweenRange ? parseOptInt(d.rangeEndMonth) : null,
+              rangeEndDay: d.isBetweenRange ? parseOptInt(d.rangeEndDay) : null,
+              rangeEndTimeQualifier: d.isBetweenRange ? d.rangeEndTimeQualifier : null,
+              rangeEndHour: d.isBetweenRange ? parseOptInt(d.rangeEndHour) : null,
+              rangeEndMinute: d.isBetweenRange ? parseOptInt(d.rangeEndMinute) : null,
+              rangeEndSecond: d.isBetweenRange ? parseOptInt(d.rangeEndSecond) : null,
+              personLinks: d.personLinks.map(l => ({
+                personId: l.personId,
+                personText: l.personText,
+                personSex: l.personSex,
+                linkType: l.linkType,
+              })),
+            });
+          }
+        }
+      }
+
+      closeBulkEditModal();
       setBulkEditFolder('');
       setBulkEditStem('');
+      setBulkEditTargetCollectionId('');
       setBulkEditDateMode('NO_CHANGE');
       await loadMedia();
       onMediaChanged?.();
@@ -939,296 +1263,24 @@ export default function MediaGallerySection({
     }
   };
 
-  const syncSingleEditFields = (item: MediaItemDto) => {
-    setEditFileName(item.fileName);
-    setEditFolderName('');
-    setEditTitle(item.title ?? '');
-    setEditInscription(item.inscriptionText ?? '');
-    setEditDescription(item.description ?? '');
-    setEditSourceText(item.sourceText ?? '');
-    setEditDateMode('MANUAL');
-    setEditSelectedMetadataTag(
-      item.metadataDateSource ?? item.availableMetadataDates?.[0]?.sourceTag ?? ''
-    );
-    setEditIsBetween(item.betweenRange === true);
-    setEditDateQual(item.dateQualifier ?? 'EXACT');
-    setEditYear(numToStr(item.year));
-    setEditMonth(numToStr(item.month));
-    setEditDay(numToStr(item.day));
-    setEditTimeQual(item.timeQualifier ?? 'EXACT');
-    setEditHour(numToStr(item.hour));
-    setEditMinute(numToStr(item.minute));
-    setEditSecond(numToStr(item.second));
-
-    setEditRangeEndQual(item.rangeEndQualifier ?? 'EXACT');
-    setEditRangeEndYear(numToStr(item.rangeEndYear));
-    setEditRangeEndMonth(numToStr(item.rangeEndMonth));
-    setEditRangeEndDay(numToStr(item.rangeEndDay));
-    setEditRangeEndTimeQual(item.rangeEndTimeQualifier ?? 'EXACT');
-    setEditRangeEndHour(numToStr(item.rangeEndHour));
-    setEditRangeEndMinute(numToStr(item.rangeEndMinute));
-    setEditRangeEndSecond(numToStr(item.rangeEndSecond));
-
-    const combinedLinks: (SaveMediaPersonLinkRequestDto & { displayLabel: string })[] = [];
-    for (const d of item.depictedPersons ?? []) {
-      combinedLinks.push({
-        personId: d.personId,
-        personText: d.personText,
-        personSex: d.sex,
-        linkType: 'DEPICTED',
-        displayLabel: `${PERSON_LINK_TYPE_LABELS.DEPICTED}: ${d.displayName}`,
-      });
-    }
-    for (const r of item.relatedPersons ?? []) {
-      combinedLinks.push({
-        personId: r.personId,
-        personText: r.personText,
-        personSex: r.sex,
-        linkType: 'RELATED',
-        displayLabel: `${PERSON_LINK_TYPE_LABELS.RELATED}: ${r.displayName}`,
-      });
-    }
-    for (const a of item.authors ?? []) {
-      combinedLinks.push({
-        personId: a.personId,
-        personText: a.personText,
-        personSex: a.sex,
-        linkType: 'AUTHOR',
-        displayLabel: `${PERSON_LINK_TYPE_LABELS.AUTHOR}: ${a.displayName}`,
-      });
-    }
-    setEditPersonLinks(combinedLinks);
-  };
-
   const handleOpenLightbox = (item: MediaItemDto) => {
     const idx = allViewableItems.findIndex(m => m.id === item.id);
     setActiveIndex(idx >= 0 ? idx : 0);
-    setSelectedVersionId(null);
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
-    setShowDetailsDrawer(false);
-    setShowCropper(false);
-    setShowVersionUpload(false);
-    setIsEditingItem(false);
-    syncSingleEditFields(item);
   };
 
-  const handleNavigateMedia = (direction: -1 | 1) => {
-    if (allViewableItems.length <= 1 || activeIndex === null) return;
-    const nextIdx =
-      (activeIndex + direction + allViewableItems.length) % allViewableItems.length;
-    const nextItem = allViewableItems[nextIdx];
-    setActiveIndex(nextIdx);
-    setSelectedVersionId(null);
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
-    setIsEditingItem(false);
-    setShowCropper(false);
-    setShowVersionUpload(false);
-    syncSingleEditFields(nextItem);
-  };
-
-  const handleSearchPersonForLink = async () => {
-    try {
-      const page = await biographyApi.listPeople({
-        search: linkPersonQuery,
-        includeArchived: true,
-        page: 0,
-        size: 6,
-      });
-      setLinkPersonResults(page.content);
-    } catch {
-      setErrorMessage('Nie udało się wyszukać osób.');
-    }
-  };
-
-  const handleSaveItemEdit = async () => {
-    if (!activeItem) return;
-    setIsSubmitting(true);
-    try {
-      await mediaApi.updateMedia(activeItem.id, {
-        fileName: editFileName,
-        customFolderName: editFolderName.trim() || null,
-        title: editTitle,
-        inscriptionText: editInscription,
-        description: editDescription,
-        sourceText: editSourceText,
-        dateSourceMode: editDateMode,
-        selectedMetadataSourceTag: editSelectedMetadataTag || null,
-        contextEventId: eventId ?? null,
-        isBetweenRange: editIsBetween,
-        dateQualifier: editDateQual,
-        year: parseOptInt(editYear),
-        month: parseOptInt(editMonth),
-        day: parseOptInt(editDay),
-        timeQualifier: editTimeQual,
-        hour: parseOptInt(editHour),
-        minute: parseOptInt(editMinute),
-        second: parseOptInt(editSecond),
-        rangeEndQualifier: editRangeEndQual,
-        rangeEndYear: parseOptInt(editRangeEndYear),
-        rangeEndMonth: parseOptInt(editRangeEndMonth),
-        rangeEndDay: parseOptInt(editRangeEndDay),
-        rangeEndTimeQualifier: editRangeEndTimeQual,
-        rangeEndHour: parseOptInt(editRangeEndHour),
-        rangeEndMinute: parseOptInt(editRangeEndMinute),
-        rangeEndSecond: parseOptInt(editRangeEndSecond),
-        personLinks: editPersonLinks.map(l => ({
-          personId: l.personId,
-          personText: l.personText,
-          personSex: l.personSex,
-          linkType: l.linkType,
-        })),
-      });
-      setIsEditingItem(false);
-      await loadMedia();
-      onMediaChanged?.();
-    } catch {
-      setErrorMessage('Nie udało się zaktualizować danych pliku.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleUploadVersionSubmit = async () => {
-    if (!activeItem || !versionFile) return;
-    setIsSubmitting(true);
-    try {
-      await mediaApi.uploadMediaVersion({
-        mediaId: activeItem.id,
-        file: versionFile,
-        versionType: versionTypeInput,
-        versionLabel: versionLabelInput.trim() || undefined,
-        setAsMain: versionTypeInput !== 'REVERSE' && versionSetAsMain,
-      });
-      setShowVersionUpload(false);
-      setVersionFile(null);
-      setVersionLabelInput('');
-      setSelectedVersionId(null);
-      await loadMedia();
-      onMediaChanged?.();
-    } catch {
-      setErrorMessage('Nie udało się wgrać nowej wersji pliku.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleSetVersionAsMain = async (versionId: number) => {
-    if (!activeItem) return;
-    try {
-      await mediaApi.setMainMediaVersion(activeItem.id, versionId);
-      setSelectedVersionId(null);
-      await loadMedia();
-      onMediaChanged?.();
-    } catch {
-      setErrorMessage('Nie udało się ustawić wybranej wersji jako głównej.');
-    }
-  };
-
-  const handleDeleteVersion = async (versionId: number) => {
-    if (!activeItem) return;
-    try {
-      await mediaApi.deleteMediaVersion(activeItem.id, versionId);
-      setSelectedVersionId(null);
-      await loadMedia();
-      onMediaChanged?.();
-    } catch {
-      setErrorMessage('Nie można usunąć tej wersji pliku.');
-    }
-  };
-
-  const handleSavePrimaryOrAvatarCrop = async (
-    item: MediaItemDto,
-    cx?: number,
-    cy?: number,
-    cz?: number
-  ) => {
-    try {
-      await mediaApi.updateMedia(item.id, {
-        setAsAvatarForPersonId: personId ?? null,
-        avatarCropX: personId !== undefined ? (cx ?? 50) : null,
-        avatarCropY: personId !== undefined ? (cy ?? 50) : null,
-        avatarCropZoom: personId !== undefined ? (cz ?? 1.0) : null,
-        setAsPrimaryForGraveId: graveId ?? null,
-      });
-      setShowCropper(false);
-      await loadMedia();
-      onMediaChanged?.();
-    } catch {
-      setErrorMessage('Nie udało się ustawić zdjęcia/filmu jako głównego.');
-    }
-  };
-
-  const handleUnlinkItemFromHere = async (mediaId: number) => {
-    try {
-      await mediaApi.unlinkMediaFromContext(mediaId, {
-        graveId,
-        personId,
-        eventId,
-      });
-      setActiveIndex(null);
-      await loadMedia();
-      onMediaChanged?.();
-    } catch {
-      setErrorMessage('Nie udało się odpiąć pliku z tego miejsca.');
-    }
-  };
-
-  const handleDeleteItem = async (mediaId: number) => {
-    try {
-      await mediaApi.deleteMedia(mediaId);
-      setActiveIndex(null);
-      await loadMedia();
-      onMediaChanged?.();
-    } catch {
-      setErrorMessage('Nie udało się usunąć pliku.');
-    }
-  };
-
-  const renderMediaGrid = (mediaList: MediaItemDto[], allowBulkCheckboxes: boolean) => (
+  const renderMediaGrid = (mediaList: MediaItemDto[]) => (
     <div className={styles.mediaGrid}>
       {mediaList.map(item => {
         const isPrimary = primaryMediaId === item.id;
-        const isBulkSelected = selectedBulkIds.includes(item.id);
-
         return (
           <div key={item.id} className={styles.mediaTileWrapper}>
-            {isAdmin && isBulkEditMode && allowBulkCheckboxes && (
-              <label className={styles.bulkSelectCheckboxOverlay}>
-                <input
-                  type="checkbox"
-                  data-testid={`bulk-media-checkbox-${String(item.id)}`}
-                  checked={isBulkSelected}
-                  onChange={() => {
-                    setSelectedBulkIds(prev =>
-                      prev.includes(item.id)
-                        ? prev.filter(id => id !== item.id)
-                        : [...prev, item.id]
-                    );
-                  }}
-                />
-                <span>Zaznacz</span>
-              </label>
-            )}
-
             <button
               type="button"
               data-testid={`media-tile-${String(item.id)}`}
               onClick={() => {
-                if (isBulkEditMode && allowBulkCheckboxes) {
-                  setSelectedBulkIds(prev =>
-                    prev.includes(item.id)
-                      ? prev.filter(id => id !== item.id)
-                      : [...prev, item.id]
-                  );
-                } else {
-                  handleOpenLightbox(item);
-                }
+                handleOpenLightbox(item);
               }}
-              className={`${styles.mediaTile} ${
-                isPrimary ? styles.mediaTilePrimary : ''
-              } ${isBulkSelected ? styles.mediaTileSelected : ''}`}
+              className={`${styles.mediaTile} ${isPrimary ? styles.mediaTilePrimary : ''}`}
             >
               <div className={styles.thumbWrapper}>
                 {item.mediaType === 'IMAGE' ? (
@@ -1249,9 +1301,28 @@ export default function MediaGallerySection({
                     <span className={styles.videoPlayOverlay}>▶</span>
                   </>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', background: 'linear-gradient(135deg, #312e81 0%, #4338ca 100%)', color: '#ffffff' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      height: '100%',
+                      background: 'linear-gradient(135deg, #312e81 0%, #4338ca 100%)',
+                      color: '#ffffff',
+                    }}
+                  >
                     <span style={{ fontSize: '2.5rem' }}>🎵</span>
-                    <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Audio</span>
+                    <span
+                      style={{
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.04em',
+                      }}
+                    >
+                      Audio
+                    </span>
                   </div>
                 )}
                 {isPrimary && (context !== 'GRAVE' || isAdmin) && (
@@ -1277,1807 +1348,229 @@ export default function MediaGallerySection({
     </div>
   );
 
-  const activeVersions = activeItem?.versions ?? [];
-  const activeSelectedVersion =
-    selectedVersionId !== null
-      ? activeVersions.find(v => v.id === selectedVersionId) ?? null
-      : null;
-
-  const activeStageUrl = activeItem
-    ? activeSelectedVersion
-      ? mediaApi.getVersionFileUrl(activeItem.id, activeSelectedVersion.id)
-      : mediaApi.getFileUrl(activeItem.id)
-    : '';
+  const selectedStagedCount = stagedFiles.filter(s => s.selectedForBulk).length;
+  const selectedBulkDraftCount = bulkDraftItems.filter(d => d.selected).length;
+  const bulkUploadStartWeekday = getPolishWeekdayLabel(
+    manualBulkYear,
+    manualBulkMonth,
+    manualBulkDay
+  );
+  const bulkUploadEndWeekday = getPolishWeekdayLabel(
+    manualBulkRangeEndYear,
+    manualBulkRangeEndMonth,
+    manualBulkRangeEndDay
+  );
+  const bulkEditStartWeekday = getPolishWeekdayLabel(
+    bulkEditYear,
+    bulkEditMonth,
+    bulkEditDay
+  );
+  const bulkEditEndWeekday = getPolishWeekdayLabel(
+    bulkEditRangeEndYear,
+    bulkEditRangeEndMonth,
+    bulkEditRangeEndDay
+  );
 
   return (
-    <section className={styles.sectionCard} data-testid="media-gallery-section">
-      <div className={styles.headerRow}>
-        <h2 className={styles.sectionTitle}>
-          {sectionTitle} ({items.length})
-        </h2>
-
-        {isAdmin && (
-          <div className={styles.headerActions}>
-            <button
-              type="button"
-              data-testid="toggle-upload-media-button"
-              onClick={() => {
-                setShowUpload(prev => !prev);
-                setIsBulkEditMode(false);
-              }}
-              className={styles.btnPrimary}
-            >
-              {showUpload ? 'Zamknij formularz' : '+ Wgraj nowe z dysku'}
-            </button>
-
-            <button
-              type="button"
-              data-testid="open-link-existing-media-button"
-              onClick={handleOpenLinkExistingModal}
-              className={styles.btnSecondary}
-            >
-              🔗 Wybierz istniejące z galerii
-            </button>
-
-            {items.length > 0 && (
-              <button
-                type="button"
-                data-testid="toggle-bulk-edit-media-button"
-                onClick={() => {
-                  setIsBulkEditMode(prev => !prev);
-                  setSelectedBulkIds(items.map(i => i.id));
-                }}
-                className={styles.btnSecondary}
-              >
-                {isBulkEditMode ? 'Zamknij edycję zbiorową' : '☑️ Edycja zbiorowa'}
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Filter & Sort Toolbar */}
-      {totalRawItemsCount > 0 && (
-        <div className={styles.toolbarBar} data-testid="media-section-filter-sort-bar">
-          <div className={styles.filterPillsGroup}>
-            <button
-              type="button"
-              data-testid="media-filter-all"
-              onClick={() => {
-                setTypeFilter('ALL');
-              }}
-              className={`${styles.filterPillBtn} ${
-                typeFilter === 'ALL' ? styles.filterPillBtnActive : ''
-              }`}
-            >
-              Wszystkie ({String(totalRawItemsCount)})
-            </button>
-            <button
-              type="button"
-              data-testid="media-filter-image"
-              onClick={() => {
-                setTypeFilter('IMAGE');
-              }}
-              className={`${styles.filterPillBtn} ${
-                typeFilter === 'IMAGE' ? styles.filterPillBtnActive : ''
-              }`}
-            >
-              📷 Tylko zdjęcia ({String(totalImagesCount)})
-            </button>
-            <button
-              type="button"
-              data-testid="media-filter-video"
-              onClick={() => {
-                setTypeFilter('VIDEO');
-              }}
-              className={`${styles.filterPillBtn} ${
-                typeFilter === 'VIDEO' ? styles.filterPillBtnActive : ''
-              }`}
-            >
-              🎬 Tylko filmy ({String(totalVideosCount)})
-            </button>
-            <button
-              type="button"
-              data-testid="media-filter-audio"
-              onClick={() => {
-                setTypeFilter('AUDIO');
-              }}
-              className={`${styles.filterPillBtn} ${
-                typeFilter === 'AUDIO' ? styles.filterPillBtnActive : ''
-              }`}
-            >
-              🎵 Tylko nagrania audio ({String(totalAudiosCount)})
-            </button>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <label htmlFor="section-media-sort-select" className={styles.label}>
-              Sortuj:
-            </label>
-            <select
-              id="section-media-sort-select"
-              data-testid="section-media-sort-select"
-              value={sortMode}
-              onChange={e => {
-                setSortMode(e.target.value as SectionSortMode);
-              }}
-              className={styles.input}
-              style={{ width: 'auto', minWidth: '220px' }}
-            >
-              <option value="DATE_ASC">
-                Chronologicznie – od najstarszych (wg daty i czasu)
-              </option>
-              <option value="DATE_DESC">
-                Chronologicznie – od najnowszych (wg daty i czasu)
-              </option>
-              <option value="NAME_ASC">Alfabetycznie (wg nazwy / tytułu A–Z)</option>
-              <option value="NEWEST_ADDED">Od ostatnio dodanych</option>
-            </select>
-          </div>
-        </div>
-      )}
-
-      {errorMessage && (
-        <div role="alert" style={{ color: '#dc2626', fontSize: '0.86rem', fontWeight: 600 }}>
-          {errorMessage}
-        </div>
-      )}
-
-      {/* Post-Upload Bulk Edit Panel */}
-      {isAdmin && isBulkEditMode && items.length > 0 && (
-        <form
-          onSubmit={e => {
-            void handleApplyBulkEdit(e);
-          }}
-          className={styles.bulkEditPanel}
-          data-testid="media-bulk-edit-panel"
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-            <strong style={{ fontSize: '0.92rem', color: '#0f172a' }}>
-              Edycja zbiorowa zaznaczonych plików (zaznaczono: {String(selectedBulkIds.length)} z {String(items.length)})
-            </strong>
-            <div style={{ display: 'flex', gap: '0.4rem' }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedBulkIds(items.map(i => i.id));
-                }}
-                className={styles.btnSecondary}
-              >
-                Zaznacz wszystkie
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedBulkIds([]);
-                }}
-                className={styles.btnSecondary}
-              >
-                Odznacz wszystkie
-              </button>
-            </div>
-          </div>
-
-          <div className={styles.formGrid}>
-            <div className={styles.formField}>
-              <label htmlFor="bulk-edit-folder" className={styles.label}>
-                Zmień nazwę folderu docelowego (przeniesie wszystkie pliki)
-              </label>
-              <input
-                id="bulk-edit-folder"
-                type="text"
-                placeholder={items[0]?.directoryPath ?? 'np. nowy_folder_wydarzenia'}
-                value={bulkEditFolder}
-                onChange={e => {
-                  setBulkEditFolder(e.target.value);
-                }}
-                className={styles.input}
-              />
-            </div>
-
-            <div className={styles.formField}>
-              <label htmlFor="bulk-edit-stem" className={styles.label}>
-                Wspólny trzon nazwy plików (ponumeruje _01, _02...)
-              </label>
-              <input
-                id="bulk-edit-stem"
-                type="text"
-                placeholder="np. wakacje_kolobrzeg"
-                value={bulkEditStem}
-                onChange={e => {
-                  setBulkEditStem(e.target.value);
-                }}
-                className={styles.input}
-              />
-            </div>
-
-            <div className={styles.formField}>
-              <label htmlFor="bulk-edit-date-mode" className={styles.label}>
-                Zbiorcza zmiana daty i czasu zdjęć/filmów
-              </label>
-              <select
-                id="bulk-edit-date-mode"
-                data-testid="bulk-edit-date-mode-select"
-                value={bulkEditDateMode}
-                onChange={e => {
-                  setBulkEditDateMode(
-                    e.target.value as
-                      | 'NO_CHANGE'
-                      | 'MANUAL'
-                      | 'METADATA'
-                      | 'EVENT'
-                      | 'UNDATED'
-                  );
-                }}
-                className={styles.input}
-              >
-                <option value="NO_CHANGE">— Pozostaw daty bez zmian —</option>
-                <option value="METADATA">
-                  Przywróć datę i czas z metadanych każdego pliku (zawsze Dokładnie)
-                </option>
-                {eventId !== undefined && (
-                  <option value="EVENT">Ustaw datę i czas z bieżącego wydarzenia</option>
-                )}
-                <option value="MANUAL">
-                  Ustaw wspólną datę i czas ręcznie (lub przedział „między … a …”)
-                </option>
-                <option value="UNDATED">Wyczyść datę (undated)</option>
-              </select>
-            </div>
-
-            {bulkEditDateMode === 'METADATA' && (
-              <div className={styles.formField}>
-                <label htmlFor="bulk-edit-meta-tag" className={styles.label}>
-                  Preferowane pole metadanych
-                </label>
-                <select
-                  id="bulk-edit-meta-tag"
-                  value={bulkEditMetadataTag}
-                  onChange={e => {
-                    setBulkEditMetadataTag(e.target.value);
-                  }}
-                  className={styles.input}
-                >
-                  <option value="">Automatycznie (Original Date Time -&gt; Image Date Time -&gt; plik)</option>
-                  <option value="Original Date Time">EXIF: Original Date Time (data wykonania)</option>
-                  <option value="Digitized Date Time">EXIF: Digitized Date Time (data digitalizacji)</option>
-                  <option value="Image Date Time">EXIF: Image Date Time (data obrazu)</option>
-                  <option value="creation_time">MP4 / QuickTime: creation_time</option>
-                  <option value="lastModified">Data modyfikacji pliku (lastModified)</option>
-                </select>
-              </div>
-            )}
-          </div>
-
-          {bulkEditDateMode === 'MANUAL' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.82rem', fontWeight: 600 }}>
-                <input
-                  type="checkbox"
-                  checked={bulkEditIsBetween}
-                  onChange={e => {
-                    setBulkEditIsBetween(e.target.checked);
-                  }}
-                />
-                <span>Przedział niepewności „między … a …” dla daty wykonania</span>
-              </label>
-
-              <div className={styles.compactDateTimeInputs}>
-                <select
-                  value={bulkEditDateQual}
-                  onChange={e => {
-                    setBulkEditDateQual(e.target.value);
-                  }}
-                  className={styles.input}
-                  style={{ width: '140px', height: '34px' }}
-                >
-                  {QUALIFIER_OPTIONS.map(q => (
-                    <option key={q.value} value={q.value}>
-                      {q.label}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="number"
-                  placeholder="RRRR"
-                  value={bulkEditYear}
-                  onChange={e => {
-                    setBulkEditYear(e.target.value);
-                  }}
-                  className={`${styles.miniDateInput} ${styles.miniYearInput}`}
-                />
-                <input
-                  type="number"
-                  min={1}
-                  max={12}
-                  placeholder="MM"
-                  value={bulkEditMonth}
-                  onChange={e => {
-                    setBulkEditMonth(e.target.value);
-                  }}
-                  className={styles.miniDateInput}
-                />
-                <input
-                  type="number"
-                  min={1}
-                  max={31}
-                  placeholder="DD"
-                  value={bulkEditDay}
-                  onChange={e => {
-                    setBulkEditDay(e.target.value);
-                  }}
-                  className={styles.miniDateInput}
-                />
-                <select
-                  value={bulkEditTimeQual}
-                  onChange={e => {
-                    setBulkEditTimeQual(e.target.value);
-                  }}
-                  className={styles.input}
-                  style={{ width: '180px', height: '34px' }}
-                >
-                  {QUALIFIER_OPTIONS.map(q => (
-                    <option key={q.value} value={q.value}>
-                      Czas: {q.label}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="number"
-                  min={0}
-                  max={23}
-                  placeholder="GG"
-                  value={bulkEditHour}
-                  onChange={e => {
-                    setBulkEditHour(e.target.value);
-                  }}
-                  className={styles.miniDateInput}
-                />
-                <span>:</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={59}
-                  placeholder="MM"
-                  value={bulkEditMinute}
-                  onChange={e => {
-                    setBulkEditMinute(e.target.value);
-                  }}
-                  className={styles.miniDateInput}
-                />
-                <span>:</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={59}
-                  placeholder="SS"
-                  value={bulkEditSecond}
-                  onChange={e => {
-                    setBulkEditSecond(e.target.value);
-                  }}
-                  className={styles.miniDateInput}
-                />
-              </div>
-
-              {bulkEditIsBetween && (
-                <div className={styles.compactDateTimeInputs}>
-                  <span className={styles.label}>… a:</span>
-                  <select
-                    value={bulkEditRangeEndQual}
-                    onChange={e => {
-                      setBulkEditRangeEndQual(e.target.value);
-                    }}
-                    className={styles.input}
-                    style={{ width: '140px', height: '34px' }}
-                  >
-                    {QUALIFIER_OPTIONS.map(q => (
-                      <option key={q.value} value={q.value}>
-                        {q.label}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="number"
-                    placeholder={bulkEditYear || 'RRRR'}
-                    value={bulkEditRangeEndYear}
-                    onChange={e => {
-                      setBulkEditRangeEndYear(e.target.value);
-                    }}
-                    className={`${styles.miniDateInput} ${styles.miniYearInput}`}
-                  />
-                  <input
-                    type="number"
-                    min={1}
-                    max={12}
-                    placeholder="MM"
-                    value={bulkEditRangeEndMonth}
-                    onChange={e => {
-                      setBulkEditRangeEndMonth(e.target.value);
-                    }}
-                    className={styles.miniDateInput}
-                  />
-                  <input
-                    type="number"
-                    min={1}
-                    max={31}
-                    placeholder="DD"
-                    value={bulkEditRangeEndDay}
-                    onChange={e => {
-                      setBulkEditRangeEndDay(e.target.value);
-                    }}
-                    className={styles.miniDateInput}
-                  />
-                  <select
-                    value={bulkEditRangeEndTimeQual}
-                    onChange={e => {
-                      setBulkEditRangeEndTimeQual(e.target.value);
-                    }}
-                    className={styles.input}
-                    style={{ width: '155px', height: '34px' }}
-                  >
-                    {QUALIFIER_OPTIONS.map(q => (
-                      <option key={q.value} value={q.value}>
-                        Czas: {q.label}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="number"
-                    min={0}
-                    max={23}
-                    placeholder="GG"
-                    value={bulkEditRangeEndHour}
-                    onChange={e => {
-                      setBulkEditRangeEndHour(e.target.value);
-                    }}
-                    className={styles.miniDateInput}
-                  />
-                  <span>:</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={59}
-                    placeholder="MM"
-                    value={bulkEditRangeEndMinute}
-                    onChange={e => {
-                      setBulkEditRangeEndMinute(e.target.value);
-                    }}
-                    className={styles.miniDateInput}
-                  />
-                  <span>:</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={59}
-                    placeholder="SS"
-                    value={bulkEditRangeEndSecond}
-                    onChange={e => {
-                      setBulkEditRangeEndSecond(e.target.value);
-                    }}
-                    className={styles.miniDateInput}
-                  />
-                </div>
-              )}
-            </div>
-          )}
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
-            <button
-              type="button"
-              onClick={() => {
-                setIsBulkEditMode(false);
-              }}
-              className={styles.btnSecondary}
-            >
-              Anuluj
-            </button>
-            <button
-              type="submit"
-              data-testid="submit-bulk-edit-media-button"
-              disabled={selectedBulkIds.length === 0 || isSubmitting}
-              className={styles.btnPrimary}
-            >
-              ✓ Zastosuj zmiany dla zaznaczonych ({String(selectedBulkIds.length)})
-            </button>
-          </div>
-        </form>
-      )}
-
-      {/* Batch & Single Upload Staging Form */}
-      {isAdmin && showUpload && (
-        <form
-          onSubmit={e => {
-            void handleUploadSubmit(e);
-          }}
-          className={styles.uploadPanel}
-          data-testid="media-upload-form"
-        >
-          <div className={styles.formGrid}>
-            <div className={styles.formField}>
-              <span className={styles.label}>Wybierz jeden lub wiele plików *</span>
-              <div className={styles.filePickerRow}>
-                <label htmlFor={fileInputId} className={styles.filePickerLabel}>
-                  📂 Wybierz pliki z dysku
-                </label>
-                <input
-                  id={fileInputId}
-                  data-testid="media-file-input"
-                  type="file"
-                  multiple
-                  accept="image/*,video/*,audio/*"
-                  onChange={e => {
-                    void handleFilesSelected(e.target.files);
-                  }}
-                  className={styles.hiddenFileInput}
-                />
-                <span className={styles.selectedFilesBadge}>
-                  {stagedFiles.length === 0
-                    ? 'Nie wybrano plików'
-                    : `Wybrano plików: ${String(stagedFiles.length)}`}
-                </span>
-              </div>
-            </div>
-
-            <div className={styles.formField}>
-              <label htmlFor="media-custom-folder-input" className={styles.label}>
-                Własna nazwa folderu docelowego (snake_case, opcjonalnie)
-              </label>
-              <input
-                id="media-custom-folder-input"
-                type="text"
-                placeholder="Zostaw puste, aby użyć proponowanej nazwy..."
-                value={customFolderName}
-                onChange={e => {
-                  setCustomFolderName(e.target.value);
-                }}
-                className={styles.input}
-              />
-            </div>
-
-            {context === 'PERSON' && (
-              <div className={styles.formField} style={{ gridColumn: '1 / -1' }}>
-                <span className={styles.label}>Typ portretu *</span>
-                <div style={{ display: 'flex', gap: '1.25rem', marginTop: '0.25rem' }}>
-                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', fontWeight: 600 }}>
-                    <input
-                      type="radio"
-                      name="personPortraitType"
-                      checked={uploadPortraitType === 'SINGLE'}
-                      onChange={() => {
-                        setUploadPortraitType('SINGLE');
-                      }}
-                    />
-                    <span>👤 Portret pojedynczy (jednoosobowy – trafi do portraits/single)</span>
-                  </label>
-                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', fontWeight: 600 }}>
-                    <input
-                      type="radio"
-                      name="personPortraitType"
-                      checked={uploadPortraitType === 'GROUP'}
-                      onChange={() => {
-                        setUploadPortraitType('GROUP');
-                      }}
-                    />
-                    <span>👥 Portret grupowy (wieloosobowy – trafi do portraits/group)</span>
-                  </label>
-                </div>
-              </div>
-            )}
-
-            {context !== 'GRAVE' && (
-              <div className={styles.formField}>
-                <label htmlFor="media-date-mode-select" className={styles.label}>
-                  Zbiorcze ustawienie daty i czasu dla paczki
-                </label>
-                <select
-                  id="media-date-mode-select"
-                  value={dateSourceMode}
-                  onChange={e => {
-                    const nextMode = e.target.value as DateSourceMode;
-                    setDateSourceMode(nextMode);
-                    applyBulkSettingsToStaged(
-                      nextMode,
-                      manualBulkYear,
-                      manualBulkMonth,
-                      manualBulkDay,
-                      manualBulkHour,
-                      manualBulkMinute,
-                      manualBulkSecond,
-                      bulkBaseName
-                    );
-                  }}
-                  className={styles.input}
-                >
-                  <option value="FILE_METADATA">
-                    Pobierz pełną datę i czas z metadanych każdego pliku (EXIF / MP4 / plik)
-                  </option>
-                  <option value="EVENT_OR_MANUAL">
-                    Użyj daty wydarzenia / wspólnej daty i czasu ręcznego
-                  </option>
-                  <option value="UNDATED">
-                    Bez daty – zapisz jako niedatowane (undated)
-                  </option>
-                </select>
-              </div>
-            )}
-
-            {stagedFiles.length > 1 && (
-              <div className={styles.formField}>
-                <label htmlFor="media-bulk-stem-input" className={styles.label}>
-                  Wspólny trzon nazwy dla wszystkich (snake_case)
-                </label>
-                <input
-                  id="media-bulk-stem-input"
-                  type="text"
-                  value={bulkBaseName}
-                  onChange={e => {
-                    const nextStem = e.target.value;
-                    setBulkBaseName(nextStem);
-                    applyBulkSettingsToStaged(
-                      dateSourceMode,
-                      manualBulkYear,
-                      manualBulkMonth,
-                      manualBulkDay,
-                      manualBulkHour,
-                      manualBulkMinute,
-                      manualBulkSecond,
-                      nextStem
-                    );
-                  }}
-                  className={styles.input}
-                />
-              </div>
-            )}
-          </div>
-
-          {context !== 'GRAVE' && dateSourceMode === 'EVENT_OR_MANUAL' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', background: '#f8fafc', padding: '0.85rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-                <span className={styles.label} style={{ margin: 0 }}>
-                  {uploadIsRange ? '📅 Data początkowa paczki:' : '📅 Data i czas paczki:'}
-                </span>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.82rem', fontWeight: 600 }}>
-                  <input
-                    type="checkbox"
-                    checked={uploadIsRange}
-                    onChange={e => {
-                      setUploadIsRange(e.target.checked);
-                    }}
-                  />
-                  <span>Wskaż przedział dat (od... do...)</span>
-                </label>
-              </div>
-
-              <div className={styles.compactDateTimeInputs} style={{ flexWrap: 'wrap' }}>
-                <select
-                  value={manualBulkQual}
-                  onChange={e => {
-                    setManualBulkQual(e.target.value);
-                  }}
-                  className={styles.input}
-                  style={{ width: '135px', height: '34px' }}
-                >
-                  {QUALIFIER_OPTIONS.map(q => (
-                    <option key={q.value} value={q.value}>
-                      {q.label}
-                    </option>
-                  ))}
-                </select>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                  <input
-                    type="date"
-                    value={toIsoDateInputValue(manualBulkYear, manualBulkMonth, manualBulkDay)}
-                    onChange={e => {
-                      if (e.target.value) {
-                        const p = e.target.value.split('-');
-                        if (p.length === 3) {
-                          const y = String(Number(p[0]));
-                          const m = String(Number(p[1]));
-                          const d = String(Number(p[2]));
-                          setManualBulkYear(y);
-                          setManualBulkMonth(m);
-                          setManualBulkDay(d);
-                          applyBulkSettingsToStaged(
-                            dateSourceMode,
-                            y,
-                            m,
-                            d,
-                            manualBulkHour,
-                            manualBulkMinute,
-                            manualBulkSecond,
-                            bulkBaseName
-                          );
-                        }
-                      }
-                    }}
-                    className={styles.input}
-                    style={{ height: '34px' }}
-                  />
-                  {getPolishWeekdayLabel(manualBulkYear, manualBulkMonth, manualBulkDay) && (
-                    <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#1d4ed8' }}>
-                      📅 {getPolishWeekdayLabel(manualBulkYear, manualBulkMonth, manualBulkDay)}
-                    </span>
-                  )}
-                </div>
-
-                <input
-                  type="number"
-                  placeholder="RRRR"
-                  value={manualBulkYear}
-                  onChange={e => {
-                    const v = e.target.value;
-                    setManualBulkYear(v);
-                    applyBulkSettingsToStaged(
-                      dateSourceMode,
-                      v,
-                      manualBulkMonth,
-                      manualBulkDay,
-                      manualBulkHour,
-                      manualBulkMinute,
-                      manualBulkSecond,
-                      bulkBaseName
-                    );
-                  }}
-                  className={`${styles.miniDateInput} ${styles.miniYearInput}`}
-                />
-                <input
-                  type="number"
-                  min={1}
-                  max={12}
-                  placeholder="MM"
-                  value={manualBulkMonth}
-                  onChange={e => {
-                    const v = e.target.value;
-                    setManualBulkMonth(v);
-                    applyBulkSettingsToStaged(
-                      dateSourceMode,
-                      manualBulkYear,
-                      v,
-                      manualBulkDay,
-                      manualBulkHour,
-                      manualBulkMinute,
-                      manualBulkSecond,
-                      bulkBaseName
-                    );
-                  }}
-                  className={styles.miniDateInput}
-                />
-                <input
-                  type="number"
-                  min={1}
-                  max={31}
-                  placeholder="DD"
-                  value={manualBulkDay}
-                  onChange={e => {
-                    const v = e.target.value;
-                    setManualBulkDay(v);
-                    applyBulkSettingsToStaged(
-                      dateSourceMode,
-                      manualBulkYear,
-                      manualBulkMonth,
-                      v,
-                      manualBulkHour,
-                      manualBulkMinute,
-                      manualBulkSecond,
-                      bulkBaseName
-                    );
-                  }}
-                  className={styles.miniDateInput}
-                />
-                <select
-                  value={manualBulkTimeQual}
-                  onChange={e => {
-                    setManualBulkTimeQual(e.target.value);
-                  }}
-                  className={styles.input}
-                  style={{ width: '180px', height: '34px' }}
-                >
-                  {QUALIFIER_OPTIONS.map(q => (
-                    <option key={q.value} value={q.value}>
-                      Czas: {q.label}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="number"
-                  min={0}
-                  max={23}
-                  placeholder="GG"
-                  value={manualBulkHour}
-                  onChange={e => {
-                    const v = e.target.value;
-                    setManualBulkHour(v);
-                    applyBulkSettingsToStaged(
-                      dateSourceMode,
-                      manualBulkYear,
-                      manualBulkMonth,
-                      manualBulkDay,
-                      v,
-                      manualBulkMinute,
-                      manualBulkSecond,
-                      bulkBaseName
-                    );
-                  }}
-                  className={styles.miniDateInput}
-                />
-                <span>:</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={59}
-                  placeholder="MM"
-                  value={manualBulkMinute}
-                  onChange={e => {
-                    const v = e.target.value;
-                    setManualBulkMinute(v);
-                    applyBulkSettingsToStaged(
-                      dateSourceMode,
-                      manualBulkYear,
-                      manualBulkMonth,
-                      manualBulkDay,
-                      manualBulkHour,
-                      v,
-                      manualBulkSecond,
-                      bulkBaseName
-                    );
-                  }}
-                  className={styles.miniDateInput}
-                />
-                <span>:</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={59}
-                  placeholder="SS"
-                  value={manualBulkSecond}
-                  onChange={e => {
-                    const v = e.target.value;
-                    setManualBulkSecond(v);
-                    applyBulkSettingsToStaged(
-                      dateSourceMode,
-                      manualBulkYear,
-                      manualBulkMonth,
-                      manualBulkDay,
-                      manualBulkHour,
-                      manualBulkMinute,
-                      v,
-                      bulkBaseName
-                    );
-                  }}
-                  className={styles.miniDateInput}
-                />
-              </div>
-
-              {uploadIsRange && (
-                <div style={{ borderTop: '1px solid #cbd5e1', paddingTop: '0.65rem', marginTop: '0.35rem' }}>
-                  <span className={styles.label} style={{ marginBottom: '0.4rem', display: 'block' }}>
-                    📅 Data końcowa paczki (koniec przedziału):
-                  </span>
-                  <div className={styles.compactDateTimeInputs} style={{ flexWrap: 'wrap' }}>
-                    <select
-                      value={manualBulkRangeEndQual}
-                      onChange={e => {
-                        setManualBulkRangeEndQual(e.target.value);
-                      }}
-                      className={styles.input}
-                      style={{ width: '135px', height: '34px' }}
-                    >
-                      {QUALIFIER_OPTIONS.map(q => (
-                        <option key={q.value} value={q.value}>
-                          {q.label}
-                        </option>
-                      ))}
-                    </select>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                      <input
-                        type="date"
-                        value={toIsoDateInputValue(
-                          manualBulkRangeEndYear,
-                          manualBulkRangeEndMonth,
-                          manualBulkRangeEndDay
-                        )}
-                        onChange={e => {
-                          if (e.target.value) {
-                            const p = e.target.value.split('-');
-                            if (p.length === 3) {
-                              setManualBulkRangeEndYear(String(Number(p[0])));
-                              setManualBulkRangeEndMonth(String(Number(p[1])));
-                              setManualBulkRangeEndDay(String(Number(p[2])));
-                            }
-                          }
-                        }}
-                        className={styles.input}
-                        style={{ height: '34px' }}
-                      />
-                      {getPolishWeekdayLabel(
-                        manualBulkRangeEndYear,
-                        manualBulkRangeEndMonth,
-                        manualBulkRangeEndDay
-                      ) && (
-                        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#1d4ed8' }}>
-                          📅 {getPolishWeekdayLabel(
-                            manualBulkRangeEndYear,
-                            manualBulkRangeEndMonth,
-                            manualBulkRangeEndDay
-                          )}
-                        </span>
-                      )}
-                    </div>
-
-                    <input
-                      type="number"
-                      placeholder="RRRR"
-                      value={manualBulkRangeEndYear}
-                      onChange={e => {
-                        setManualBulkRangeEndYear(e.target.value);
-                      }}
-                      className={`${styles.miniDateInput} ${styles.miniYearInput}`}
-                    />
-                    <input
-                      type="number"
-                      min={1}
-                      max={12}
-                      placeholder="MM"
-                      value={manualBulkRangeEndMonth}
-                      onChange={e => {
-                        setManualBulkRangeEndMonth(e.target.value);
-                      }}
-                      className={styles.miniDateInput}
-                    />
-                    <input
-                      type="number"
-                      min={1}
-                      max={31}
-                      placeholder="DD"
-                      value={manualBulkRangeEndDay}
-                      onChange={e => {
-                        setManualBulkRangeEndDay(e.target.value);
-                      }}
-                      className={styles.miniDateInput}
-                    />
-                    <select
-                      value={manualBulkRangeEndTimeQual}
-                      onChange={e => {
-                        setManualBulkRangeEndTimeQual(e.target.value);
-                      }}
-                      className={styles.input}
-                      style={{ width: '180px', height: '34px' }}
-                    >
-                      {QUALIFIER_OPTIONS.map(q => (
-                        <option key={q.value} value={q.value}>
-                          Czas: {q.label}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="number"
-                      min={0}
-                      max={23}
-                      placeholder="GG"
-                      value={manualBulkRangeEndHour}
-                      onChange={e => {
-                        setManualBulkRangeEndHour(e.target.value);
-                      }}
-                      className={styles.miniDateInput}
-                    />
-                    <span>:</span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={59}
-                      placeholder="MM"
-                      value={manualBulkRangeEndMinute}
-                      onChange={e => {
-                        setManualBulkRangeEndMinute(e.target.value);
-                      }}
-                      className={styles.miniDateInput}
-                    />
-                    <span>:</span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={59}
-                      placeholder="SS"
-                      value={manualBulkRangeEndSecond}
-                      onChange={e => {
-                        setManualBulkRangeEndSecond(e.target.value);
-                      }}
-                      className={styles.miniDateInput}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {directoryPreview && (
-            <div className={styles.pathPreviewBanner} data-testid="media-path-preview">
-              📁 Docelowy katalog na dysku:{' '}
-              <strong>
-                {customFolderName.trim() !== ''
-                  ? `${directoryPreview.slice(0, directoryPreview.lastIndexOf('/') + 1)}${customFolderName.trim()}`
-                  : directoryPreview}
-                /
-              </strong>
-            </div>
-          )}
-
-          {stagedFiles.length > 1 && (
-            <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-                <strong style={{ fontSize: '0.88rem', color: '#1e293b' }}>
-                  ⚙️ Zbiorcze szczegóły dla wszystkich {String(stagedFiles.length)} plików w paczce
-                </strong>
+    <section
+      className={hideSectionChrome ? undefined : styles.sectionCard}
+      data-testid="media-gallery-section"
+    >
+      {!hideSectionChrome && (
+        <>
+          <div className={styles.headerRow}>
+            <h2 className={styles.sectionTitle}>
+              {sectionTitle} ({effectiveItems.length})
+            </h2>
+            {isAdmin && (
+              <div className={styles.headerActions}>
                 <button
                   type="button"
+                  data-testid="toggle-upload-media-button"
                   onClick={() => {
-                    setShowBulkDetails(prev => !prev);
+                    setInternalShowUpload(true);
+                    setInternalBulkEditMode(false);
+                  }}
+                  className={styles.btnPrimary}
+                >
+                  + Wgraj nowe z dysku
+                </button>
+                <button
+                  type="button"
+                  data-testid="open-link-existing-media-button"
+                  onClick={() => {
+                    setShowLinkExistingModal(true);
                   }}
                   className={styles.btnSecondary}
-                  style={{ fontSize: '0.78rem', padding: '0.2rem 0.6rem' }}
                 >
-                  {showBulkDetails ? '▲ Zwiń zbiorcze szczegóły' : '▼ Rozwiń zbiorcze szczegóły'}
+                  🔗 Wybierz istniejące z galerii
+                </button>
+                {effectiveItems.length > 0 && (
+                  <button
+                    type="button"
+                    data-testid="toggle-bulk-edit-media-button"
+                    onClick={() => {
+                      setInternalBulkEditMode(true);
+                      setInternalShowUpload(false);
+                    }}
+                    className={styles.btnSecondary}
+                  >
+                    ☑️ Edycja zbiorowa
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Filter & Sort Toolbar */}
+          {totalRawItemsCount > 0 && (
+            <div className={styles.toolbarBar} data-testid="media-section-filter-sort-bar">
+              <div className={styles.filterPillsGroup}>
+                <button
+                  type="button"
+                  data-testid="media-filter-all"
+                  onClick={() => {
+                    setTypeFilter('ALL');
+                  }}
+                  className={`${styles.filterPillBtn} ${
+                    typeFilter === 'ALL' ? styles.filterPillBtnActive : ''
+                  }`}
+                >
+                  Wszystkie ({String(totalRawItemsCount)})
+                </button>
+                <button
+                  type="button"
+                  data-testid="media-filter-image"
+                  onClick={() => {
+                    setTypeFilter('IMAGE');
+                  }}
+                  className={`${styles.filterPillBtn} ${
+                    typeFilter === 'IMAGE' ? styles.filterPillBtnActive : ''
+                  }`}
+                >
+                  📷 Tylko zdjęcia ({String(totalImagesCount)})
+                </button>
+                <button
+                  type="button"
+                  data-testid="media-filter-video"
+                  onClick={() => {
+                    setTypeFilter('VIDEO');
+                  }}
+                  className={`${styles.filterPillBtn} ${
+                    typeFilter === 'VIDEO' ? styles.filterPillBtnActive : ''
+                  }`}
+                >
+                  🎬 Tylko filmy ({String(totalVideosCount)})
+                </button>
+                <button
+                  type="button"
+                  data-testid="media-filter-audio"
+                  onClick={() => {
+                    setTypeFilter('AUDIO');
+                  }}
+                  className={`${styles.filterPillBtn} ${
+                    typeFilter === 'AUDIO' ? styles.filterPillBtnActive : ''
+                  }`}
+                >
+                  🎵 Tylko nagrania audio ({String(totalAudiosCount)})
                 </button>
               </div>
 
-              {showBulkDetails && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.25rem' }}>
-                  <div className={styles.stagedDetailsRow}>
-                    <div className={styles.formField}>
-                      <span className={styles.label}>Wspólny tytuł</span>
-                      <input
-                        type="text"
-                        placeholder="Wspólny tytuł dla wszystkich plików..."
-                        value={bulkTitle}
-                        onChange={e => {
-                          setBulkTitle(e.target.value);
-                        }}
-                        className={styles.input}
-                      />
-                    </div>
-                    <div className={styles.formField}>
-                      <span className={styles.label}>Wspólne źródło zdjęcia / filmu</span>
-                      <input
-                        type="text"
-                        placeholder="np. Zbiór z archiwum rodzinnego"
-                        value={bulkSourceText}
-                        onChange={e => {
-                          setBulkSourceText(e.target.value);
-                        }}
-                        className={styles.input}
-                      />
-                    </div>
-                    <div className={styles.formField}>
-                      <span className={styles.label}>Wspólny podpis z odwrotu</span>
-                      <input
-                        type="text"
-                        placeholder="np. Pamiątka z wakacji"
-                        value={bulkInscriptionText}
-                        onChange={e => {
-                          setBulkInscriptionText(e.target.value);
-                        }}
-                        className={styles.input}
-                      />
-                    </div>
-                  </div>
-
-                  <div className={styles.formField} style={{ width: '100%' }}>
-                    <span className={styles.label}>Wspólny opis tekstowy</span>
-                    <textarea
-                      rows={3}
-                      placeholder="Wspólny opis dla wszystkich wgrywanych plików..."
-                      value={bulkDescription}
-                      onChange={e => {
-                        setBulkDescription(e.target.value);
-                      }}
-                      className={styles.textarea}
-                    />
-                  </div>
-
-                  <div style={{ backgroundColor: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
-                    <span className={styles.label}>
-                      Wspólne osoby na zdjęciu, osoby powiązane oraz autorzy:
-                    </span>
-                    <div className={styles.personLinksGrid}>
-                      <div className={styles.formField}>
-                        <span className={styles.label}>Rodzaj powiązania</span>
-                        <select
-                          value={bulkLinkRoleType}
-                          onChange={e => {
-                            setBulkLinkRoleType(e.target.value as 'DEPICTED' | 'RELATED' | 'AUTHOR');
-                          }}
-                          className={styles.input}
-                        >
-                          <option value="DEPICTED">👁️ Osoba widoczna na zdjęciu / filmie</option>
-                          <option value="RELATED">🔗 Osoba powiązana ze zdjęciem / filmem</option>
-                          <option value="AUTHOR">📷 Autor zdjęcia / nagrania (kto wykonał)</option>
-                        </select>
-                      </div>
-
-                      <div className={styles.formField}>
-                        <span className={styles.label}>Dodaj osobę z drzewa</span>
-                        <div style={{ display: 'flex', gap: '0.4rem' }}>
-                          <input
-                            type="text"
-                            placeholder="Szukaj w drzewie..."
-                            value={bulkLinkPersonQuery}
-                            onChange={e => {
-                              setBulkLinkPersonQuery(e.target.value);
-                            }}
-                            className={styles.input}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => void handleSearchPersonForBulk()}
-                            className={styles.btnSecondary}
-                          >
-                            Szukaj
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className={styles.formField}>
-                        <span className={styles.label}>Lub wpisz osobę tekstowo</span>
-                        <div style={{ display: 'flex', gap: '0.4rem' }}>
-                          <input
-                            type="text"
-                            placeholder="np. Fotograf z Lublina"
-                            value={bulkLinkTextInput}
-                            onChange={e => {
-                              setBulkLinkTextInput(e.target.value);
-                            }}
-                            className={styles.input}
-                          />
-                          <select
-                            value={bulkLinkTextSex}
-                            onChange={e => {
-                              setBulkLinkTextSex(e.target.value as PersonSex);
-                            }}
-                            className={styles.input}
-                            style={{ width: '75px' }}
-                          >
-                            <option value="MALE">M</option>
-                            <option value="FEMALE">K</option>
-                            <option value="UNKNOWN">?</option>
-                          </select>
-                          <button
-                            type="button"
-                            onClick={handleAddTextPersonToBulk}
-                            className={styles.btnSecondary}
-                          >
-                            + Dodaj
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    {bulkLinkPersonResults.length > 0 && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                        {bulkLinkPersonResults.map(p => (
-                          <button
-                            key={p.id}
-                            type="button"
-                            onClick={() => {
-                              handleAddDbPersonToBulk(p);
-                            }}
-                            className={styles.btnSecondary}
-                          >
-                            + Wybierz: {p.givenName} {p.surname} ({p.birthYear ?? '?'})
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    {bulkPersonLinks.length > 0 && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                        {bulkPersonLinks.map((pl, bIdx) => (
-                          <span
-                            key={`${pl.displayLabel}-${String(bIdx)}`}
-                            className={styles.selectedFilesBadge}
-                          >
-                            {pl.displayLabel}{' '}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setBulkPersonLinks(prev => prev.filter((_, i) => i !== bIdx));
-                              }}
-                              className={styles.pillRemoveBtn}
-                            >
-                              ✕
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.4rem' }}>
-                    <button
-                      type="button"
-                      onClick={handleApplyBulkDetailsToAll}
-                      className={styles.btnPrimary}
-                      style={{ fontSize: '0.82rem', padding: '0.35rem 0.85rem' }}
-                    >
-                      ✓ Zastosuj te szczegóły do wszystkich plików w paczce
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {stagedFiles.length > 0 && (
-            <div className={styles.stagedList}>
-              {stagedFiles.map((st, idx) => {
-                const chosenMeta =
-                  st.metadataOptions.find(o => o.sourceTag === st.selectedMetadataTag) ??
-                  st.metadataOptions.at(0);
-
-                return (
-                  <div key={`${st.file.name}-${String(idx)}`} className={styles.stagedCard}>
-                    <div className={styles.stagedTopRow}>
-                      <span className={styles.breakableCode}>📄 {st.file.name}</span>
-
-                      {chosenMeta ? (
-                        <div className={styles.metadataBadge}>
-                          <span>📷 Metadane:</span>
-                          {st.metadataOptions.length > 1 ? (
-                            <select
-                              value={st.selectedMetadataTag}
-                              onChange={e => {
-                                const tag = e.target.value;
-                                const opt = st.metadataOptions.find(o => o.sourceTag === tag);
-                                setStagedFiles(prev =>
-                                  prev.map((item, i) =>
-                                    i === idx
-                                      ? {
-                                          ...item,
-                                          selectedMetadataTag: tag,
-                                          year: opt ? String(opt.year) : item.year,
-                                          month: opt ? String(opt.month) : item.month,
-                                          day: opt ? String(opt.day) : item.day,
-                                          hour: opt ? String(opt.hour) : item.hour,
-                                          minute: opt ? String(opt.minute) : item.minute,
-                                          second: opt ? String(opt.second) : item.second,
-                                        }
-                                      : item
-                                  )
-                                );
-                              }}
-                              className={styles.input}
-                              style={{ height: '26px', fontSize: '0.73rem', width: 'auto', padding: '0 0.4rem' }}
-                            >
-                              {st.metadataOptions.map(opt => (
-                                <option key={opt.sourceTag} value={opt.sourceTag}>
-                                  {opt.sourceTag} — {opt.formattedText}
-                                </option>
-                              ))}
-                            </select>
-                          ) : (
-                            <span>
-                              {chosenMeta.sourceTag.includes('lastModified')
-                                ? 'data modyfikacji pliku'
-                                : chosenMeta.sourceTag.replace(/[()]/g, '')} — <strong>{chosenMeta.formattedText}</strong>
-                            </span>
-                          )}
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setStagedFiles(prev =>
-                                prev.map((item, i) =>
-                                  i === idx
-                                    ? {
-                                        ...item,
-                                        year: String(chosenMeta.year),
-                                        month: String(chosenMeta.month),
-                                        day: String(chosenMeta.day),
-                                        hour: String(chosenMeta.hour),
-                                        minute: String(chosenMeta.minute),
-                                        second: String(chosenMeta.second),
-                                      }
-                                    : item
-                                )
-                              );
-                            }}
-                            className={styles.btnSecondary}
-                            style={{ padding: '0.15rem 0.5rem', fontSize: '0.72rem' }}
-                          >
-                            Użyj tej daty z metadanych
-                          </button>
-                        </div>
-                      ) : (
-                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                          Brak daty w metadanych pliku
-                        </span>
-                      )}
-                    </div>
-
-                    <div className={styles.stagedInputsGrid}>
-                      <div>
-                        <span className={styles.label}>Nazwa pliku na dysku</span>
-                        <input
-                          type="text"
-                          aria-label="Nazwa pliku na dysku"
-                          data-testid={
-                            idx === 0
-                              ? 'media-filename-input'
-                              : `media-filename-input-${String(idx)}`
-                          }
-                          value={st.customFileName}
-                          onChange={e => {
-                            const val = e.target.value;
-                            setStagedFiles(prev =>
-                              prev.map((item, i) =>
-                                i === idx ? { ...item, customFileName: val } : item
-                              )
-                            );
-                          }}
-                          placeholder="Nazwa snake_case.jpg"
-                          className={styles.input}
-                        />
-                      </div>
-
-                      <div>
-                        <span className={styles.label}>
-                          Data i czas zdjęcia/filmu (RRRR-MM-DD GG:MM:SS)
-                        </span>
-                        <div className={styles.compactDateTimeInputs}>
-                          <input
-                            type="number"
-                            aria-label="Rok zdjęcia"
-                            placeholder="RRRR"
-                            value={st.year}
-                            onChange={e => {
-                              const val = e.target.value;
-                              setStagedFiles(prev =>
-                                prev.map((item, i) =>
-                                  i === idx ? { ...item, year: val } : item
-                                )
-                              );
-                            }}
-                            className={`${styles.miniDateInput} ${styles.miniYearInput}`}
-                          />
-                          <input
-                            type="number"
-                            min={1}
-                            max={12}
-                            placeholder="MM"
-                            value={st.month}
-                            onChange={e => {
-                              const val = e.target.value;
-                              setStagedFiles(prev =>
-                                prev.map((item, i) =>
-                                  i === idx ? { ...item, month: val } : item
-                                )
-                              );
-                            }}
-                            className={styles.miniDateInput}
-                          />
-                          <input
-                            type="number"
-                            min={1}
-                            max={31}
-                            placeholder="DD"
-                            value={st.day}
-                            onChange={e => {
-                              const val = e.target.value;
-                              setStagedFiles(prev =>
-                                prev.map((item, i) =>
-                                  i === idx ? { ...item, day: val } : item
-                                )
-                              );
-                            }}
-                            className={styles.miniDateInput}
-                          />
-                          <input
-                            type="number"
-                            min={0}
-                            max={23}
-                            placeholder="GG"
-                            value={st.hour}
-                            onChange={e => {
-                              const val = e.target.value;
-                              setStagedFiles(prev =>
-                                prev.map((item, i) =>
-                                  i === idx ? { ...item, hour: val } : item
-                                )
-                              );
-                            }}
-                            className={styles.miniDateInput}
-                          />
-                          <span>:</span>
-                          <input
-                            type="number"
-                            min={0}
-                            max={59}
-                            placeholder="MM"
-                            value={st.minute}
-                            onChange={e => {
-                              const val = e.target.value;
-                              setStagedFiles(prev =>
-                                prev.map((item, i) =>
-                                  i === idx ? { ...item, minute: val } : item
-                                )
-                              );
-                            }}
-                            className={styles.miniDateInput}
-                          />
-                          <span>:</span>
-                          <input
-                            type="number"
-                            min={0}
-                            max={59}
-                            placeholder="SS"
-                            value={st.second}
-                            onChange={e => {
-                              const val = e.target.value;
-                              setStagedFiles(prev =>
-                                prev.map((item, i) =>
-                                  i === idx ? { ...item, second: val } : item
-                                )
-                              );
-                            }}
-                            className={styles.miniDateInput}
-                          />
-                        </div>
-                      </div>
-
-                      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setStagedFiles(prev =>
-                              prev.map((item, i) =>
-                                i === idx ? { ...item, showDetails: !item.showDetails } : item
-                              )
-                            );
-                          }}
-                          className={styles.btnSecondary}
-                          style={{ height: '36px', whiteSpace: 'nowrap' }}
-                        >
-                          {st.showDetails ? '▲ Zwiń szczegóły' : '🔍 Szczegóły pliku ▼'}
-                          {(Boolean(st.title) ||
-                            Boolean(st.sourceText) ||
-                            Boolean(st.inscriptionText) ||
-                            Boolean(st.description) ||
-                            Boolean(st.personLinks && st.personLinks.length > 0)) && (
-                            <span style={{ marginLeft: '0.4rem', color: '#16a34a', fontWeight: 800 }}>
-                              ●
-                            </span>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    {st.showDetails && (
-                      <div className={styles.stagedDetailsPanel}>
-                        <div className={styles.stagedDetailsRow}>
-                          <div className={styles.formField}>
-                            <span className={styles.label}>Tytuł</span>
-                            <input
-                              type="text"
-                              aria-label="Tytuł zdjęcia"
-                              placeholder="Krótki tytuł zdjęcia lub filmu..."
-                              value={st.title}
-                              onChange={e => {
-                                const val = e.target.value;
-                                setStagedFiles(prev =>
-                                  prev.map((item, i) =>
-                                    i === idx ? { ...item, title: val } : item
-                                  )
-                                );
-                              }}
-                              className={styles.input}
-                            />
-                          </div>
-
-                          <div className={styles.formField}>
-                            <span className={styles.label}>Źródło zdjęcia / filmu (tekstowo)</span>
-                            <input
-                              type="text"
-                              placeholder="np. Z albumu babci Katarzyny"
-                              value={st.sourceText ?? ''}
-                              onChange={e => {
-                                const val = e.target.value;
-                                setStagedFiles(prev =>
-                                  prev.map((item, i) =>
-                                    i === idx ? { ...item, sourceText: val } : item
-                                  )
-                                );
-                              }}
-                              className={styles.input}
-                            />
-                          </div>
-
-                          <div className={styles.formField}>
-                            <span className={styles.label}>
-                              Podpis z odwrotu zdjęcia / oryginalna dedykacja
-                            </span>
-                            <input
-                              type="text"
-                              placeholder="np. Na pamiątkę z Krynicy, 1938 r."
-                              value={st.inscriptionText ?? ''}
-                              onChange={e => {
-                                const val = e.target.value;
-                                setStagedFiles(prev =>
-                                  prev.map((item, i) =>
-                                    i === idx ? { ...item, inscriptionText: val } : item
-                                  )
-                                );
-                              }}
-                              className={styles.input}
-                            />
-                          </div>
-                        </div>
-
-                        <div className={styles.formField} style={{ width: '100%' }}>
-                          <span className={styles.label}>Opis tekstowy (zwykły tekst)</span>
-                          <textarea
-                            rows={3}
-                            placeholder="Dodatkowe informacje o zdjęciu/nagraniu..."
-                            value={st.description ?? ''}
-                            onChange={e => {
-                              const val = e.target.value;
-                              setStagedFiles(prev =>
-                                prev.map((item, i) =>
-                                  i === idx ? { ...item, description: val } : item
-                                )
-                              );
-                            }}
-                            className={styles.textarea}
-                          />
-                        </div>
-
-                        <div
-                          style={{
-                            backgroundColor: '#ffffff',
-                            border: '1px solid #cbd5e1',
-                            borderRadius: '8px',
-                            padding: '0.75rem',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '0.55rem',
-                          }}
-                        >
-                          <span className={styles.label}>
-                            Osoby na zdjęciu, osoby powiązane oraz autorzy (z bazy lub tekstowo):
-                          </span>
-                          <div className={styles.personLinksGrid}>
-                            <div className={styles.formField}>
-                              <span className={styles.label}>Rodzaj powiązania</span>
-                              <select
-                                value={stagedLinkRoleType}
-                                onChange={e => {
-                                  setStagedLinkRoleType(
-                                    e.target.value as 'DEPICTED' | 'RELATED' | 'AUTHOR'
-                                  );
-                                }}
-                                className={styles.input}
-                              >
-                                <option value="DEPICTED">
-                                  👁️ Osoba widoczna na zdjęciu / filmie
-                                </option>
-                                <option value="RELATED">
-                                  🔗 Osoba powiązana ze zdjęciem / filmem
-                                </option>
-                                <option value="AUTHOR">
-                                  📷 Autor zdjęcia / nagrania (kto wykonał)
-                                </option>
-                              </select>
-                            </div>
-
-                            <div className={styles.formField}>
-                              <span className={styles.label}>Dodaj osobę z drzewa</span>
-                              <div style={{ display: 'flex', gap: '0.4rem' }}>
-                                <input
-                                  type="text"
-                                  placeholder="Szukaj w drzewie..."
-                                  value={activeStagedSearchIdx === idx ? stagedPersonQuery : ''}
-                                  onChange={e => {
-                                    setActiveStagedSearchIdx(idx);
-                                    setStagedPersonQuery(e.target.value);
-                                  }}
-                                  className={styles.input}
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    void handleSearchPersonForStaged(idx);
-                                  }}
-                                  className={styles.btnSecondary}
-                                >
-                                  Szukaj
-                                </button>
-                              </div>
-                            </div>
-
-                            <div className={styles.formField}>
-                              <span className={styles.label}>Lub wpisz osobę tekstowo</span>
-                              <div style={{ display: 'flex', gap: '0.4rem' }}>
-                                <input
-                                  type="text"
-                                  placeholder="np. Fotograf z Lublina"
-                                  value={activeStagedSearchIdx === idx ? stagedTextPersonInput : ''}
-                                  onChange={e => {
-                                    setActiveStagedSearchIdx(idx);
-                                    setStagedTextPersonInput(e.target.value);
-                                  }}
-                                  className={styles.input}
-                                />
-                                <select
-                                  value={stagedTextPersonSex}
-                                  onChange={e => {
-                                    setStagedTextPersonSex(e.target.value as PersonSex);
-                                  }}
-                                  className={styles.input}
-                                  style={{ width: '75px' }}
-                                >
-                                  <option value="MALE">M</option>
-                                  <option value="FEMALE">K</option>
-                                  <option value="UNKNOWN">?</option>
-                                </select>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    handleAddTextPersonToStaged(idx);
-                                  }}
-                                  className={styles.btnSecondary}
-                                >
-                                  + Dodaj
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-
-                          {activeStagedSearchIdx === idx && stagedPersonResults.length > 0 && (
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                              {stagedPersonResults.map(p => (
-                                <button
-                                  key={p.id}
-                                  type="button"
-                                  onClick={() => {
-                                    handleAddDbPersonToStaged(idx, p);
-                                  }}
-                                  className={styles.btnSecondary}
-                                >
-                                  + Wybierz: {p.givenName} {p.surname} ({p.birthYear ?? '?'})
-                                </button>
-                              ))}
-                            </div>
-                          )}
-
-                          {st.personLinks && st.personLinks.length > 0 && (
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                              {st.personLinks.map((pl, pIdx) => (
-                                <span
-                                  key={`${pl.displayLabel}-${String(pIdx)}`}
-                                  className={styles.selectedFilesBadge}
-                                >
-                                  {pl.displayLabel}{' '}
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      handleRemovePersonFromStaged(idx, pIdx);
-                                    }}
-                                    className={styles.pillRemoveBtn}
-                                  >
-                                    ✕
-                                  </button>
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {stagedFiles.length === 1 && (context === 'GRAVE' || context === 'PERSON') && (
-            <div className={styles.checkboxRow}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={setAsPrimary}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <label htmlFor="section-media-sort-select" className={styles.label}>
+                  Sortuj:
+                </label>
+                <select
+                  id="section-media-sort-select"
+                  data-testid="section-media-sort-select"
+                  value={sortMode}
                   onChange={e => {
-                    setSetAsPrimary(e.target.checked);
+                    setSortMode(e.target.value as SectionSortMode);
                   }}
-                />
-                <span>
-                  {context === 'GRAVE'
-                    ? 'Ustaw jako główne zdjęcie tego nagrobka'
-                    : 'Ustaw jako główny portret (awatar) tej osoby'}
-                </span>
-              </label>
+                  className={styles.input}
+                  style={{ width: 'auto', minWidth: '220px' }}
+                >
+                  <option value="DATE_ASC">
+                    Chronologicznie – od najstarszych (wg daty i czasu)
+                  </option>
+                  <option value="DATE_DESC">
+                    Chronologicznie – od najnowszych (wg daty i czasu)
+                  </option>
+                  <option value="NAME_ASC">Alfabetycznie (wg nazwy / tytułu A–Z)</option>
+                  <option value="NEWEST_ADDED">Od ostatnio dodanych</option>
+                </select>
+              </div>
             </div>
           )}
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
-            <button
-              type="button"
-              onClick={() => {
-                setShowUpload(false);
-                setStagedFiles([]);
-              }}
-              className={styles.btnSecondary}
-            >
-              Anuluj
-            </button>
-            <button
-              type="submit"
-              data-testid="submit-upload-media-button"
-              disabled={stagedFiles.length === 0 || isSubmitting}
-              className={styles.btnPrimary}
-            >
-              {isSubmitting
-                ? 'Wgrywanie...'
-                : `Wgraj i zapisz (${String(stagedFiles.length)})`}
-            </button>
-          </div>
-        </form>
-      )}
-
-      {/* Direct Media Grid & Sub-Events Media Grids */}
-      {displayedDirectItems.length === 0 && displayedSubGroups.length === 0 ? (
-        <p className={styles.emptyText}>Brak przypisanych zdjęć i filmów.</p>
-      ) : (
-        <>
-          {displayedDirectItems.length > 0 && renderMediaGrid(displayedDirectItems, true)}
-
-          {displayedSubGroups.map(group => (
+          {errorMessage && (
             <div
-              key={group.subEventId}
-              className={styles.subEventGroupBox}
-              data-testid={`subevent-media-group-${String(group.subEventId)}`}
+              role="alert"
+              style={{ color: '#dc2626', fontSize: '0.86rem', fontWeight: 600 }}
             >
-              <div className={styles.subEventHeader}>
-                <span className={styles.subEventTitle}>
-                  ↳ Zdjęcia i filmy z podwydarzenia: {group.subEventLabel}{' '}
-                  {group.dateText ? `(${group.dateText})` : ''}
-                </span>
-                <Link
-                  to={`/events/${String(group.subEventId)}`}
-                  className={styles.btnSecondary}
-                  style={{ textDecoration: 'none' }}
-                >
-                  Przejdź do podwydarzenia →
-                </Link>
-              </div>
-              {renderMediaGrid(group.media, false)}
+              {errorMessage}
             </div>
-          ))}
+          )}
+
+          {/* Direct Media Grid & Sub-Events Media Grids */}
+          {displayedDirectItems.length === 0 && displayedSubGroups.length === 0 ? (
+            <p className={styles.emptyText}>Brak przypisanych zdjęć i filmów.</p>
+          ) : (
+            <>
+              {displayedDirectItems.length > 0 && renderMediaGrid(displayedDirectItems)}
+
+              {displayedSubGroups.map(group => (
+                <div
+                  key={group.subEventId}
+                  className={styles.subEventGroupBox}
+                  data-testid={`subevent-media-group-${String(group.subEventId)}`}
+                >
+                  <div className={styles.subEventHeader}>
+                    <span className={styles.subEventTitle}>
+                      ↳ Zdjęcia i filmy z podwydarzenia: {group.subEventLabel}{' '}
+                      {group.dateText ? `(${group.dateText})` : ''}
+                    </span>
+                    <Link
+                      to={`/events/${String(group.subEventId)}`}
+                      className={styles.btnSecondary}
+                      style={{ textDecoration: 'none' }}
+                    >
+                      Przejdź do podwydarzenia →
+                    </Link>
+                  </div>
+                  {renderMediaGrid(group.media)}
+                </div>
+              ))}
+            </>
+          )}
         </>
       )}
 
-      {/* Modal for Linking Existing Media from Gallery */}
-      {showLinkExistingModal && (
+      {/* =====================================================================
+          LARGE MODAL 1: UPLOAD MEDIA (Points 1, 7, 12, 18, 23, 24)
+          ===================================================================== */}
+      {isAdmin && showUpload && (
         <div
           className={styles.modalBackdrop}
-          data-testid="link-existing-media-modal"
           onClick={() => {
-            setShowLinkExistingModal(false);
+            closeUploadModal();
           }}
         >
           <div
             className={styles.modalDialog}
+            style={{ maxWidth: '1080px' }}
             onClick={e => {
               e.stopPropagation();
             }}
           >
             <div className={styles.modalHeader}>
               <strong style={{ fontSize: '1.05rem', color: '#0f172a' }}>
-                🔗 Wybierz istniejące zdjęcia lub filmy z galerii
+                📤 Wgraj nowe zdjęcia, filmy lub nagrania audio z dysku
               </strong>
               <button
                 type="button"
                 onClick={() => {
-                  setShowLinkExistingModal(false);
+                  closeUploadModal();
                 }}
                 className={styles.btnSecondary}
               >
@@ -3085,627 +1578,487 @@ export default function MediaGallerySection({
               </button>
             </div>
 
-            <div className={styles.modalBody}>
-              <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                <input
-                  type="text"
-                  placeholder="Szukaj w galerii po podpisie, osobie, wydarzeniu lub cmentarzu..."
-                  value={gallerySearchQuery}
-                  onChange={e => {
-                    const q = e.target.value;
-                    setGallerySearchQuery(q);
-                    setGalleryPage(0);
-                    void fetchGalleryCandidates(q, galleryTypeFilter, gallerySortBy, 0);
-                  }}
-                  className={styles.input}
-                  style={{ flex: 1, minWidth: '220px' }}
-                />
-                <select
-                  value={galleryTypeFilter}
-                  onChange={e => {
-                    const t = e.target.value;
-                    setGalleryTypeFilter(t);
-                    setGalleryPage(0);
-                    void fetchGalleryCandidates(gallerySearchQuery, t, gallerySortBy, 0);
-                  }}
-                  className={styles.input}
-                  style={{ width: '160px' }}
+            <form
+              onSubmit={e => {
+                void handleUploadSubmit(e);
+              }}
+              className={styles.modalBody}
+              data-testid="media-upload-form"
+            >
+              {errorMessage && (
+                <div
+                  role="alert"
+                  style={{ color: '#dc2626', fontSize: '0.86rem', fontWeight: 600 }}
                 >
-                  <option value="ALL">Wszystkie typy</option>
-                  <option value="IMAGE">Tylko zdjęcia</option>
-                  <option value="VIDEO">Tylko filmy</option>
-                  <option value="AUDIO">Tylko nagrania audio</option>
-                </select>
+                  {errorMessage}
+                </div>
+              )}
 
-                <select
-                  value={gallerySortBy}
-                  onChange={e => {
-                    const s = e.target.value;
-                    setGallerySortBy(s);
-                    setGalleryPage(0);
-                    void fetchGalleryCandidates(gallerySearchQuery, galleryTypeFilter, s, 0);
-                  }}
-                  className={styles.input}
-                  style={{ width: '175px' }}
-                >
-                  <option value="NEWEST_UPLOAD">Od ostatnio dodanych</option>
-                  <option value="OLDEST_UPLOAD">Od najwcześniej dodanych</option>
-                  <option value="DATE_DESC">Data wykonania (od najnowszych)</option>
-                  <option value="DATE_ASC">Data wykonania (od najstarszych)</option>
-                </select>
+              <div className={styles.formGrid}>
+                <div className={styles.formField}>
+                  <span className={styles.label}>Wybierz jeden lub wiele plików *</span>
+                  <div className={styles.filePickerRow}>
+                    <label htmlFor={fileInputId} className={styles.filePickerLabel}>
+                      📂 Wybierz pliki z dysku
+                    </label>
+                    <input
+                      id={fileInputId}
+                      data-testid="media-file-input"
+                      type="file"
+                      multiple
+                      accept="image/*,video/*,audio/*"
+                      onChange={e => {
+                        void handleFilesSelected(e.target.files);
+                      }}
+                      className={styles.hiddenFileInput}
+                    />
+                    <span className={styles.selectedFilesBadge}>
+                      {stagedFiles.length === 0
+                        ? 'Nie wybrano plików'
+                        : `Wybrano plików: ${String(stagedFiles.length)}`}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Point 23 & 24: Target Collection Selector for Gallery or Undated Events */}
+                {(context === 'COLLECTION' ||
+                  context === 'PERSON' ||
+                  (context === 'EVENT' && !defaultEventYear) ||
+                  dateSourceMode === 'UNDATED') && (
+                  <div className={styles.formField}>
+                    <label htmlFor="media-upload-collection-select" className={styles.label}>
+                      Kolekcja / Album docelowy{' '}
+                      {needsCollectionForUpload ? '* (wymagane dla plików bez daty)' : '(opcjonalnie)'}
+                    </label>
+                    <select
+                      id="media-upload-collection-select"
+                      data-testid="media-upload-collection-select"
+                      value={uploadCollectionId}
+                      onChange={e => {
+                        const nextCol = e.target.value;
+                        setUploadCollectionId(nextCol);
+                        void refreshDirectoryPreview(
+                          stagedFiles.at(0)?.file,
+                          customFolderName,
+                          nextCol
+                        );
+                      }}
+                      className={styles.input}
+                    >
+                      <option value="">— Wybierz kolekcję lub album datowany —</option>
+                      {availableCollections.map(c => (
+                        <option key={c.id} value={String(c.id)}>
+                          {c.datedCollection
+                            ? `📅 [Album ${String(c.startYear ?? '')}] `
+                            : '📦 '}
+                          {c.parentCollectionName ? `${c.parentCollectionName} › ` : ''}
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div className={styles.formField}>
+                  <label htmlFor="media-custom-folder-input" className={styles.label}>
+                    Własna nazwa folderu docelowego (snake_case, opcjonalnie)
+                  </label>
+                  <input
+                    id="media-custom-folder-input"
+                    type="text"
+                    placeholder="Zostaw puste, aby użyć proponowanej nazwy..."
+                    value={customFolderName}
+                    onChange={e => {
+                      const nextFolder = e.target.value;
+                      setCustomFolderName(nextFolder);
+                      void refreshDirectoryPreview(
+                        stagedFiles.at(0)?.file,
+                        nextFolder,
+                        uploadCollectionId
+                      );
+                    }}
+                    className={styles.input}
+                  />
+                </div>
+
+                {context !== 'GRAVE' && (
+                  <div className={styles.formField}>
+                    <label htmlFor="media-date-mode-select" className={styles.label}>
+                      Zbiorcze ustawienie daty i czasu dla zaznaczonych
+                    </label>
+                    <select
+                      id="media-date-mode-select"
+                      value={dateSourceMode}
+                      onChange={e => {
+                        const nextMode = e.target.value as DateSourceMode;
+                        setDateSourceMode(nextMode);
+                        applyBulkSettingsToStaged(
+                          nextMode,
+                          manualBulkYear,
+                          manualBulkMonth,
+                          manualBulkDay,
+                          manualBulkHour,
+                          manualBulkMinute,
+                          manualBulkSecond,
+                          bulkBaseName
+                        );
+                      }}
+                      className={styles.input}
+                    >
+                      <option value="FILE_METADATA">
+                        Pobierz pełną datę i czas z metadanych każdego pliku (EXIF / MP4 / plik)
+                      </option>
+                      <option value="EVENT_OR_MANUAL">
+                        Użyj daty wydarzenia / wspólnej daty i czasu ręcznego
+                      </option>
+                      <option value="UNDATED">
+                        Bez daty – zapisz jako niedatowane (undated)
+                      </option>
+                    </select>
+                  </div>
+                )}
+
+                {stagedFiles.length > 1 && (
+                  <div className={styles.formField}>
+                    <label htmlFor="media-bulk-stem-input" className={styles.label}>
+                      Wspólny trzon nazwy dla zaznaczonych (snake_case)
+                    </label>
+                    <input
+                      id="media-bulk-stem-input"
+                      type="text"
+                      value={bulkBaseName}
+                      onChange={e => {
+                        const nextStem = e.target.value;
+                        setBulkBaseName(nextStem);
+                        applyBulkSettingsToStaged(
+                          dateSourceMode,
+                          manualBulkYear,
+                          manualBulkMonth,
+                          manualBulkDay,
+                          manualBulkHour,
+                          manualBulkMinute,
+                          manualBulkSecond,
+                          nextStem
+                        );
+                      }}
+                      className={styles.input}
+                    />
+                  </div>
+                )}
               </div>
 
-              {galleryCandidates.length === 0 ? (
-                <p className={styles.emptyText}>
-                  Brak dostępnych plików w galerii spełniających kryteria wyszukiwania.
-                </p>
-              ) : (
-                <>
-                  <div className={styles.mediaGrid}>
-                    {galleryCandidates.map(cand => {
-                      const isChecked = selectedExistingIds.includes(cand.id);
-                      return (
-                        <div key={cand.id} className={styles.mediaTileWrapper}>
-                          <button
-                            type="button"
-                            data-testid={`existing-gallery-candidate-${String(cand.id)}`}
-                            onClick={() => {
-                              setSelectedExistingIds(prev =>
-                                prev.includes(cand.id)
-                                  ? prev.filter(id => id !== cand.id)
-                                  : [...prev, cand.id]
-                              );
-                            }}
-                            className={`${styles.mediaTile} ${
-                              isChecked ? styles.mediaTileSelected : ''
-                            }`}
-                          >
-                            <div className={styles.thumbWrapper}>
-                              {cand.mediaType === 'IMAGE' ? (
-                                <img
-                                  src={mediaApi.getThumbnailUrl(cand.id)}
-                                  alt={cand.title ?? ''}
-                                  className={styles.thumbImage}
-                                />
-                              ) : cand.mediaType === 'VIDEO' ? (
-                                <>
-                                  <video
-                                    src={`${mediaApi.getFileUrl(cand.id)}#t=0.5`}
-                                    preload="metadata"
-                                    muted
-                                    playsInline
-                                    className={styles.thumbImage}
-                                  />
-                                  <span className={styles.videoPlayOverlay}>▶</span>
-                                </>
-                              ) : (
-                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', background: 'linear-gradient(135deg, #312e81 0%, #4338ca 100%)', color: '#ffffff' }}>
-                                  <span style={{ fontSize: '2.4rem' }}>🎵</span>
-                                  <span style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase' }}>Audio</span>
-                                </div>
-                              )}
-                              {isChecked && (
-                                <span className={styles.primaryBadge}>✓ Wybrano</span>
-                              )}
-                              {(cand.dateText ?? cand.year) && (
-                                <span className={styles.dateCornerBadge}>
-                                  {cand.dateText ?? cand.year}
-                                </span>
-                              )}
-                            </div>
-                            {Boolean(cand.title ?? (cand.personNames && cand.personNames.length > 0)) && (
-                              <div className={styles.tileBody}>
-                                {cand.title && <div className={styles.tileTitle}>{cand.title}</div>}
-                                {cand.personNames && cand.personNames.length > 0 && (
-                                  <div style={{ fontSize: '0.74rem', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    👤 {cand.personNames.join(', ')}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
+              {/* Portrait & Unknown options */}
+              {(context === 'PERSON' || context === 'COLLECTION') && (
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '1.25rem',
+                    alignItems: 'center',
+                    padding: '0.65rem 0.9rem',
+                    backgroundColor: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '8px',
+                  }}
+                >
+                  {context === 'COLLECTION' && (
+                    <label
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.4rem',
+                        fontSize: '0.84rem',
+                        fontWeight: 600,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={uploadIsPortrait}
+                        onChange={e => {
+                          setUploadIsPortrait(e.target.checked);
+                          if (e.target.checked) setUploadIsUnknown(false);
+                        }}
+                      />
+                      <span>Portret (zdjęcie portretowe osoby)</span>
+                    </label>
+                  )}
 
-                  {galleryTotalPages > 1 && (
-                    <div style={{ marginTop: '0.85rem' }}>
-                      <Pagination
-                        currentPage={galleryPage}
-                        totalPages={galleryTotalPages}
-                        onPageChange={p => {
-                          void fetchGalleryCandidates(
-                            gallerySearchQuery,
-                            galleryTypeFilter,
-                            gallerySortBy,
-                            p
+                  {(context === 'PERSON' || uploadIsPortrait) && (
+                    <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                      <label
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          fontSize: '0.83rem',
+                          fontWeight: 600,
+                        }}
+                      >
+                        <input
+                          type="radio"
+                          name="personPortraitType"
+                          checked={uploadPortraitType === 'SINGLE'}
+                          onChange={() => {
+                            setUploadPortraitType('SINGLE');
+                          }}
+                        />
+                        <span>👤 Portret pojedynczy (jednoosobowy – portraits/single)</span>
+                      </label>
+                      <label
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          fontSize: '0.83rem',
+                          fontWeight: 600,
+                        }}
+                      >
+                        <input
+                          type="radio"
+                          name="personPortraitType"
+                          checked={uploadPortraitType === 'GROUP'}
+                          onChange={() => {
+                            setUploadPortraitType('GROUP');
+                          }}
+                        />
+                        <span>👥 Portret grupowy (wieloosobowy – portraits/group)</span>
+                      </label>
+                    </div>
+                  )}
+
+                  {context === 'COLLECTION' && (
+                    <label
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.4rem',
+                        fontSize: '0.84rem',
+                        fontWeight: 600,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={uploadIsUnknown}
+                        onChange={e => {
+                          setUploadIsUnknown(e.target.checked);
+                          if (e.target.checked) setUploadIsPortrait(false);
+                        }}
+                      />
+                      <span>Oznacz jako nieznane (trafi do podfolderu unknown)</span>
+                    </label>
+                  )}
+                </div>
+              )}
+
+              {/* Point 7: Bulk Manual Date with "Przedział niepewności „między … a …”" & Aligned Calendar */}
+              {context !== 'GRAVE' && dateSourceMode === 'EVENT_OR_MANUAL' && (
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.65rem',
+                    background: '#f8fafc',
+                    padding: '0.85rem',
+                    borderRadius: '8px',
+                    border: '1px solid #e2e8f0',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: '0.5rem',
+                    }}
+                  >
+                    <span className={styles.label} style={{ margin: 0 }}>
+                      {uploadIsRange
+                        ? '📅 Pierwsza granica daty („między…”):'
+                        : '📅 Data i czas wykonania dla zaznaczonych:'}
+                    </span>
+                    <label
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        fontSize: '0.82rem',
+                        fontWeight: 600,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={uploadIsRange}
+                        onChange={e => {
+                          const nextR = e.target.checked;
+                          setUploadIsRange(nextR);
+                          applyBulkSettingsToStaged(
+                            dateSourceMode,
+                            manualBulkYear,
+                            manualBulkMonth,
+                            manualBulkDay,
+                            manualBulkHour,
+                            manualBulkMinute,
+                            manualBulkSecond,
+                            bulkBaseName,
+                            nextR
                           );
                         }}
                       />
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-
-            <div className={styles.modalFooter}>
-              <span style={{ fontSize: '0.84rem', color: '#475569', fontWeight: 600 }}>
-                Wybrano plików: <strong>{String(selectedExistingIds.length)}</strong>
-              </span>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowLinkExistingModal(false);
-                  }}
-                  className={styles.btnSecondary}
-                >
-                  Anuluj
-                </button>
-                <button
-                  type="button"
-                  data-testid="confirm-link-existing-media-button"
-                  disabled={selectedExistingIds.length === 0 || isSubmitting}
-                  onClick={() => {
-                    void handleConfirmLinkExisting();
-                  }}
-                  className={styles.btnPrimary}
-                >
-                  ✓ Przypisz wybrane ({String(selectedExistingIds.length)})
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Fullscreen Lightbox with Version Switcher, Reverse Side, Authors, Source, Person Roles & Interactive Cropper */}
-      {activeItem && (
-        <div
-          className={styles.fullscreenOverlay}
-          data-testid="media-lightbox-modal"
-          onClick={() => {
-            setActiveIndex(null);
-          }}
-        >
-          <div
-            className={styles.fullscreenTopBar}
-            onClick={e => {
-              e.stopPropagation();
-            }}
-          >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-              <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>
-                {activeItem.title ?? 'Podgląd multimediów'} (
-                {String((activeIndex ?? 0) + 1)} / {String(allViewableItems.length)})
-              </span>
-
-              {/* Points 15 & 17: Version & Reverse Side Switcher */}
-              {activeVersions.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                  {activeVersions.map(ver => {
-                    const isVerActive =
-                      selectedVersionId !== null
-                        ? selectedVersionId === ver.id
-                        : ver.main;
-                    return (
-                      <button
-                        key={ver.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedVersionId(ver.id);
-                          setZoom(1);
-                          setPan({ x: 0, y: 0 });
-                        }}
-                        style={{
-                          padding: '0.22rem 0.6rem',
-                          fontSize: '0.75rem',
-                          fontWeight: 700,
-                          borderRadius: '999px',
-                          border: isVerActive ? '1px solid #60a5fa' : '1px solid rgba(255,255,255,0.3)',
-                          backgroundColor: isVerActive ? '#2563eb' : 'rgba(255,255,255,0.12)',
-                          color: '#ffffff',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        {ver.reverseSide ? '🔄 ' : ver.main ? '⭐ ' : ''}
-                        {ver.versionLabel}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div className={styles.topBarButtons}>
-              {activeItem.mediaType === 'IMAGE' && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setZoom(prev => Math.max(1, prev - 0.5));
-                    }}
-                    className={styles.btnSecondary}
-                  >
-                    −
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setZoom(1);
-                      setPan({ x: 0, y: 0 });
-                    }}
-                    className={styles.btnSecondary}
-                  >
-                    {Math.round(zoom * 100)}%
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setZoom(prev => Math.min(5, prev + 0.5));
-                    }}
-                    className={styles.btnSecondary}
-                  >
-                    +
-                  </button>
-                </>
-              )}
-
-              <button
-                type="button"
-                data-testid="toggle-media-details-drawer"
-                onClick={() => {
-                  setShowDetailsDrawer(prev => !prev);
-                }}
-                className={styles.btnSecondary}
-              >
-                ℹ️ {showDetailsDrawer ? 'Ukryj szczegóły' : 'Szczegóły i opcje'}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveIndex(null);
-                }}
-                className={styles.btnSecondary}
-              >
-                ✕ Zamknij
-              </button>
-            </div>
-          </div>
-
-          <div
-            className={styles.viewerStage}
-            onClick={e => {
-              e.stopPropagation();
-            }}
-            onWheel={e => {
-              if (activeItem.mediaType !== 'IMAGE') return;
-              e.preventDefault();
-              const delta = e.deltaY < 0 ? 0.25 : -0.25;
-              setZoom(prev => {
-                const next = Math.min(5, Math.max(1, prev + delta));
-                if (next === 1) setPan({ x: 0, y: 0 });
-                return next;
-              });
-            }}
-            onMouseDown={e => {
-              if (zoom > 1) {
-                setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
-              }
-            }}
-            onMouseMove={e => {
-              if (dragStart && zoom > 1) {
-                setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
-              }
-            }}
-            onMouseUp={() => {
-              setDragStart(null);
-            }}
-            onTouchStart={e => {
-              if (e.touches.length === 2) {
-                const dx = e.touches[0].clientX - e.touches[1].clientX;
-                const dy = e.touches[0].clientY - e.touches[1].clientY;
-                setPinchStartDist(Math.hypot(dx, dy));
-              } else if (e.touches.length === 1 && zoom > 1) {
-                setDragStart({
-                  x: e.touches[0].clientX - pan.x,
-                  y: e.touches[0].clientY - pan.y,
-                });
-              }
-            }}
-            onTouchMove={e => {
-              if (e.touches.length === 2 && pinchStartDist !== null) {
-                const dx = e.touches[0].clientX - e.touches[1].clientX;
-                const dy = e.touches[0].clientY - e.touches[1].clientY;
-                const dist = Math.hypot(dx, dy);
-                const scaleFactor = dist / pinchStartDist;
-                setZoom(prev => Math.min(5, Math.max(1, prev * scaleFactor)));
-                setPinchStartDist(dist);
-              } else if (e.touches.length === 1 && dragStart && zoom > 1) {
-                setPan({
-                  x: e.touches[0].clientX - dragStart.x,
-                  y: e.touches[0].clientY - dragStart.y,
-                });
-              }
-            }}
-            onTouchEnd={() => {
-              setPinchStartDist(null);
-              setDragStart(null);
-            }}
-          >
-            {allViewableItems.length > 1 && (
-              <button
-                type="button"
-                aria-label="Poprzednie zdjęcie lub film"
-                onClick={() => {
-                  handleNavigateMedia(-1);
-                }}
-                className={`${styles.navArrowBtn} ${styles.navArrowLeft}`}
-              >
-                ‹
-              </button>
-            )}
-
-            <div
-              style={{
-                transform: `translate(${String(pan.x)}px, ${String(pan.y)}px) scale(${String(zoom)})`,
-                transition: dragStart ? 'none' : 'transform 0.1s ease-out',
-                cursor: zoom > 1 ? 'grab' : 'default',
-                maxWidth: '94vw',
-                maxHeight: showDetailsDrawer ? '44vh' : '82vh',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              {activeItem.mediaType === 'VIDEO' && !activeSelectedVersion?.reverseSide ? (
-                <video
-                  src={activeStageUrl}
-                  controls
-                  style={{ maxWidth: '94vw', maxHeight: '78vh', objectFit: 'contain' }}
-                />
-              ) : activeItem.mediaType === 'AUDIO' ? (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1.25rem', padding: '2rem', background: 'rgba(15, 23, 42, 0.85)', borderRadius: '16px', maxWidth: '90vw', width: '460px' }}>
-                  <span style={{ fontSize: '4.5rem', color: '#818cf8' }}>🎵</span>
-                  <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#ffffff', textAlign: 'center' }}>
-                    {activeItem.title ?? activeItem.fileName}
-                  </div>
-                  <audio
-                    src={activeStageUrl}
-                    controls
-                    style={{ width: '100%', borderRadius: '30px' }}
-                  />
-                </div>
-              ) : (
-                <img
-                  src={activeStageUrl}
-                  alt={activeItem.title ?? ''}
-                  draggable={false}
-                  style={{ maxWidth: '94vw', maxHeight: '80vh', objectFit: 'contain' }}
-                />
-              )}
-            </div>
-
-            {allViewableItems.length > 1 && (
-              <button
-                type="button"
-                aria-label="Następne zdjęcie lub film"
-                onClick={() => {
-                  handleNavigateMedia(1);
-                }}
-                className={`${styles.navArrowBtn} ${styles.navArrowRight}`}
-              >
-                ›
-              </button>
-            )}
-          </div>
-
-          {showDetailsDrawer && (
-            <div
-              className={styles.detailsDrawer}
-              onClick={e => {
-                e.stopPropagation();
-              }}
-            >
-              {isEditingItem ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  <div className={styles.formGrid}>
-                    <div className={styles.formField}>
-                      <label htmlFor="edit-media-filename" className={styles.label}>
-                        Nazwa pliku na dysku (snake_case)
-                      </label>
-                      <input
-                        id="edit-media-filename"
-                        type="text"
-                        value={editFileName}
-                        onChange={e => {
-                          setEditFileName(e.target.value);
-                        }}
-                        className={styles.input}
-                      />
-                    </div>
-                    <div className={styles.formField}>
-                      <label htmlFor="edit-media-folder" className={styles.label}>
-                        Zmień nazwę folderu docelowego (opcjonalnie)
-                      </label>
-                      <input
-                        id="edit-media-folder"
-                        type="text"
-                        placeholder={activeItem.directoryPath ?? 'np. nowy_folder'}
-                        value={editFolderName}
-                        onChange={e => {
-                          setEditFolderName(e.target.value);
-                        }}
-                        className={styles.input}
-                      />
-                    </div>
-                    <div className={styles.formField}>
-                      <label htmlFor="edit-media-title" className={styles.label}>
-                        Tytuł (krótka nazwa kafelka)
-                      </label>
-                      <input
-                        id="edit-media-title"
-                        type="text"
-                        value={editTitle}
-                        onChange={e => {
-                          setEditTitle(e.target.value);
-                        }}
-                        className={styles.input}
-                      />
-                    </div>
-                    <div className={styles.formField}>
-                      <label htmlFor="edit-media-source" className={styles.label}>
-                        Źródło zdjęcia / filmu (tekstowo)
-                      </label>
-                      <input
-                        id="edit-media-source"
-                        type="text"
-                        placeholder="np. Z albumu babci Katarzyny"
-                        value={editSourceText}
-                        onChange={e => {
-                          setEditSourceText(e.target.value);
-                        }}
-                        className={styles.input}
-                      />
-                    </div>
-                    <div className={styles.formField}>
-                      <label htmlFor="edit-media-inscription" className={styles.label}>
-                        Podpis z odwrotu zdjęcia / oryginalna dedykacja
-                      </label>
-                      <input
-                        id="edit-media-inscription"
-                        type="text"
-                        placeholder="np. Na pamiątkę z Krynicy, 1938 r."
-                        value={editInscription}
-                        onChange={e => {
-                          setEditInscription(e.target.value);
-                        }}
-                        className={styles.input}
-                      />
-                    </div>
-                  </div>
-
-                  <div className={styles.formField} style={{ width: '100%' }}>
-                    <label htmlFor="edit-media-desc" className={styles.label}>
-                      Opis tekstowy (zwykły tekst)
+                      <span>Przedział niepewności „między … a …”</span>
                     </label>
-                    <textarea
-                      id="edit-media-desc"
-                      rows={4}
-                      placeholder="Dodatkowe informacje o zdjęciu/nagraniu..."
-                      value={editDescription}
-                      onChange={e => {
-                        setEditDescription(e.target.value);
-                      }}
-                      className={styles.textarea}
-                    />
                   </div>
 
-                  {/* Date & Time Mode */}
                   <div className={styles.formGrid}>
                     <div className={styles.formField}>
-                      <label htmlFor="edit-media-date-mode" className={styles.label}>
-                        Źródło daty i czasu tego pliku
-                      </label>
+                      <span className={styles.label}>Kwalifikator daty</span>
                       <select
-                        id="edit-media-date-mode"
-                        value={editDateMode}
+                        value={manualBulkQual}
                         onChange={e => {
-                          const nextM = e.target.value as
-                            | 'MANUAL'
-                            | 'METADATA'
-                            | 'EVENT'
-                            | 'UNDATED';
-                          setEditDateMode(nextM);
-                          if (nextM === 'METADATA') {
-                            setEditIsBetween(false);
-                            setEditDateQual('EXACT');
-                            setEditTimeQual('EXACT');
-                            if (activeItem.metadataYear) {
-                              setEditYear(numToStr(activeItem.metadataYear));
-                              setEditMonth(numToStr(activeItem.metadataMonth));
-                              setEditDay(numToStr(activeItem.metadataDay));
-                              setEditHour(numToStr(activeItem.metadataHour));
-                              setEditMinute(numToStr(activeItem.metadataMinute));
-                              setEditSecond(numToStr(activeItem.metadataSecond));
+                          const v = e.target.value;
+                          setManualBulkQual(v);
+                          applyBulkSettingsToStaged(
+                            dateSourceMode,
+                            manualBulkYear,
+                            manualBulkMonth,
+                            manualBulkDay,
+                            manualBulkHour,
+                            manualBulkMinute,
+                            manualBulkSecond,
+                            bulkBaseName,
+                            uploadIsRange,
+                            v
+                          );
+                        }}
+                        className={styles.input}
+                      >
+                        {QUALIFIER_OPTIONS.map(q => (
+                          <option key={q.value} value={q.value}>
+                            {q.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className={styles.formField}>
+                      <span className={styles.label}>
+                        Wybór z kalendarza{' '}
+                        {bulkUploadStartWeekday ? `(📅 ${bulkUploadStartWeekday})` : ''}
+                      </span>
+                      <input
+                        type="date"
+                        value={toIsoDateInputValue(
+                          manualBulkYear,
+                          manualBulkMonth,
+                          manualBulkDay
+                        )}
+                        onChange={e => {
+                          if (e.target.value) {
+                            const p = e.target.value.split('-');
+                            if (p.length === 3) {
+                              const y = String(Number(p[0]));
+                              const m = String(Number(p[1]));
+                              const d = String(Number(p[2]));
+                              setManualBulkYear(y);
+                              setManualBulkMonth(m);
+                              setManualBulkDay(d);
+                              applyBulkSettingsToStaged(
+                                dateSourceMode,
+                                y,
+                                m,
+                                d,
+                                manualBulkHour,
+                                manualBulkMinute,
+                                manualBulkSecond,
+                                bulkBaseName
+                              );
                             }
                           }
                         }}
                         className={styles.input}
-                      >
-                        <option value="MANUAL">
-                          Wpisz datę i czas ręcznie (lub przedział „między … a …”)
-                        </option>
-                        <option value="METADATA">
-                          Przywróć datę i czas z metadanych pliku (zawsze Dokładnie)
-                        </option>
-                        {eventId !== undefined && (
-                          <option value="EVENT">Ustaw z daty bieżącego wydarzenia</option>
-                        )}
-                        <option value="UNDATED">Wyczyść datę (undated)</option>
-                      </select>
+                      />
                     </div>
 
-                    {editDateMode === 'METADATA' &&
-                      activeItem.availableMetadataDates &&
-                      activeItem.availableMetadataDates.length > 0 && (
-                        <div className={styles.formField}>
-                          <label htmlFor="edit-media-meta-tag" className={styles.label}>
-                            Wybierz pole metadanych pliku
-                          </label>
-                          <select
-                            id="edit-media-meta-tag"
-                            value={editSelectedMetadataTag}
-                            onChange={e => {
-                              const tag = e.target.value;
-                              setEditSelectedMetadataTag(tag);
-                              const opt = activeItem.availableMetadataDates?.find(
-                                o => o.sourceTag === tag
-                              );
-                              if (opt) {
-                                setEditYear(numToStr(opt.year));
-                                setEditMonth(numToStr(opt.month));
-                                setEditDay(numToStr(opt.day));
-                                setEditHour(numToStr(opt.hour));
-                                setEditMinute(numToStr(opt.minute));
-                                setEditSecond(numToStr(opt.second));
-                              }
-                            }}
-                            className={styles.input}
-                          >
-                            {activeItem.availableMetadataDates.map(opt => (
-                              <option key={opt.sourceTag} value={opt.sourceTag}>
-                                {opt.sourceTag} — {opt.dateText}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-                  </div>
-
-                  {editDateMode === 'MANUAL' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
-                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.82rem', fontWeight: 600 }}>
+                    <div className={styles.formField}>
+                      <span className={styles.label}>Rok / Miesiąc / Dzień</span>
+                      <div className={styles.compactDateTimeInputs}>
                         <input
-                          type="checkbox"
-                          checked={editIsBetween}
+                          type="number"
+                          placeholder="RRRR"
+                          value={manualBulkYear}
                           onChange={e => {
-                            setEditIsBetween(e.target.checked);
+                            const v = e.target.value;
+                            setManualBulkYear(v);
+                            applyBulkSettingsToStaged(
+                              dateSourceMode,
+                              v,
+                              manualBulkMonth,
+                              manualBulkDay,
+                              manualBulkHour,
+                              manualBulkMinute,
+                              manualBulkSecond,
+                              bulkBaseName
+                            );
                           }}
+                          className={`${styles.miniDateInput} ${styles.miniYearInput}`}
                         />
-                        <span>Przedział niepewności „między … a …” dla daty wykonania</span>
-                      </label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={12}
+                          placeholder="MM"
+                          value={manualBulkMonth}
+                          onChange={e => {
+                            const v = e.target.value;
+                            setManualBulkMonth(v);
+                            applyBulkSettingsToStaged(
+                              dateSourceMode,
+                              manualBulkYear,
+                              v,
+                              manualBulkDay,
+                              manualBulkHour,
+                              manualBulkMinute,
+                              manualBulkSecond,
+                              bulkBaseName
+                            );
+                          }}
+                          className={styles.miniDateInput}
+                        />
+                        <input
+                          type="number"
+                          min={1}
+                          max={31}
+                          placeholder="DD"
+                          value={manualBulkDay}
+                          onChange={e => {
+                            const v = e.target.value;
+                            setManualBulkDay(v);
+                            applyBulkSettingsToStaged(
+                              dateSourceMode,
+                              manualBulkYear,
+                              manualBulkMonth,
+                              v,
+                              manualBulkHour,
+                              manualBulkMinute,
+                              manualBulkSecond,
+                              bulkBaseName
+                            );
+                          }}
+                          className={styles.miniDateInput}
+                        />
+                      </div>
+                    </div>
 
+                    <div className={styles.formField}>
+                      <span className={styles.label}>Kwalifikator i czas (GG:MM:SS)</span>
                       <div className={styles.compactDateTimeInputs}>
                         <select
-                          value={editDateQual}
+                          value={manualBulkTimeQual}
                           onChange={e => {
-                            setEditDateQual(e.target.value);
+                            setManualBulkTimeQual(e.target.value);
                           }}
                           className={styles.input}
-                          style={{ width: '140px', height: '34px' }}
+                          style={{ width: '125px', height: '34px' }}
                         >
                           {QUALIFIER_OPTIONS.map(q => (
                             <option key={q.value} value={q.value}>
@@ -3715,57 +2068,23 @@ export default function MediaGallerySection({
                         </select>
                         <input
                           type="number"
-                          placeholder="RRRR"
-                          value={editYear}
-                          onChange={e => {
-                            setEditYear(e.target.value);
-                          }}
-                          className={`${styles.miniDateInput} ${styles.miniYearInput}`}
-                        />
-                        <input
-                          type="number"
-                          min={1}
-                          max={12}
-                          placeholder="MM"
-                          value={editMonth}
-                          onChange={e => {
-                            setEditMonth(e.target.value);
-                          }}
-                          className={styles.miniDateInput}
-                        />
-                        <input
-                          type="number"
-                          min={1}
-                          max={31}
-                          placeholder="DD"
-                          value={editDay}
-                          onChange={e => {
-                            setEditDay(e.target.value);
-                          }}
-                          className={styles.miniDateInput}
-                        />
-                        <select
-                          value={editTimeQual}
-                          onChange={e => {
-                            setEditTimeQual(e.target.value);
-                          }}
-                          className={styles.input}
-                          style={{ width: '180px', height: '34px' }}
-                        >
-                          {QUALIFIER_OPTIONS.map(q => (
-                            <option key={q.value} value={q.value}>
-                              Czas: {q.label}
-                            </option>
-                          ))}
-                        </select>
-                        <input
-                          type="number"
                           min={0}
                           max={23}
                           placeholder="GG"
-                          value={editHour}
+                          value={manualBulkHour}
                           onChange={e => {
-                            setEditHour(e.target.value);
+                            const v = e.target.value;
+                            setManualBulkHour(v);
+                            applyBulkSettingsToStaged(
+                              dateSourceMode,
+                              manualBulkYear,
+                              manualBulkMonth,
+                              manualBulkDay,
+                              v,
+                              manualBulkMinute,
+                              manualBulkSecond,
+                              bulkBaseName
+                            );
                           }}
                           className={styles.miniDateInput}
                         />
@@ -3775,9 +2094,20 @@ export default function MediaGallerySection({
                           min={0}
                           max={59}
                           placeholder="MM"
-                          value={editMinute}
+                          value={manualBulkMinute}
                           onChange={e => {
-                            setEditMinute(e.target.value);
+                            const v = e.target.value;
+                            setManualBulkMinute(v);
+                            applyBulkSettingsToStaged(
+                              dateSourceMode,
+                              manualBulkYear,
+                              manualBulkMonth,
+                              manualBulkDay,
+                              manualBulkHour,
+                              v,
+                              manualBulkSecond,
+                              bulkBaseName
+                            );
                           }}
                           className={styles.miniDateInput}
                         />
@@ -3787,24 +2117,1628 @@ export default function MediaGallerySection({
                           min={0}
                           max={59}
                           placeholder="SS"
-                          value={editSecond}
+                          value={manualBulkSecond}
                           onChange={e => {
-                            setEditSecond(e.target.value);
+                            const v = e.target.value;
+                            setManualBulkSecond(v);
+                            applyBulkSettingsToStaged(
+                              dateSourceMode,
+                              manualBulkYear,
+                              manualBulkMonth,
+                              manualBulkDay,
+                              manualBulkHour,
+                              manualBulkMinute,
+                              v,
+                              bulkBaseName
+                            );
                           }}
                           className={styles.miniDateInput}
                         />
                       </div>
+                    </div>
+                  </div>
 
-                      {editIsBetween && (
-                        <div className={styles.compactDateTimeInputs}>
-                          <span className={styles.label}>… a:</span>
+                  {uploadIsRange && (
+                    <div
+                      style={{
+                        borderTop: '1px solid #cbd5e1',
+                        paddingTop: '0.65rem',
+                        marginTop: '0.35rem',
+                      }}
+                    >
+                      <span
+                        className={styles.label}
+                        style={{ marginBottom: '0.4rem', display: 'block' }}
+                      >
+                        📅 Druga granica przedziału („… a …”):
+                      </span>
+                      <div className={styles.formGrid}>
+                        <div className={styles.formField}>
+                          <span className={styles.label}>Kwalifikator drugiej granicy</span>
                           <select
-                            value={editRangeEndQual}
+                            value={manualBulkRangeEndQual}
                             onChange={e => {
-                              setEditRangeEndQual(e.target.value);
+                              setManualBulkRangeEndQual(e.target.value);
                             }}
                             className={styles.input}
-                            style={{ width: '140px', height: '34px' }}
+                          >
+                            {QUALIFIER_OPTIONS.map(q => (
+                              <option key={q.value} value={q.value}>
+                                {q.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className={styles.formField}>
+                          <span className={styles.label}>
+                            Wybór z kalendarza{' '}
+                            {bulkUploadEndWeekday ? `(📅 ${bulkUploadEndWeekday})` : ''}
+                          </span>
+                          <input
+                            type="date"
+                            value={toIsoDateInputValue(
+                              manualBulkRangeEndYear,
+                              manualBulkRangeEndMonth,
+                              manualBulkRangeEndDay
+                            )}
+                            onChange={e => {
+                              if (e.target.value) {
+                                const p = e.target.value.split('-');
+                                if (p.length === 3) {
+                                  setManualBulkRangeEndYear(String(Number(p[0])));
+                                  setManualBulkRangeEndMonth(String(Number(p[1])));
+                                  setManualBulkRangeEndDay(String(Number(p[2])));
+                                }
+                              }
+                            }}
+                            className={styles.input}
+                          />
+                        </div>
+
+                        <div className={styles.formField}>
+                          <span className={styles.label}>Rok / Miesiąc / Dzień</span>
+                          <div className={styles.compactDateTimeInputs}>
+                            <input
+                              type="number"
+                              placeholder="RRRR"
+                              value={manualBulkRangeEndYear}
+                              onChange={e => {
+                                setManualBulkRangeEndYear(e.target.value);
+                              }}
+                              className={`${styles.miniDateInput} ${styles.miniYearInput}`}
+                            />
+                            <input
+                              type="number"
+                              min={1}
+                              max={12}
+                              placeholder="MM"
+                              value={manualBulkRangeEndMonth}
+                              onChange={e => {
+                                setManualBulkRangeEndMonth(e.target.value);
+                              }}
+                              className={styles.miniDateInput}
+                            />
+                            <input
+                              type="number"
+                              min={1}
+                              max={31}
+                              placeholder="DD"
+                              value={manualBulkRangeEndDay}
+                              onChange={e => {
+                                setManualBulkRangeEndDay(e.target.value);
+                              }}
+                              className={styles.miniDateInput}
+                            />
+                          </div>
+                        </div>
+
+                        <div className={styles.formField}>
+                          <span className={styles.label}>Czas drugiej granicy (GG:MM:SS)</span>
+                          <div className={styles.compactDateTimeInputs}>
+                            <select
+                              value={manualBulkRangeEndTimeQual}
+                              onChange={e => {
+                                setManualBulkRangeEndTimeQual(e.target.value);
+                              }}
+                              className={styles.input}
+                              style={{ width: '125px', height: '34px' }}
+                            >
+                              {QUALIFIER_OPTIONS.map(q => (
+                                <option key={q.value} value={q.value}>
+                                  {q.label}
+                                </option>
+                              ))}
+                            </select>
+                            <input
+                              type="number"
+                              min={0}
+                              max={23}
+                              placeholder="GG"
+                              value={manualBulkRangeEndHour}
+                              onChange={e => {
+                                setManualBulkRangeEndHour(e.target.value);
+                              }}
+                              className={styles.miniDateInput}
+                            />
+                            <span>:</span>
+                            <input
+                              type="number"
+                              min={0}
+                              max={59}
+                              placeholder="MM"
+                              value={manualBulkRangeEndMinute}
+                              onChange={e => {
+                                setManualBulkRangeEndMinute(e.target.value);
+                              }}
+                              className={styles.miniDateInput}
+                            />
+                            <span>:</span>
+                            <input
+                              type="number"
+                              min={0}
+                              max={59}
+                              placeholder="SS"
+                              value={manualBulkRangeEndSecond}
+                              onChange={e => {
+                                setManualBulkRangeEndSecond(e.target.value);
+                              }}
+                              className={styles.miniDateInput}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Point 12: Path preview always preserves untouchable event date prefix from backend */}
+              {directoryPreview && (
+                <div className={styles.pathPreviewBanner} data-testid="media-path-preview">
+                  📁 Docelowy katalog na dysku: <strong>{directoryPreview}/</strong>
+                </div>
+              )}
+
+              {/* Bulk Details Panel for Selected Staged Files */}
+              {stagedFiles.length > 1 && (
+                <div
+                  style={{
+                    background: '#f8fafc',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    padding: '0.85rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.65rem',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: '0.5rem',
+                    }}
+                  >
+                    <strong style={{ fontSize: '0.88rem', color: '#1e293b' }}>
+                      ⚙️ Zbiorcze szczegóły dla zaznaczonych plików ({String(selectedStagedCount)}{' '}
+                      z {String(stagedFiles.length)})
+                    </strong>
+                    <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setStagedFiles(prev =>
+                            prev.map(s => ({ ...s, selectedForBulk: true }))
+                          );
+                        }}
+                        className={styles.btnSecondary}
+                        style={{ fontSize: '0.78rem', padding: '0.2rem 0.6rem' }}
+                      >
+                        Zaznacz wszystkie
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setStagedFiles(prev =>
+                            prev.map(s => ({ ...s, selectedForBulk: false }))
+                          );
+                        }}
+                        className={styles.btnSecondary}
+                        style={{ fontSize: '0.78rem', padding: '0.2rem 0.6rem' }}
+                      >
+                        Odznacz wszystkie
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowBulkDetails(prev => !prev);
+                        }}
+                        className={styles.btnSecondary}
+                        style={{ fontSize: '0.78rem', padding: '0.2rem 0.6rem' }}
+                      >
+                        {showBulkDetails
+                          ? '▲ Zwiń zbiorcze szczegóły'
+                          : '▼ Rozwiń zbiorcze szczegóły'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {showBulkDetails && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.75rem',
+                        marginTop: '0.25rem',
+                      }}
+                    >
+                      <div className={styles.stagedDetailsRow}>
+                        <div className={styles.formField}>
+                          <span className={styles.label}>Wspólny tytuł</span>
+                          <input
+                            type="text"
+                            placeholder="Wspólny tytuł dla zaznaczonych plików..."
+                            value={bulkTitle}
+                            onChange={e => {
+                              setBulkTitle(e.target.value);
+                            }}
+                            className={styles.input}
+                          />
+                        </div>
+                        <div className={styles.formField}>
+                          <span className={styles.label}>Wspólne źródło zdjęcia/filmu</span>
+                          <input
+                            type="text"
+                            placeholder="np. Zbiór z archiwum rodzinnego"
+                            value={bulkSourceText}
+                            onChange={e => {
+                              setBulkSourceText(e.target.value);
+                            }}
+                            className={styles.input}
+                          />
+                        </div>
+                        <div className={styles.formField}>
+                          <span className={styles.label}>Wspólny podpis z odwrotu</span>
+                          <input
+                            type="text"
+                            placeholder="np. Pamiątka z wakacji"
+                            value={bulkInscriptionText}
+                            onChange={e => {
+                              setBulkInscriptionText(e.target.value);
+                            }}
+                            className={styles.input}
+                          />
+                        </div>
+                      </div>
+
+                      <div className={styles.formField} style={{ width: '100%' }}>
+                        <span className={styles.label}>Wspólny opis tekstowy</span>
+                        <textarea
+                          rows={3}
+                          placeholder="Wspólny opis dla zaznaczonych plików..."
+                          value={bulkDescription}
+                          onChange={e => {
+                            setBulkDescription(e.target.value);
+                          }}
+                          className={styles.textarea}
+                        />
+                      </div>
+
+                      <div
+                        style={{
+                          backgroundColor: '#ffffff',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: '8px',
+                          padding: '0.75rem',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.55rem',
+                        }}
+                      >
+                        <span className={styles.label}>
+                          Wspólne osoby na zdjęciu, osoby powiązane oraz autorzy:
+                        </span>
+                        <div className={styles.personLinksGrid}>
+                          <div className={styles.formField}>
+                            <span className={styles.label}>Rodzaj powiązania</span>
+                            <select
+                              value={bulkLinkRoleType}
+                              onChange={e => {
+                                setBulkLinkRoleType(
+                                  e.target.value as 'DEPICTED' | 'RELATED' | 'AUTHOR'
+                                );
+                              }}
+                              className={styles.input}
+                            >
+                              <option value="DEPICTED">
+                                👁️ Osoba widoczna na zdjęciu/filmie
+                              </option>
+                              <option value="RELATED">
+                                🔗 Osoba powiązana ze zdjęciem/filmem
+                              </option>
+                              <option value="AUTHOR">
+                                📷 Autor zdjęcia/nagrania (kto wykonał)
+                              </option>
+                            </select>
+                          </div>
+                          <div className={styles.formField}>
+                            <span className={styles.label}>Dodaj osobę z drzewa</span>
+                            <div style={{ display: 'flex', gap: '0.4rem' }}>
+                              <input
+                                type="text"
+                                placeholder="Szukaj w drzewie..."
+                                value={bulkLinkPersonQuery}
+                                onChange={e => {
+                                  setBulkLinkPersonQuery(e.target.value);
+                                }}
+                                className={styles.input}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => void handleSearchPersonForBulk()}
+                                className={styles.btnSecondary}
+                              >
+                                Szukaj
+                              </button>
+                            </div>
+                          </div>
+                          <div className={styles.formField}>
+                            <span className={styles.label}>Lub wpisz osobę tekstowo</span>
+                            <div style={{ display: 'flex', gap: '0.4rem' }}>
+                              <input
+                                type="text"
+                                placeholder="np. Fotograf z Lublina"
+                                value={bulkLinkTextInput}
+                                onChange={e => {
+                                  setBulkLinkTextInput(e.target.value);
+                                }}
+                                className={styles.input}
+                              />
+                              <select
+                                value={bulkLinkTextSex}
+                                onChange={e => {
+                                  setBulkLinkTextSex(e.target.value as PersonSex);
+                                }}
+                                className={styles.input}
+                                style={{ width: '75px' }}
+                              >
+                                <option value="MALE">M</option>
+                                <option value="FEMALE">K</option>
+                                <option value="UNKNOWN">?</option>
+                              </select>
+                              <button
+                                type="button"
+                                onClick={handleAddTextPersonToBulk}
+                                className={styles.btnSecondary}
+                              >
+                                + Dodaj
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {bulkLinkPersonResults.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                            {bulkLinkPersonResults.map(p => (
+                              <button
+                                key={p.id}
+                                type="button"
+                                onClick={() => {
+                                  handleAddDbPersonToBulk(p);
+                                }}
+                                className={styles.btnSecondary}
+                              >
+                                + Wybierz: {p.givenName} {p.surname} ({p.birthYear ?? '?'})
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {bulkPersonLinks.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                            {bulkPersonLinks.map((pl, bIdx) => (
+                              <span
+                                key={`${pl.displayLabel}-${String(bIdx)}`}
+                                className={styles.selectedFilesBadge}
+                              >
+                                {pl.displayLabel}{' '}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setBulkPersonLinks(prev =>
+                                      prev.filter((_, i) => i !== bIdx)
+                                    );
+                                  }}
+                                  className={styles.pillRemoveBtn}
+                                >
+                                  ✕
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'flex-end',
+                          marginTop: '0.4rem',
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={handleApplyBulkDetailsToSelectedStaged}
+                          className={styles.btnPrimary}
+                          style={{ fontSize: '0.82rem', padding: '0.35rem 0.85rem' }}
+                        >
+                          ✓ Zastosuj te szczegóły do zaznaczonych plików ({String(selectedStagedCount)})
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Staged Files List with Thumbnail, Preview & Individual Between Date (Points 1 & 7) */}
+              {stagedFiles.length > 0 && (
+                <div className={styles.stagedList}>
+                  {stagedFiles.map((st, idx) => {
+                    const chosenMeta =
+                      st.metadataOptions.find(
+                        o => o.sourceTag === st.selectedMetadataTag
+                      ) ?? st.metadataOptions.at(0);
+
+                    return (
+                      <div
+                        key={`${st.file.name}-${String(idx)}`}
+                        className={styles.stagedCard}
+                      >
+                        <div className={styles.stagedTopRow}>
+                          <label
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.45rem',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            {stagedFiles.length > 1 && (
+                              <input
+                                type="checkbox"
+                                checked={st.selectedForBulk}
+                                onChange={e => {
+                                  const checked = e.target.checked;
+                                  setStagedFiles(prev =>
+                                    prev.map((item, i) =>
+                                      i === idx ? { ...item, selectedForBulk: checked } : item
+                                    )
+                                  );
+                                }}
+                              />
+                            )}
+                            <span className={styles.breakableCode}>📄 {st.file.name}</span>
+                          </label>
+
+                          {chosenMeta ? (
+                            <div className={styles.metadataBadge}>
+                              <span>📷 Metadane:</span>
+                              {st.metadataOptions.length > 1 ? (
+                                <select
+                                  value={st.selectedMetadataTag}
+                                  onChange={e => {
+                                    const tag = e.target.value;
+                                    const opt = st.metadataOptions.find(
+                                      o => o.sourceTag === tag
+                                    );
+                                    setStagedFiles(prev =>
+                                      prev.map((item, i) =>
+                                        i === idx
+                                          ? {
+                                              ...item,
+                                              selectedMetadataTag: tag,
+                                              year: opt ? String(opt.year) : item.year,
+                                              month: opt ? String(opt.month) : item.month,
+                                              day: opt ? String(opt.day) : item.day,
+                                              hour: opt ? String(opt.hour) : item.hour,
+                                              minute: opt ? String(opt.minute) : item.minute,
+                                              second: opt ? String(opt.second) : item.second,
+                                            }
+                                          : item
+                                      )
+                                    );
+                                  }}
+                                  className={styles.input}
+                                  style={{
+                                    height: '26px',
+                                    fontSize: '0.73rem',
+                                    width: 'auto',
+                                    padding: '0 0.4rem',
+                                  }}
+                                >
+                                  {st.metadataOptions.map(opt => (
+                                    <option key={opt.sourceTag} value={opt.sourceTag}>
+                                      {opt.sourceTag} — {opt.formattedText}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <span>
+                                  {chosenMeta.sourceTag.includes('lastModified')
+                                    ? 'data modyfikacji pliku'
+                                    : chosenMeta.sourceTag.replace(/[()]/g, '')}{' '}
+                                  — <strong>{chosenMeta.formattedText}</strong>
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setStagedFiles(prev =>
+                                    prev.map((item, i) =>
+                                      i === idx
+                                        ? {
+                                            ...item,
+                                            isBetweenRange: false,
+                                            dateQualifier: 'EXACT',
+                                            timeQualifier: 'EXACT',
+                                            year: String(chosenMeta.year),
+                                            month: String(chosenMeta.month),
+                                            day: String(chosenMeta.day),
+                                            hour: String(chosenMeta.hour),
+                                            minute: String(chosenMeta.minute),
+                                            second: String(chosenMeta.second),
+                                          }
+                                        : item
+                                    )
+                                  );
+                                }}
+                                className={styles.btnSecondary}
+                                style={{ padding: '0.15rem 0.5rem', fontSize: '0.72rem' }}
+                              >
+                                Użyj tej daty z metadanych
+                              </button>
+                            </div>
+                          ) : (
+                            <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                              Brak daty w metadanych pliku
+                            </span>
+                          )}
+                        </div>
+
+                        <div className={styles.stagedMainRow}>
+                          {/* Point 1: Small Thumbnail & Click to Preview */}
+                          <button
+                            type="button"
+                            title="Kliknij, aby powiększyć i przeanalizować plik"
+                            onClick={() => {
+                              if (st.previewUrl) {
+                                setPreviewModalItem({
+                                  url: st.previewUrl,
+                                  mediaType: st.mediaType,
+                                  title: st.title || st.file.name,
+                                });
+                              }
+                            }}
+                            className={styles.stagedThumbButton}
+                          >
+                            {st.mediaType === 'IMAGE' && st.previewUrl ? (
+                              <img
+                                src={st.previewUrl}
+                                alt={st.file.name}
+                                className={styles.stagedThumbImg}
+                              />
+                            ) : st.mediaType === 'VIDEO' && st.previewUrl ? (
+                              <video
+                                src={st.previewUrl}
+                                muted
+                                playsInline
+                                className={styles.stagedThumbImg}
+                              />
+                            ) : (
+                              <span style={{ fontSize: '1.6rem', color: '#ffffff' }}>🎵</span>
+                            )}
+                            <span className={styles.stagedPreviewHint}>🔍 Podgląd</span>
+                          </button>
+
+                          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                            <div className={styles.stagedInputsGrid}>
+                              <div>
+                                <span className={styles.label}>Nazwa pliku na dysku</span>
+                                <input
+                                  type="text"
+                                  aria-label="Nazwa pliku na dysku"
+                                  data-testid={
+                                    idx === 0
+                                      ? 'media-filename-input'
+                                      : `media-filename-input-${String(idx)}`
+                                  }
+                                  value={st.customFileName}
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    setStagedFiles(prev =>
+                                      prev.map((item, i) =>
+                                        i === idx ? { ...item, customFileName: val } : item
+                                      )
+                                    );
+                                  }}
+                                  placeholder="Nazwa snake_case.jpg"
+                                  className={styles.input}
+                                />
+                              </div>
+
+                              <div>
+                                <div
+                                  style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                  }}
+                                >
+                                  <span className={styles.label}>
+                                    Data i czas (RRRR-MM-DD GG:MM:SS)
+                                  </span>
+                                  <label
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '0.3rem',
+                                      fontSize: '0.73rem',
+                                      fontWeight: 600,
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={st.isBetweenRange}
+                                      onChange={e => {
+                                        const checked = e.target.checked;
+                                        setStagedFiles(prev =>
+                                          prev.map((item, i) =>
+                                            i === idx
+                                              ? { ...item, isBetweenRange: checked }
+                                              : item
+                                          )
+                                        );
+                                      }}
+                                    />
+                                    <span>Przedział „między … a …”</span>
+                                  </label>
+                                </div>
+
+                                <div className={styles.compactDateTimeInputs}>
+                                  <select
+                                    value={st.dateQualifier}
+                                    onChange={e => {
+                                      const val = e.target.value;
+                                      setStagedFiles(prev =>
+                                        prev.map((item, i) =>
+                                          i === idx ? { ...item, dateQualifier: val } : item
+                                        )
+                                      );
+                                    }}
+                                    className={styles.input}
+                                    style={{ width: '105px', height: '34px', fontSize: '0.76rem' }}
+                                  >
+                                    {QUALIFIER_OPTIONS.map(q => (
+                                      <option key={q.value} value={q.value}>
+                                        {q.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <input
+                                    type="number"
+                                    aria-label="Rok zdjęcia"
+                                    placeholder="RRRR"
+                                    value={st.year}
+                                    onChange={e => {
+                                      const val = e.target.value;
+                                      setStagedFiles(prev =>
+                                        prev.map((item, i) =>
+                                          i === idx ? { ...item, year: val } : item
+                                        )
+                                      );
+                                    }}
+                                    className={`${styles.miniDateInput} ${styles.miniYearInput}`}
+                                  />
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    max={12}
+                                    placeholder="MM"
+                                    value={st.month}
+                                    onChange={e => {
+                                      const val = e.target.value;
+                                      setStagedFiles(prev =>
+                                        prev.map((item, i) =>
+                                          i === idx ? { ...item, month: val } : item
+                                        )
+                                      );
+                                    }}
+                                    className={styles.miniDateInput}
+                                  />
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    max={31}
+                                    placeholder="DD"
+                                    value={st.day}
+                                    onChange={e => {
+                                      const val = e.target.value;
+                                      setStagedFiles(prev =>
+                                        prev.map((item, i) =>
+                                          i === idx ? { ...item, day: val } : item
+                                        )
+                                      );
+                                    }}
+                                    className={styles.miniDateInput}
+                                  />
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={23}
+                                    placeholder="GG"
+                                    value={st.hour}
+                                    onChange={e => {
+                                      const val = e.target.value;
+                                      setStagedFiles(prev =>
+                                        prev.map((item, i) =>
+                                          i === idx ? { ...item, hour: val } : item
+                                        )
+                                      );
+                                    }}
+                                    className={styles.miniDateInput}
+                                  />
+                                  <span>:</span>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={59}
+                                    placeholder="MM"
+                                    value={st.minute}
+                                    onChange={e => {
+                                      const val = e.target.value;
+                                      setStagedFiles(prev =>
+                                        prev.map((item, i) =>
+                                          i === idx ? { ...item, minute: val } : item
+                                        )
+                                      );
+                                    }}
+                                    className={styles.miniDateInput}
+                                  />
+                                  <span>:</span>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={59}
+                                    placeholder="SS"
+                                    value={st.second}
+                                    onChange={e => {
+                                      const val = e.target.value;
+                                      setStagedFiles(prev =>
+                                        prev.map((item, i) =>
+                                          i === idx ? { ...item, second: val } : item
+                                        )
+                                      );
+                                    }}
+                                    className={styles.miniDateInput}
+                                  />
+                                </div>
+
+                                {st.isBetweenRange && (
+                                  <div
+                                    className={styles.compactDateTimeInputs}
+                                    style={{ marginTop: '0.35rem' }}
+                                  >
+                                    <span className={styles.label}>… a:</span>
+                                    <select
+                                      value={st.rangeEndQualifier}
+                                      onChange={e => {
+                                        const val = e.target.value;
+                                        setStagedFiles(prev =>
+                                          prev.map((item, i) =>
+                                            i === idx
+                                              ? { ...item, rangeEndQualifier: val }
+                                              : item
+                                          )
+                                        );
+                                      }}
+                                      className={styles.input}
+                                      style={{ width: '105px', height: '34px', fontSize: '0.76rem' }}
+                                    >
+                                      {QUALIFIER_OPTIONS.map(q => (
+                                        <option key={q.value} value={q.value}>
+                                          {q.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <input
+                                      type="number"
+                                      placeholder={st.year || 'RRRR'}
+                                      value={st.rangeEndYear}
+                                      onChange={e => {
+                                        const val = e.target.value;
+                                        setStagedFiles(prev =>
+                                          prev.map((item, i) =>
+                                            i === idx ? { ...item, rangeEndYear: val } : item
+                                          )
+                                        );
+                                      }}
+                                      className={`${styles.miniDateInput} ${styles.miniYearInput}`}
+                                    />
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      max={12}
+                                      placeholder="MM"
+                                      value={st.rangeEndMonth}
+                                      onChange={e => {
+                                        const val = e.target.value;
+                                        setStagedFiles(prev =>
+                                          prev.map((item, i) =>
+                                            i === idx ? { ...item, rangeEndMonth: val } : item
+                                          )
+                                        );
+                                      }}
+                                      className={styles.miniDateInput}
+                                    />
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      max={31}
+                                      placeholder="DD"
+                                      value={st.rangeEndDay}
+                                      onChange={e => {
+                                        const val = e.target.value;
+                                        setStagedFiles(prev =>
+                                          prev.map((item, i) =>
+                                            i === idx ? { ...item, rangeEndDay: val } : item
+                                          )
+                                        );
+                                      }}
+                                      className={styles.miniDateInput}
+                                    />
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      max={23}
+                                      placeholder="GG"
+                                      value={st.rangeEndHour}
+                                      onChange={e => {
+                                        const val = e.target.value;
+                                        setStagedFiles(prev =>
+                                          prev.map((item, i) =>
+                                            i === idx ? { ...item, rangeEndHour: val } : item
+                                          )
+                                        );
+                                      }}
+                                      className={styles.miniDateInput}
+                                    />
+                                    <span>:</span>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      max={59}
+                                      placeholder="MM"
+                                      value={st.rangeEndMinute}
+                                      onChange={e => {
+                                        const val = e.target.value;
+                                        setStagedFiles(prev =>
+                                          prev.map((item, i) =>
+                                            i === idx ? { ...item, rangeEndMinute: val } : item
+                                          )
+                                        );
+                                      }}
+                                      className={styles.miniDateInput}
+                                    />
+                                    <span>:</span>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      max={59}
+                                      placeholder="SS"
+                                      value={st.rangeEndSecond}
+                                      onChange={e => {
+                                        const val = e.target.value;
+                                        setStagedFiles(prev =>
+                                          prev.map((item, i) =>
+                                            i === idx ? { ...item, rangeEndSecond: val } : item
+                                          )
+                                        );
+                                      }}
+                                      className={styles.miniDateInput}
+                                    />
+                                  </div>
+                                )}
+                              </div>
+
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  justifyContent: 'flex-end',
+                                }}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setStagedFiles(prev =>
+                                      prev.map((item, i) =>
+                                        i === idx
+                                          ? { ...item, showDetails: !item.showDetails }
+                                          : item
+                                      )
+                                    );
+                                  }}
+                                  className={styles.btnSecondary}
+                                  style={{ height: '36px', whiteSpace: 'nowrap' }}
+                                >
+                                  {st.showDetails ? '▲ Zwiń szczegóły' : '🔍 Szczegóły pliku ▼'}
+                                  {(Boolean(st.title) ||
+                                    Boolean(st.sourceText) ||
+                                    Boolean(st.inscriptionText) ||
+                                    Boolean(st.description) ||
+                                    Boolean(
+                                      st.personLinks && st.personLinks.length > 0
+                                    )) && (
+                                    <span
+                                      style={{
+                                        marginLeft: '0.4rem',
+                                        color: '#16a34a',
+                                        fontWeight: 800,
+                                      }}
+                                    >
+                                      ●
+                                    </span>
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {st.showDetails && (
+                          <div className={styles.stagedDetailsPanel}>
+                            <div className={styles.stagedDetailsRow}>
+                              <div className={styles.formField}>
+                                <span className={styles.label}>Tytuł</span>
+                                <input
+                                  type="text"
+                                  aria-label="Tytuł zdjęcia"
+                                  placeholder="Krótki tytuł zdjęcia lub filmu..."
+                                  value={st.title}
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    setStagedFiles(prev =>
+                                      prev.map((item, i) =>
+                                        i === idx ? { ...item, title: val } : item
+                                      )
+                                    );
+                                  }}
+                                  className={styles.input}
+                                />
+                              </div>
+                              <div className={styles.formField}>
+                                <span className={styles.label}>
+                                  Źródło zdjęcia/filmu (tekstowo)
+                                </span>
+                                <input
+                                  type="text"
+                                  placeholder="np. Z albumu babci Katarzyny"
+                                  value={st.sourceText ?? ''}
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    setStagedFiles(prev =>
+                                      prev.map((item, i) =>
+                                        i === idx ? { ...item, sourceText: val } : item
+                                      )
+                                    );
+                                  }}
+                                  className={styles.input}
+                                />
+                              </div>
+                              <div className={styles.formField}>
+                                <span className={styles.label}>
+                                  Podpis z odwrotu zdjęcia / oryginalna dedykacja
+                                </span>
+                                <input
+                                  type="text"
+                                  placeholder="np. Na pamiątkę z Krynicy, 1938 r."
+                                  value={st.inscriptionText ?? ''}
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    setStagedFiles(prev =>
+                                      prev.map((item, i) =>
+                                        i === idx ? { ...item, inscriptionText: val } : item
+                                      )
+                                    );
+                                  }}
+                                  className={styles.input}
+                                />
+                              </div>
+                            </div>
+
+                            <div className={styles.formField} style={{ width: '100%' }}>
+                              <span className={styles.label}>
+                                Opis tekstowy (zwykły tekst)
+                              </span>
+                              <textarea
+                                rows={3}
+                                placeholder="Dodatkowe informacje o zdjęciu/nagraniu..."
+                                value={st.description ?? ''}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  setStagedFiles(prev =>
+                                    prev.map((item, i) =>
+                                      i === idx ? { ...item, description: val } : item
+                                    )
+                                  );
+                                }}
+                                className={styles.textarea}
+                              />
+                            </div>
+
+                            <div
+                              style={{
+                                backgroundColor: '#ffffff',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '8px',
+                                padding: '0.75rem',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '0.55rem',
+                              }}
+                            >
+                              <span className={styles.label}>
+                                Osoby na zdjęciu, osoby powiązane oraz autorzy (z bazy lub
+                                tekstowo):
+                              </span>
+                              <div className={styles.personLinksGrid}>
+                                <div className={styles.formField}>
+                                  <span className={styles.label}>Rodzaj powiązania</span>
+                                  <select
+                                    value={stagedLinkRoleType}
+                                    onChange={e => {
+                                      setStagedLinkRoleType(
+                                        e.target.value as 'DEPICTED' | 'RELATED' | 'AUTHOR'
+                                      );
+                                    }}
+                                    className={styles.input}
+                                  >
+                                    <option value="DEPICTED">
+                                      👁️ Osoba widoczna na zdjęciu/filmie
+                                    </option>
+                                    <option value="RELATED">
+                                      🔗 Osoba powiązana ze zdjęciem/filmem
+                                    </option>
+                                    <option value="AUTHOR">
+                                      📷 Autor zdjęcia/nagrania (kto wykonał)
+                                    </option>
+                                  </select>
+                                </div>
+                                <div className={styles.formField}>
+                                  <span className={styles.label}>Dodaj osobę z drzewa</span>
+                                  <div style={{ display: 'flex', gap: '0.4rem' }}>
+                                    <input
+                                      type="text"
+                                      placeholder="Szukaj w drzewie..."
+                                      value={
+                                        activeStagedSearchIdx === idx ? stagedPersonQuery : ''
+                                      }
+                                      onChange={e => {
+                                        setActiveStagedSearchIdx(idx);
+                                        setStagedPersonQuery(e.target.value);
+                                      }}
+                                      className={styles.input}
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        void handleSearchPersonForStaged(idx);
+                                      }}
+                                      className={styles.btnSecondary}
+                                    >
+                                      Szukaj
+                                    </button>
+                                  </div>
+                                </div>
+                                <div className={styles.formField}>
+                                  <span className={styles.label}>
+                                    Lub wpisz osobę tekstowo
+                                  </span>
+                                  <div style={{ display: 'flex', gap: '0.4rem' }}>
+                                    <input
+                                      type="text"
+                                      placeholder="np. Fotograf z Lublina"
+                                      value={
+                                        activeStagedSearchIdx === idx
+                                          ? stagedTextPersonInput
+                                          : ''
+                                      }
+                                      onChange={e => {
+                                        setActiveStagedSearchIdx(idx);
+                                        setStagedTextPersonInput(e.target.value);
+                                      }}
+                                      className={styles.input}
+                                    />
+                                    <select
+                                      value={stagedTextPersonSex}
+                                      onChange={e => {
+                                        setStagedTextPersonSex(e.target.value as PersonSex);
+                                      }}
+                                      className={styles.input}
+                                      style={{ width: '75px' }}
+                                    >
+                                      <option value="MALE">M</option>
+                                      <option value="FEMALE">K</option>
+                                      <option value="UNKNOWN">?</option>
+                                    </select>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        handleAddTextPersonToStaged(idx);
+                                      }}
+                                      className={styles.btnSecondary}
+                                    >
+                                      + Dodaj
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {activeStagedSearchIdx === idx &&
+                                stagedPersonResults.length > 0 && (
+                                  <div
+                                    style={{
+                                      display: 'flex',
+                                      flexWrap: 'wrap',
+                                      gap: '0.4rem',
+                                    }}
+                                  >
+{stagedPersonResults.map(p => (
+                                      <button
+                                        key={p.id}
+                                        type="button"
+                                        onClick={() => {
+                                          handleAddDbPersonToStaged(idx, p);
+                                        }}
+                                        className={styles.btnSecondary}
+                                      >
+                                        + Wybierz: {p.givenName} {p.surname} ({p.birthYear ?? '?'})
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+
+                              {st.personLinks && st.personLinks.length > 0 && (
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                                  {st.personLinks.map((pl, pIdx) => (
+                                    <span
+                                      key={`${pl.displayLabel}-${String(pIdx)}`}
+                                      className={styles.selectedFilesBadge}
+                                    >
+                                      {pl.displayLabel}{' '}
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          handleRemovePersonFromStaged(idx, pIdx);
+                                        }}
+                                        className={styles.pillRemoveBtn}
+                                      >
+                                        ✕
+                                      </button>
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {stagedFiles.length === 1 && (context === 'GRAVE' || context === 'PERSON') && (
+                <div className={styles.checkboxRow}>
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.45rem',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={setAsPrimary}
+                      onChange={e => {
+                        setSetAsPrimary(e.target.checked);
+                      }}
+                    />
+                    <span>
+                      {context === 'GRAVE'
+                        ? 'Ustaw jako główne zdjęcie tego nagrobka'
+                        : 'Ustaw jako główny portret (awatar) tej osoby'}
+                    </span>
+                  </label>
+                </div>
+              )}
+
+              <div className={styles.modalFooter}>
+                <span style={{ fontSize: '0.82rem', color: '#475569' }}>
+                  Plików do wgrania: <strong>{String(stagedFiles.length)}</strong>
+                </span>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      closeUploadModal();
+                      setStagedFiles([]);
+                    }}
+                    className={styles.btnSecondary}
+                  >
+                    Anuluj
+                  </button>
+                  <button
+                    type="submit"
+                    data-testid="submit-upload-media-button"
+                    disabled={stagedFiles.length === 0 || isSubmitting}
+                    className={styles.btnPrimary}
+                  >
+                    {isSubmitting
+                      ? 'Wgrywanie...'
+                      : `Wgraj i zapisz (${String(stagedFiles.length)})`}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================================
+          LARGE MODAL 2: BULK EDIT MEDIA WITH THUMBNAILS & PREVIEW (Points 6, 18, 33)
+          ===================================================================== */}
+      {isAdmin && isBulkEditMode && effectiveItems.length > 0 && (
+        <div
+          className={styles.modalBackdrop}
+          onClick={() => {
+            closeBulkEditModal();
+          }}
+        >
+          <div
+            className={styles.modalDialog}
+            style={{ maxWidth: '1080px' }}
+            onClick={e => {
+              e.stopPropagation();
+            }}
+          >
+            <div className={styles.modalHeader}>
+              <strong style={{ fontSize: '1.05rem', color: '#0f172a' }}>
+                ☑️ Edycja zbiorowa plików multimedialnych (zaznaczono:{' '}
+                {String(selectedBulkDraftCount)} z {String(bulkDraftItems.length)})
+              </strong>
+              <button
+                type="button"
+                onClick={() => {
+                  closeBulkEditModal();
+                }}
+                className={styles.btnSecondary}
+              >
+                ✕ Zamknij
+              </button>
+            </div>
+
+            <form
+              onSubmit={e => {
+                void handleApplyBulkEdit(e);
+              }}
+              className={styles.modalBody}
+              data-testid="media-bulk-edit-panel"
+            >
+              {errorMessage && (
+                <div
+                  role="alert"
+                  style={{ color: '#dc2626', fontSize: '0.86rem', fontWeight: 600 }}
+                >
+                  {errorMessage}
+                </div>
+              )}
+
+              {/* Top Bulk Settings Bar */}
+              <div className={styles.bulkEditPanel}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: '0.5rem',
+                  }}
+                >
+                  <strong style={{ fontSize: '0.9rem', color: '#0f172a' }}>
+                    ⚙️ Parametry zbiorcze dla zaznaczonych plików ({String(selectedBulkDraftCount)})
+                  </strong>
+                  <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBulkDraftItems(prev => prev.map(d => ({ ...d, selected: true })));
+                      }}
+                      className={styles.btnSecondary}
+                    >
+                      Zaznacz wszystkie
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBulkDraftItems(prev => prev.map(d => ({ ...d, selected: false })));
+                      }}
+                      className={styles.btnSecondary}
+                    >
+                      Odznacz wszystkie
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowBulkDetails(prev => !prev);
+                      }}
+                      className={styles.btnSecondary}
+                    >
+                      {showBulkDetails ? '▲ Ukryj zbiorcze szczegóły' : '▼ Zbiorcze szczegóły i opis'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className={styles.formGrid}>
+                  <div className={styles.formField}>
+                    <label htmlFor="bulk-edit-folder" className={styles.label}>
+                      Zmień nazwę folderu docelowego
+                    </label>
+                    <input
+                      id="bulk-edit-folder"
+                      type="text"
+                      placeholder={
+                        effectiveItems.at(0)?.directoryPath ?? 'np. nowy_folder_wydarzenia'
+                      }
+                      value={bulkEditFolder}
+                      onChange={e => {
+                        setBulkEditFolder(e.target.value);
+                      }}
+                      className={styles.input}
+                    />
+                  </div>
+
+                  <div className={styles.formField}>
+                    <label htmlFor="bulk-edit-stem" className={styles.label}>
+                      Wspólny trzon nazwy plików (ponumeruje _01, _02...)
+                    </label>
+                    <input
+                      id="bulk-edit-stem"
+                      type="text"
+                      placeholder="np. wakacje_kolobrzeg"
+                      value={bulkEditStem}
+                      onChange={e => {
+                        setBulkEditStem(e.target.value);
+                      }}
+                      className={styles.input}
+                    />
+                  </div>
+
+                  {/* Point 33: Move selected media items to another collection */}
+                  {availableCollections.length > 0 && (
+                    <div className={styles.formField}>
+                      <label htmlFor="bulk-edit-target-col" className={styles.label}>
+                        Przenieś zaznaczone do innej kolekcji / albumu
+                      </label>
+                      <select
+                        id="bulk-edit-target-col"
+                        data-testid="bulk-edit-target-collection-select"
+                        value={bulkEditTargetCollectionId}
+                        onChange={e => {
+                          setBulkEditTargetCollectionId(e.target.value);
+                        }}
+                        className={styles.input}
+                      >
+                        <option value="">— Pozostaw w obecnej kolekcji —</option>
+                        {availableCollections.map(col => (
+                          <option key={col.id} value={String(col.id)}>
+                            {col.datedCollection
+                              ? `📅 [Album ${String(col.startYear ?? '')}] ${col.name}`
+                              : `📦 [Kolekcja] ${col.name}`}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div className={styles.formField}>
+                    <label htmlFor="bulk-edit-date-mode" className={styles.label}>
+                      Zbiorcza zmiana daty i czasu zdjęć/filmów
+                    </label>
+                    <select
+                      id="bulk-edit-date-mode"
+                      data-testid="bulk-edit-date-mode-select"
+                      value={bulkEditDateMode}
+                      onChange={e => {
+                        setBulkEditDateMode(
+                          e.target.value as
+                            | 'NO_CHANGE'
+                            | 'MANUAL'
+                            | 'METADATA'
+                            | 'EVENT'
+                            | 'UNDATED'
+                        );
+                      }}
+                      className={styles.input}
+                    >
+                      <option value="NO_CHANGE">— Pozostaw daty bez zmian —</option>
+                      <option value="METADATA">
+                        Przywróć datę i czas z metadanych każdego pliku (zawsze Dokładnie)
+                      </option>
+                      {eventId !== undefined && (
+                        <option value="EVENT">
+                          Ustaw datę i czas z bieżącego wydarzenia
+                        </option>
+                      )}
+                      <option value="MANUAL">
+                        Ustaw wspólną datę i czas ręcznie (lub przedział „między … a …”)
+                      </option>
+                      <option value="UNDATED">Wyczyść datę (undated)</option>
+                    </select>
+                  </div>
+
+                  {bulkEditDateMode === 'METADATA' && (
+                    <div className={styles.formField}>
+                      <label htmlFor="bulk-edit-meta-tag" className={styles.label}>
+                        Preferowane pole metadanych
+                      </label>
+                      <select
+                        id="bulk-edit-meta-tag"
+                        value={bulkEditMetadataTag}
+                        onChange={e => {
+                          setBulkEditMetadataTag(e.target.value);
+                        }}
+                        className={styles.input}
+                      >
+                        <option value="">
+                          Automatycznie (Original Date Time -&gt; Image Date Time -&gt; plik)
+                        </option>
+                        <option value="Original Date Time">
+                          EXIF: Original Date Time (data wykonania)
+                        </option>
+                        <option value="Digitized Date Time">
+                          EXIF: Digitized Date Time (data digitalizacji)
+                        </option>
+                        <option value="Image Date Time">
+                          EXIF: Image Date Time (data obrazu)
+                        </option>
+                        <option value="creation_time">MP4/QuickTime: creation_time</option>
+                        <option value="lastModified">
+                          Data modyfikacji pliku (lastModified)
+                        </option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                {bulkEditDateMode === 'MANUAL' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                    <label
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.45rem',
+                        fontSize: '0.82rem',
+                        fontWeight: 600,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={bulkEditIsBetween}
+                        onChange={e => {
+                          setBulkEditIsBetween(e.target.checked);
+                        }}
+                      />
+                      <span>Przedział niepewności „między … a …” dla daty wykonania</span>
+                    </label>
+
+                    <div className={styles.formGrid}>
+                      <div className={styles.formField}>
+                        <span className={styles.label}>Kwalifikator daty</span>
+                        <select
+                          value={bulkEditDateQual}
+                          onChange={e => {
+                            setBulkEditDateQual(e.target.value);
+                          }}
+                          className={styles.input}
+                        >
+                          {QUALIFIER_OPTIONS.map(q => (
+                            <option key={q.value} value={q.value}>
+                              {q.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className={styles.formField}>
+                        <span className={styles.label}>
+                          Wybór z kalendarza{' '}
+                          {bulkEditStartWeekday ? `(📅 ${bulkEditStartWeekday})` : ''}
+                        </span>
+                        <input
+                          type="date"
+                          value={toIsoDateInputValue(
+                            bulkEditYear,
+                            bulkEditMonth,
+                            bulkEditDay
+                          )}
+                          onChange={e => {
+                            if (e.target.value) {
+                              const p = e.target.value.split('-');
+                              if (p.length === 3) {
+                                setBulkEditYear(String(Number(p[0])));
+                                setBulkEditMonth(String(Number(p[1])));
+                                setBulkEditDay(String(Number(p[2])));
+                              }
+                            }
+                          }}
+                          className={styles.input}
+                        />
+                      </div>
+
+                      <div className={styles.formField}>
+                        <span className={styles.label}>Rok / Miesiąc / Dzień</span>
+                        <div className={styles.compactDateTimeInputs}>
+                          <input
+                            type="number"
+                            placeholder="RRRR"
+                            value={bulkEditYear}
+                            onChange={e => {
+                              setBulkEditYear(e.target.value);
+                            }}
+                            className={`${styles.miniDateInput} ${styles.miniYearInput}`}
+                          />
+                          <input
+                            type="number"
+                            min={1}
+                            max={12}
+                            placeholder="MM"
+                            value={bulkEditMonth}
+                            onChange={e => {
+                              setBulkEditMonth(e.target.value);
+                            }}
+                            className={styles.miniDateInput}
+                          />
+                          <input
+                            type="number"
+                            min={1}
+                            max={31}
+                            placeholder="DD"
+                            value={bulkEditDay}
+                            onChange={e => {
+                              setBulkEditDay(e.target.value);
+                            }}
+                            className={styles.miniDateInput}
+                          />
+                        </div>
+                      </div>
+
+                      <div className={styles.formField}>
+                        <span className={styles.label}>Kwalifikator i czas (GG:MM:SS)</span>
+                        <div className={styles.compactDateTimeInputs}>
+                          <select
+                            value={bulkEditTimeQual}
+                            onChange={e => {
+                              setBulkEditTimeQual(e.target.value);
+                            }}
+                            className={styles.input}
+                            style={{ width: '125px', height: '34px' }}
                           >
                             {QUALIFIER_OPTIONS.map(q => (
                               <option key={q.value} value={q.value}>
@@ -3814,57 +3748,12 @@ export default function MediaGallerySection({
                           </select>
                           <input
                             type="number"
-                            placeholder={editYear || 'RRRR'}
-                            value={editRangeEndYear}
-                            onChange={e => {
-                              setEditRangeEndYear(e.target.value);
-                            }}
-                            className={`${styles.miniDateInput} ${styles.miniYearInput}`}
-                          />
-                          <input
-                            type="number"
-                            min={1}
-                            max={12}
-                            placeholder="MM"
-                            value={editRangeEndMonth}
-                            onChange={e => {
-                              setEditRangeEndMonth(e.target.value);
-                            }}
-                            className={styles.miniDateInput}
-                          />
-                          <input
-                            type="number"
-                            min={1}
-                            max={31}
-                            placeholder="DD"
-                            value={editRangeEndDay}
-                            onChange={e => {
-                              setEditRangeEndDay(e.target.value);
-                            }}
-                            className={styles.miniDateInput}
-                          />
-                          <select
-                            value={editRangeEndTimeQual}
-                            onChange={e => {
-                              setEditRangeEndTimeQual(e.target.value);
-                            }}
-                            className={styles.input}
-                            style={{ width: '180px', height: '34px' }}
-                          >
-                            {QUALIFIER_OPTIONS.map(q => (
-                              <option key={q.value} value={q.value}>
-                                Czas: {q.label}
-                              </option>
-                            ))}
-                          </select>
-                          <input
-                            type="number"
                             min={0}
                             max={23}
                             placeholder="GG"
-                            value={editRangeEndHour}
+                            value={bulkEditHour}
                             onChange={e => {
-                              setEditRangeEndHour(e.target.value);
+                              setBulkEditHour(e.target.value);
                             }}
                             className={styles.miniDateInput}
                           />
@@ -3874,9 +3763,9 @@ export default function MediaGallerySection({
                             min={0}
                             max={59}
                             placeholder="MM"
-                            value={editRangeEndMinute}
+                            value={bulkEditMinute}
                             onChange={e => {
-                              setEditRangeEndMinute(e.target.value);
+                              setBulkEditMinute(e.target.value);
                             }}
                             className={styles.miniDateInput}
                           />
@@ -3886,479 +3775,663 @@ export default function MediaGallerySection({
                             min={0}
                             max={59}
                             placeholder="SS"
-                            value={editRangeEndSecond}
+                            value={bulkEditSecond}
                             onChange={e => {
-                              setEditRangeEndSecond(e.target.value);
+                              setBulkEditSecond(e.target.value);
                             }}
                             className={styles.miniDateInput}
                           />
                         </div>
-                      )}
+                      </div>
                     </div>
-                  )}
 
-                  {/* Points 13 & 14: Person Links Builder (DEPICTED, RELATED, AUTHOR - DB or Text) */}
-                  <div
-                    style={{
-                      backgroundColor: '#f8fafc',
-                      border: '1px solid #cbd5e1',
-                      borderRadius: '8px',
-                      padding: '0.75rem',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '0.55rem',
-                    }}
-                  >
-                    <span className={styles.label}>
-                      Osoby na zdjęciu, osoby powiązane oraz autorzy (z bazy lub tekstowo):
-                    </span>
-                    <div className={styles.personLinksGrid}>
+                    {bulkEditIsBetween && (
+                      <div className={styles.formGrid}>
+                        <div className={styles.formField}>
+                          <span className={styles.label}>Druga granica („… a …”)</span>
+                          <select
+                            value={bulkEditRangeEndQual}
+                            onChange={e => {
+                              setBulkEditRangeEndQual(e.target.value);
+                            }}
+                            className={styles.input}
+                          >
+                            {QUALIFIER_OPTIONS.map(q => (
+                              <option key={q.value} value={q.value}>
+                                {q.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className={styles.formField}>
+                          <span className={styles.label}>
+                            Wybór z kalendarza{' '}
+                            {bulkEditEndWeekday ? `(📅 ${bulkEditEndWeekday})` : ''}
+                          </span>
+                          <input
+                            type="date"
+                            value={toIsoDateInputValue(
+                              bulkEditRangeEndYear,
+                              bulkEditRangeEndMonth,
+                              bulkEditRangeEndDay
+                            )}
+                            onChange={e => {
+                              if (e.target.value) {
+                                const p = e.target.value.split('-');
+                                if (p.length === 3) {
+                                  setBulkEditRangeEndYear(String(Number(p[0])));
+                                  setBulkEditRangeEndMonth(String(Number(p[1])));
+                                  setBulkEditRangeEndDay(String(Number(p[2])));
+                                }
+                              }
+                            }}
+                            className={styles.input}
+                          />
+                        </div>
+
+                        <div className={styles.formField}>
+                          <span className={styles.label}>Rok / Miesiąc / Dzień</span>
+                          <div className={styles.compactDateTimeInputs}>
+                            <input
+                              type="number"
+                              placeholder={bulkEditYear || 'RRRR'}
+                              value={bulkEditRangeEndYear}
+                              onChange={e => {
+                                setBulkEditRangeEndYear(e.target.value);
+                              }}
+                              className={`${styles.miniDateInput} ${styles.miniYearInput}`}
+                            />
+                            <input
+                              type="number"
+                              min={1}
+                              max={12}
+                              placeholder="MM"
+                              value={bulkEditRangeEndMonth}
+                              onChange={e => {
+                                setBulkEditRangeEndMonth(e.target.value);
+                              }}
+                              className={styles.miniDateInput}
+                            />
+                            <input
+                              type="number"
+                              min={1}
+                              max={31}
+                              placeholder="DD"
+                              value={bulkEditRangeEndDay}
+                              onChange={e => {
+                                setBulkEditRangeEndDay(e.target.value);
+                              }}
+                              className={styles.miniDateInput}
+                            />
+                          </div>
+                        </div>
+
+                        <div className={styles.formField}>
+                          <span className={styles.label}>Czas drugiej granicy (GG:MM:SS)</span>
+                          <div className={styles.compactDateTimeInputs}>
+                            <select
+                              value={bulkEditRangeEndTimeQual}
+                              onChange={e => {
+                                setBulkEditRangeEndTimeQual(e.target.value);
+                              }}
+                              className={styles.input}
+                              style={{ width: '125px', height: '34px' }}
+                            >
+                              {QUALIFIER_OPTIONS.map(q => (
+                                <option key={q.value} value={q.value}>
+                                  {q.label}
+                                </option>
+                              ))}
+                            </select>
+                            <input
+                              type="number"
+                              min={0}
+                              max={23}
+                              placeholder="GG"
+                              value={bulkEditRangeEndHour}
+                              onChange={e => {
+                                setBulkEditRangeEndHour(e.target.value);
+                              }}
+                              className={styles.miniDateInput}
+                            />
+                            <span>:</span>
+                            <input
+                              type="number"
+                              min={0}
+                              max={59}
+                              placeholder="MM"
+                              value={bulkEditRangeEndMinute}
+                              onChange={e => {
+                                setBulkEditRangeEndMinute(e.target.value);
+                              }}
+                              className={styles.miniDateInput}
+                            />
+                            <span>:</span>
+                            <input
+                              type="number"
+                              min={0}
+                              max={59}
+                              placeholder="SS"
+                              value={bulkEditRangeEndSecond}
+                              onChange={e => {
+                                setBulkEditRangeEndSecond(e.target.value);
+                              }}
+                              className={styles.miniDateInput}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {showBulkDetails && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                    <div className={styles.stagedDetailsRow}>
                       <div className={styles.formField}>
-                        <span className={styles.label}>Rodzaj powiązania</span>
-                        <select
-                          value={linkRoleType}
+                        <span className={styles.label}>Wspólny tytuł</span>
+                        <input
+                          type="text"
+                          placeholder="Wspólny tytuł..."
+                          value={bulkTitle}
                           onChange={e => {
-                            setLinkRoleType(
-                              e.target.value as 'DEPICTED' | 'RELATED' | 'AUTHOR'
-                            );
+                            setBulkTitle(e.target.value);
                           }}
                           className={styles.input}
-                        >
-                          <option value="DEPICTED">
-                            👁️ Osoba widoczna na zdjęciu / filmie
-                          </option>
-                          <option value="RELATED">
-                            🔗 Osoba powiązana ze zdjęciem / filmem
-                          </option>
-                          <option value="AUTHOR">
-                            📷 Autor zdjęcia / nagrania (kto wykonał)
-                          </option>
-                        </select>
+                        />
                       </div>
-
                       <div className={styles.formField}>
-                        <span className={styles.label}>Dodaj osobę z drzewa</span>
-                        <div style={{ display: 'flex', gap: '0.4rem' }}>
-                          <input
-                            type="text"
-                            placeholder="Szukaj w drzewie..."
-                            value={linkPersonQuery}
-                            onChange={e => {
-                              setLinkPersonQuery(e.target.value);
-                            }}
-                            className={styles.input}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              void handleSearchPersonForLink();
-                            }}
-                            className={styles.btnSecondary}
-                          >
-                            Szukaj
-                          </button>
-                        </div>
+                        <span className={styles.label}>Wspólne źródło</span>
+                        <input
+                          type="text"
+                          placeholder="np. Z albumu babci"
+                          value={bulkSourceText}
+                          onChange={e => {
+                            setBulkSourceText(e.target.value);
+                          }}
+                          className={styles.input}
+                        />
                       </div>
-
                       <div className={styles.formField}>
-                        <span className={styles.label}>Lub wpisz osobę tekstowo</span>
-                        <div style={{ display: 'flex', gap: '0.4rem' }}>
-                          <input
-                            type="text"
-                            placeholder="np. Fotograf z Lublina"
-                            value={linkTextInput}
-                            onChange={e => {
-                              setLinkTextInput(e.target.value);
-                            }}
-                            className={styles.input}
-                          />
-                          <select
-                            value={linkTextSex}
-                            onChange={e => {
-                              setLinkTextSex(e.target.value as PersonSex);
-                            }}
-                            className={styles.input}
-                            style={{ width: '75px' }}
-                          >
-                            <option value="MALE">M</option>
-                            <option value="FEMALE">K</option>
-                            <option value="UNKNOWN">?</option>
-                          </select>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (linkTextInput.trim() === '') return;
-                              const txt = linkTextInput.trim();
-                              setEditPersonLinks(prev => [
-                                ...prev,
-                                {
-                                  personText: txt,
-                                  personSex: linkTextSex,
-                                  linkType: linkRoleType,
-                                  displayLabel: `${PERSON_LINK_TYPE_LABELS[linkRoleType]}: ${txt} [spoza bazy]`,
-                                },
-                              ]);
-                              setLinkTextInput('');
-                            }}
-                            className={styles.btnSecondary}
-                          >
-                            + Dodaj
-                          </button>
-                        </div>
+                        <span className={styles.label}>Wspólny podpis z odwrotu</span>
+                        <input
+                          type="text"
+                          placeholder="np. Na pamiątkę..."
+                          value={bulkInscriptionText}
+                          onChange={e => {
+                            setBulkInscriptionText(e.target.value);
+                          }}
+                          className={styles.input}
+                        />
                       </div>
                     </div>
+                    <div className={styles.formField}>
+                      <span className={styles.label}>Wspólny opis tekstowy</span>
+                      <textarea
+                        rows={2}
+                        value={bulkDescription}
+                        onChange={e => {
+                          setBulkDescription(e.target.value);
+                        }}
+                        className={styles.textarea}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <button
+                        type="button"
+                        onClick={handleApplyBulkToDraftList}
+                        className={styles.btnSecondary}
+                      >
+                        ↓ Nanieś powyższe ustawienia na zaznaczone wiersze na liście
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
 
-                    {linkPersonResults.length > 0 && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                        {linkPersonResults.map(p => (
-                          <button
-                            key={p.id}
-                            type="button"
-                            onClick={() => {
-                              const fullName = `${p.givenName ?? ''} ${p.surname ?? ''}`.trim();
-                              setEditPersonLinks(prev => [
-                                ...prev,
-                                {
-                                  personId: p.id,
-                                  linkType: linkRoleType,
-                                  displayLabel: `${PERSON_LINK_TYPE_LABELS[linkRoleType]}: ${fullName}`,
-                                },
-                              ]);
-                              setLinkPersonResults([]);
-                              setLinkPersonQuery('');
-                            }}
-                            className={styles.btnSecondary}
-                          >
-                            + Wybierz: {p.givenName} {p.surname} ({p.birthYear ?? '?'})
-                          </button>
-                        ))}
-                      </div>
-                    )}
+              {/* Point 6: Individual List of Media Items in Bulk Edit Modal with Thumbnails & Preview */}
+              <div className={styles.stagedList}>
+                {bulkDraftItems.map((draft, idx) => (
+                  <div key={draft.id} className={styles.stagedCard}>
+                    <div className={styles.stagedTopRow}>
+                      <label
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.45rem',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          data-testid={`bulk-media-checkbox-${String(draft.id)}`}
+                          checked={draft.selected}
+                          onChange={e => {
+                            const checked = e.target.checked;
+                            setBulkDraftItems(prev =>
+                              prev.map((item, i) =>
+                                i === idx ? { ...item, selected: checked } : item
+                              )
+                            );
+                          }}
+                        />
+                        <span className={styles.breakableCode}>📄 {draft.fileName}</span>
+                      </label>
+                    </div>
 
-                    {editPersonLinks.length > 0 && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                        {editPersonLinks.map((pl, idx) => (
-                          <span
-                            key={`${pl.displayLabel}-${String(idx)}`}
-                            className={styles.selectedFilesBadge}
-                          >
-                            {pl.displayLabel}{' '}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditPersonLinks(prev =>
-                                  prev.filter((_, i) => i !== idx)
+                    <div className={styles.stagedMainRow}>
+                      <button
+                        type="button"
+                        title="Kliknij, aby otworzyć pełny podgląd pliku"
+                        onClick={() => {
+                          setPreviewModalItem({
+                            url: mediaApi.getFileUrl(draft.id),
+                            mediaType: draft.mediaType,
+                            title: draft.title || draft.fileName,
+                          });
+                        }}
+                        className={styles.stagedThumbButton}
+                      >
+                        {draft.mediaType === 'IMAGE' ? (
+                          <img
+                            src={mediaApi.getThumbnailUrl(draft.id)}
+                            alt={draft.title}
+                            className={styles.stagedThumbImg}
+                          />
+                        ) : draft.mediaType === 'VIDEO' ? (
+                          <video
+                            src={`${mediaApi.getFileUrl(draft.id)}#t=0.5`}
+                            preload="metadata"
+                            muted
+                            playsInline
+                            className={styles.stagedThumbImg}
+                          />
+                        ) : (
+                          <span style={{ fontSize: '1.6rem', color: '#ffffff' }}>🎵</span>
+                        )}
+                        <span className={styles.stagedPreviewHint}>🔍 Podgląd</span>
+                      </button>
+
+                      <div style={{ flex: 1 }}>
+                        <div className={styles.stagedInputsGrid}>
+                          <div>
+                            <span className={styles.label}>Nazwa pliku na dysku</span>
+                            <input
+                              type="text"
+                              value={draft.fileName}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setBulkDraftItems(prev =>
+                                  prev.map((item, i) =>
+                                    i === idx ? { ...item, fileName: val } : item
+                                  )
                                 );
                               }}
+                              className={styles.input}
+                            />
+                          </div>
+
+                          <div>
+                            <div
                               style={{
-                                marginLeft: '0.35rem',
-                                border: 'none',
-                                background: 'none',
-                                cursor: 'pointer',
-                                fontWeight: 800,
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
                               }}
                             >
-                              ✕
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.32rem' }}>
-                  {activeItem.title && (
-                    <strong style={{ fontSize: '1rem' }}>{activeItem.title}</strong>
-                  )}
-                  {activeItem.dateText && (
-                    <div style={{ fontSize: '0.84rem', fontWeight: 600, color: '#1e293b' }}>
-                      📅 Data i czas wykonania: {activeItem.dateText}
-                    </div>
-                  )}
-                  {activeItem.inscriptionText && (
-                    <div style={{ fontSize: '0.84rem', color: '#1e293b', fontStyle: 'italic' }}>
-                      ✍️ Podpis z odwrotu: „{activeItem.inscriptionText}”
-                    </div>
-                  )}
-                  {activeItem.description && (
-                    <div style={{ fontSize: '0.84rem', color: '#334155' }}>
-                      📝 Opis: {activeItem.description}
-                    </div>
-                  )}
-                  {activeItem.sourceText && (
-                    <div style={{ fontSize: '0.82rem', color: '#475569' }}>
-                      📚 Źródło: <strong>{activeItem.sourceText}</strong>
-                    </div>
-                  )}
-                  {activeItem.authors && activeItem.authors.length > 0 && (
-                    <div style={{ fontSize: '0.82rem', color: '#475569' }}>
-                      📷 Autor: <strong>{activeItem.authors.map(a => a.displayName).join(', ')}</strong>
-                    </div>
-                  )}
-                  {activeItem.depictedPersons && activeItem.depictedPersons.length > 0 && (
-                    <div style={{ fontSize: '0.82rem', color: '#475569' }}>
-                      👁️ Osoby na zdjęciu/filmie:{' '}
-                      <strong>{activeItem.depictedPersons.map(d => d.displayName).join(', ')}</strong>
-                    </div>
-                  )}
-                  {activeItem.relatedPersons && activeItem.relatedPersons.length > 0 && (
-                    <div style={{ fontSize: '0.82rem', color: '#475569' }}>
-                      🔗 Osoby powiązane:{' '}
-                      <strong>{activeItem.relatedPersons.map(r => r.displayName).join(', ')}</strong>
-                    </div>
-                  )}
-                  {isAdmin && activeItem.metadataDateText && (
-                    <div className={styles.metadataBadge} style={{ alignSelf: 'flex-start' }}>
-                      📷 Data z metadanych ({activeItem.metadataDateSource ?? 'Metadane'}):{' '}
-                      <strong>{activeItem.metadataDateText}</strong>
-                    </div>
-                  )}
-                  <div className={styles.breakableCode}>
-                    Nazwa pliku: {activeSelectedVersion ? activeSelectedVersion.fileName : activeItem.fileName}
-                  </div>
-                  {isAdmin && activeItem.relativePath && (
-                    <div className={styles.breakableCode}>
-                      Ścieżka na dysku (widoczna dla administratora):{' '}
-                      {activeSelectedVersion?.relativePath ?? activeItem.relativePath}
-                    </div>
-                  )}
-                </div>
-              )}
+                              <span className={styles.label}>Data i czas (RRRR-MM-DD)</span>
+                              <label
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.3rem',
+                                  fontSize: '0.73rem',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={draft.isBetweenRange}
+                                  onChange={e => {
+                                    const checked = e.target.checked;
+                                    setBulkDraftItems(prev =>
+                                      prev.map((item, i) =>
+                                        i === idx ? { ...item, isBetweenRange: checked } : item
+                                      )
+                                    );
+                                  }}
+                                />
+                                <span>Przedział „między … a …”</span>
+                              </label>
+                            </div>
+                            <div className={styles.compactDateTimeInputs}>
+                              <input
+                                type="number"
+                                placeholder="RRRR"
+                                value={draft.year}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  setBulkDraftItems(prev =>
+                                    prev.map((item, i) =>
+                                      i === idx ? { ...item, year: val } : item
+                                    )
+                                  );
+                                }}
+                                className={`${styles.miniDateInput} ${styles.miniYearInput}`}
+                              />
+                              <input
+                                type="number"
+                                min={1}
+                                max={12}
+                                placeholder="MM"
+                                value={draft.month}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  setBulkDraftItems(prev =>
+                                    prev.map((item, i) =>
+                                      i === idx ? { ...item, month: val } : item
+                                    )
+                                  );
+                                }}
+                                className={styles.miniDateInput}
+                              />
+                              <input
+                                type="number"
+                                min={1}
+                                max={31}
+                                placeholder="DD"
+                                value={draft.day}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  setBulkDraftItems(prev =>
+                                    prev.map((item, i) =>
+                                      i === idx ? { ...item, day: val } : item
+                                    )
+                                  );
+                                }}
+                                className={styles.miniDateInput}
+                              />
+                              <input
+                                type="number"
+                                min={0}
+                                max={23}
+                                placeholder="GG"
+                                value={draft.hour}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  setBulkDraftItems(prev =>
+                                    prev.map((item, i) =>
+                                      i === idx ? { ...item, hour: val } : item
+                                    )
+                                  );
+                                }}
+                                className={styles.miniDateInput}
+                              />
+                              <span>:</span>
+                              <input
+                                type="number"
+                                min={0}
+                                max={59}
+                                placeholder="MM"
+                                value={draft.minute}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  setBulkDraftItems(prev =>
+                                    prev.map((item, i) =>
+                                      i === idx ? { ...item, minute: val } : item
+                                    )
+                                  );
+                                }}
+                                className={styles.miniDateInput}
+                              />
+                            </div>
+                          </div>
 
-              {/* Point 15 & 17: Add Version or Reverse Side Form */}
-              {isAdmin && showVersionUpload && (
-                <div
-                  style={{
-                    backgroundColor: '#f8fafc',
-                    border: '1px solid #cbd5e1',
-                    borderRadius: '8px',
-                    padding: '0.85rem',
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    alignItems: 'flex-end',
-                    gap: '0.65rem',
-                  }}
-                >
-                  <div className={styles.formField} style={{ flex: '1 1 180px' }}>
-                    <span className={styles.label}>Typ wersji / strony</span>
-                    <select
-                      value={versionTypeInput}
-                      onChange={e => {
-                        setVersionTypeInput(e.target.value);
-                      }}
-                      className={styles.input}
-                    >
-                      <option value="RESTORED">Wersja odnowiona (po retuszu)</option>
-                      <option value="COLORIZED">Wersja w kolorze</option>
-                      <option value="ENHANCED">Wersja wyostrzona / poprawiona</option>
-                      <option value="REVERSE">🔄 Strona odwrotna (Rewers zdjęcia)</option>
-                      <option value="ORIGINAL">Oryginał</option>
-                      <option value="OTHER">Inna wersja</option>
-                    </select>
-                  </div>
-
-                  <div className={styles.formField} style={{ flex: '1 1 180px' }}>
-                    <span className={styles.label}>Własna etykieta (opcjonalnie)</span>
-                    <input
-                      type="text"
-                      placeholder="np. Koloryzacja z 2025 r."
-                      value={versionLabelInput}
-                      onChange={e => {
-                        setVersionLabelInput(e.target.value);
-                      }}
-                      className={styles.input}
-                    />
-                  </div>
-
-                  <div className={styles.filePickerRow}>
-                    <label htmlFor={versionFileInputId} className={styles.filePickerLabel}>
-                      📂 Wybierz plik wersji
-                    </label>
-                    <input
-                      id={versionFileInputId}
-                      type="file"
-                      accept="image/*,video/*"
-                      onChange={e => {
-                        setVersionFile(e.target.files?.[0] ?? null);
-                      }}
-                      className={styles.hiddenFileInput}
-                    />
-                    <span className={styles.selectedFilesBadge}>
-                      {versionFile ? versionFile.name : 'Nie wybrano'}
-                    </span>
-                  </div>
-
-                  {versionTypeInput !== 'REVERSE' && (
-                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: 600 }}>
-                      <input
-                        type="checkbox"
-                        checked={versionSetAsMain}
-                        onChange={e => {
-                          setVersionSetAsMain(e.target.checked);
-                        }}
-                      />
-                      <span>Ustaw jako główną wyświetlaną wersję</span>
-                    </label>
-                  )}
-
-                  <button
-                    type="button"
-                    disabled={!versionFile || isSubmitting}
-                    onClick={() => {
-                      void handleUploadVersionSubmit();
-                    }}
-                    className={styles.btnPrimary}
-                  >
-                    ✓ Wgraj wersję
-                  </button>
-                </div>
-              )}
-
-              {/* Point 12: Interactive Drag & Wheel Avatar Cropper */}
-              {isAdmin && showCropper && personId !== undefined && (
-                <InteractiveAvatarCropper
-                  mediaId={activeItem.id}
-                  mediaType={activeItem.mediaType}
-                  onSaveCrop={(cx, cy, cz) => {
-                    void handleSavePrimaryOrAvatarCrop(activeItem, cx, cy, cz);
-                  }}
-                  onCancel={() => {
-                    setShowCropper(false);
-                  }}
-                />
-              )}
-
-              {isAdmin && (
-                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  {!isEditingItem ? (
-                    <>
-                      <button
-                        type="button"
-                        data-testid="start-edit-media-item-button"
-                        onClick={() => {
-                          setIsEditingItem(true);
-                        }}
-                        className={styles.btnSecondary}
-                      >
-                        ✏️ Edytuj dane, opis, osoby, autora lub datę
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowVersionUpload(prev => !prev);
-                        }}
-                        className={styles.btnSecondary}
-                      >
-                        ➕ Dodaj wersję / rewers
-                      </button>
-
-                      {activeSelectedVersion && !activeSelectedVersion.main && (
-                        <>
-                          {!activeSelectedVersion.reverseSide && (
+                          <div
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              justifyContent: 'flex-end',
+                            }}
+                          >
                             <button
                               type="button"
                               onClick={() => {
-                                void handleSetVersionAsMain(activeSelectedVersion.id);
+                                setBulkDraftItems(prev =>
+                                  prev.map((item, i) =>
+                                    i === idx
+                                      ? { ...item, showDetails: !item.showDetails }
+                                      : item
+                                  )
+                                );
                               }}
                               className={styles.btnSecondary}
+                              style={{ height: '36px', whiteSpace: 'nowrap' }}
                             >
-                              ⭐ Ustaw tę wersję jako główną
+                              {draft.showDetails ? '▲ Zwiń szczegóły' : '🔍 Szczegóły pliku ▼'}
                             </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              void handleDeleteVersion(activeSelectedVersion.id);
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {draft.showDetails && (
+                      <div className={styles.stagedDetailsPanel}>
+                        <div className={styles.stagedDetailsRow}>
+                          <div className={styles.formField}>
+                            <span className={styles.label}>Tytuł</span>
+                            <input
+                              type="text"
+                              value={draft.title}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setBulkDraftItems(prev =>
+                                  prev.map((item, i) =>
+                                    i === idx ? { ...item, title: val } : item
+                                  )
+                                );
+                              }}
+                              className={styles.input}
+                            />
+                          </div>
+                          <div className={styles.formField}>
+                            <span className={styles.label}>Źródło</span>
+                            <input
+                              type="text"
+                              value={draft.sourceText}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setBulkDraftItems(prev =>
+                                  prev.map((item, i) =>
+                                    i === idx ? { ...item, sourceText: val } : item
+                                  )
+                                );
+                              }}
+                              className={styles.input}
+                            />
+                          </div>
+                          <div className={styles.formField}>
+                            <span className={styles.label}>Podpis z odwrotu</span>
+                            <input
+                              type="text"
+                              value={draft.inscriptionText}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setBulkDraftItems(prev =>
+                                  prev.map((item, i) =>
+                                    i === idx ? { ...item, inscriptionText: val } : item
+                                  )
+                                );
+                              }}
+                              className={styles.input}
+                            />
+                          </div>
+                        </div>
+                        <div className={styles.formField}>
+                          <span className={styles.label}>Opis tekstowy</span>
+                          <textarea
+                            rows={2}
+                            value={draft.description}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setBulkDraftItems(prev =>
+                                prev.map((item, i) =>
+                                  i === idx ? { ...item, description: val } : item
+                                )
+                              );
                             }}
-                            className={styles.btnDanger}
-                          >
-                            🗑️ Usuń tę wersję
-                          </button>
-                        </>
-                      )}
+                            className={styles.textarea}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
 
-                      {context === 'PERSON' && personId !== undefined && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowCropper(prev => !prev);
-                          }}
-                          className={styles.btnSecondary}
-                        >
-                          ⭐ Ustaw jako portret / wykadruj kółko
-                        </button>
-                      )}
-
-                      {context === 'GRAVE' &&
-                        graveId !== undefined &&
-                        activeItem.mediaType === 'IMAGE' &&
-                        primaryMediaId !== activeItem.id && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              void handleSavePrimaryOrAvatarCrop(activeItem);
-                            }}
-                            className={styles.btnSecondary}
-                          >
-                            ⭐ Ustaw jako główne zdjęcie nagrobka
-                          </button>
-                        )}
-
-                      {(graveId !== undefined ||
-                        personId !== undefined ||
-                        eventId !== undefined) && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            void handleUnlinkItemFromHere(activeItem.id);
-                          }}
-                          className={styles.btnSecondary}
-                        >
-                          🔗 Odepnij z tego miejsca
-                        </button>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void handleDeleteItem(activeItem.id);
-                        }}
-                        className={styles.btnDanger}
-                      >
-                        🗑️ Usuń całkowicie z dysku
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        disabled={isSubmitting}
-                        onClick={() => {
-                          void handleSaveItemEdit();
-                        }}
-                        className={styles.btnPrimary}
-                      >
-                        Zapisz zmiany
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsEditingItem(false);
-                        }}
-                        className={styles.btnSecondary}
-                      >
-                        Anuluj
-                      </button>
-                    </>
-                  )}
+              <div className={styles.modalFooter}>
+                <span style={{ fontSize: '0.82rem', color: '#475569' }}>
+                  Zaznaczono do zapisu: <strong>{String(selectedBulkDraftCount)}</strong>
+                </span>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      closeBulkEditModal();
+                    }}
+                    className={styles.btnSecondary}
+                  >
+                    Anuluj
+                  </button>
+                  <button
+                    type="submit"
+                    data-testid="submit-bulk-edit-media-button"
+                    disabled={selectedBulkDraftCount === 0 || isSubmitting}
+                    className={styles.btnPrimary}
+                  >
+                    ✓ Zastosuj zmiany dla zaznaczonych ({String(selectedBulkDraftCount)})
+                  </button>
                 </div>
-              )}
-            </div>
-          )}
+              </div>
+            </form>
+          </div>
         </div>
       )}
+
+      {/* =====================================================================
+          MODAL 3: PREVIEW FOR STAGED / BULK-EDITED FILE (Point 1 & Point 6)
+          ===================================================================== */}
+      {previewModalItem && (
+        <div
+          className={styles.fullscreenOverlay}
+          style={{ zIndex: 1500 }}
+          onClick={() => {
+            setPreviewModalItem(null);
+          }}
+        >
+          <div
+            className={styles.fullscreenTopBar}
+            onClick={e => {
+              e.stopPropagation();
+            }}
+          >
+            <strong style={{ fontSize: '0.95rem' }}>
+              🔍 Podgląd pliku: {previewModalItem.title}
+            </strong>
+            <button
+              type="button"
+              onClick={() => {
+                setPreviewModalItem(null);
+              }}
+              className={styles.btnSecondary}
+            >
+              ✕ Zamknij podgląd
+            </button>
+          </div>
+          <div
+            className={styles.viewerStage}
+            onClick={e => {
+              e.stopPropagation();
+            }}
+          >
+            {previewModalItem.mediaType === 'VIDEO' ? (
+              <video
+                src={previewModalItem.url}
+                controls
+                autoPlay
+                style={{ maxWidth: '92vw', maxHeight: '82vh', objectFit: 'contain' }}
+              />
+            ) : previewModalItem.mediaType === 'AUDIO' ? (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '1rem',
+                  padding: '2rem',
+                  backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                  borderRadius: '14px',
+                  width: '420px',
+                  maxWidth: '90vw',
+                }}
+              >
+                <span style={{ fontSize: '4rem' }}>🎵</span>
+                <strong style={{ color: '#ffffff' }}>{previewModalItem.title}</strong>
+                <audio src={previewModalItem.url} controls style={{ width: '100%' }} />
+              </div>
+            ) : (
+              <img
+                src={previewModalItem.url}
+                alt={previewModalItem.title}
+                style={{ maxWidth: '92vw', maxHeight: '84vh', objectFit: 'contain' }}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================================
+          MODAL 4: LINK EXISTING MEDIA FROM GALLERY (Point 3)
+          ===================================================================== */}
+      <GalleryBrowserModal
+        isOpen={showLinkExistingModal}
+        mode="multiple"
+        excludeMediaIds={effectiveItems.map(i => i.id)}
+        isSubmitting={isSubmitting}
+        onClose={() => {
+          setShowLinkExistingModal(false);
+        }}
+        onConfirmSelection={ids => {
+          void handleConfirmLinkExisting(ids);
+        }}
+      />
+
+      {/* =====================================================================
+          MODAL 5: FULLSCREEN LIGHTBOX WITH DETAILS, VERSIONS & CONFIRMATIONS
+          ===================================================================== */}
+      <MediaItemLightboxModal
+        items={allViewableItems}
+        activeIndex={activeIndex}
+        context={context}
+        graveId={graveId}
+        personId={personId}
+        eventId={eventId}
+        primaryMediaId={primaryMediaId}
+        isAdmin={isAdmin}
+        onClose={() => {
+          setActiveIndex(null);
+        }}
+        onNavigateIndex={nextIdx => {
+          setActiveIndex(nextIdx);
+        }}
+        onMediaUpdated={async () => {
+          await loadMedia();
+          onMediaChanged?.();
+        }}
+      />
     </section>
   );
 }
+                                          

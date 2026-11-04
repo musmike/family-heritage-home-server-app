@@ -1,4 +1,4 @@
-import { useState, useEffect, useId, use, type ReactNode } from 'react';
+import { useState, useEffect, use, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { biographyApi } from '../../api/biographyApi';
 import { mediaApi } from '../../api/mediaApi';
@@ -8,6 +8,8 @@ import WikiBiographySection from '../../components/WikiBiography/WikiBiographySe
 import Loader from '../../components/Loader/Loader';
 import PersonAvatar from '../../components/PersonAvatar/PersonAvatar';
 import InteractiveAvatarCropper from '../../components/PersonAvatar/InteractiveAvatarCropper';
+import GalleryBrowserModal from '../../components/MediaSection/GalleryBrowserModal';
+import MediaItemLightboxModal from '../../components/MediaSection/MediaItemLightboxModal';
 import styles from './Biographies.module.css';
 import type {
   ChildInFamilyDto,
@@ -17,7 +19,7 @@ import type {
   PersonSex,
   RelatedPersonDto,
 } from '../../types/biography';
-import type { MediaItemDto, MediaCollectionDto } from '../../types/media';
+import type { MediaItemDto } from '../../types/media';
 
 const translateSex = (sex: PersonSex | null): string | null => {
   if (sex === 'MALE') return 'mężczyzna';
@@ -115,11 +117,8 @@ const renderInlineRelative = (rel: RelatedPersonDto, note?: string) => {
   const fullName = `${rel.givenName ?? ''} ${rel.surname ?? ''}`.trim();
   const years =
     !rel.privateRecord && (rel.birthYear !== null || rel.deathYear !== null)
-      ? `${rel.birthYear !== null ? String(rel.birthYear) : '?'}–${
-          rel.deathYear !== null ? String(rel.deathYear) : ''
-        }`
+      ? `${rel.birthYear !== null ? String(rel.birthYear) : '?'}–${rel.deathYear !== null ? String(rel.deathYear) : ''}`
       : null;
-
   const subText = [years, note].filter(Boolean).join(' • ');
 
   const inner = (
@@ -172,7 +171,6 @@ const describeNonBiologicalChildRelation = (ch: ChildInFamilyDto): string => {
 };
 
 export default function PersonBiographyPage() {
-  const portraitInputId = useId();
   const { personId } = useParams<{ personId: string }>();
   const auth = use(AuthContext);
   const isAdmin =
@@ -182,20 +180,15 @@ export default function PersonBiographyPage() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showRawGedcom, setShowRawGedcom] = useState<boolean>(false);
-  const [isPortraitFullscreen, setIsPortraitFullscreen] = useState<boolean>(false);
-  const [portraitZoom, setPortraitZoom] = useState<number>(1);
 
-  // Admin Infobox Portrait Picker & Cropper Modal State
+  // Full Lightbox for Infobox Portrait (Point 28)
+  const [portraitLightboxItem, setPortraitLightboxItem] = useState<MediaItemDto | null>(null);
+
+  // Admin Infobox Portrait Picker (from Gallery) & Cropper Modal State (Point 29)
   const [showPortraitModal, setShowPortraitModal] = useState<boolean>(false);
   const [showCropperModal, setShowCropperModal] = useState<boolean>(false);
-  const [portraitUploadFile, setPortraitUploadFile] = useState<File | null>(null);
-  const [portraitSearchQuery, setPortraitSearchQuery] = useState<string>('');
-  const [portraitCandidates, setPortraitCandidates] = useState<MediaItemDto[]>([]);
-  const [availableCollections, setAvailableCollections] = useState<MediaCollectionDto[]>([]);
-  const [selectedPortraitCollectionId, setSelectedPortraitCollectionId] = useState<number | null>(null);
   const [isSubmittingPortrait, setIsSubmittingPortrait] = useState<boolean>(false);
   const [showConfirmRemoveAvatar, setShowConfirmRemoveAvatar] = useState<boolean>(false);
-  const [portraitModalError, setPortraitModalError] = useState<string | null>(null);
   const [actionErrorMessage, setActionErrorMessage] = useState<string | null>(null);
 
   const fetchBio = async () => {
@@ -218,72 +211,21 @@ export default function PersonBiographyPage() {
     void fetchBio();
   }, [personId]);
 
-  const fetchGalleryPortraitCandidates = async (q: string) => {
+  const handleOpenPortraitLightbox = async () => {
+    if (!bio?.avatarMediaId) return;
     try {
-      const page = await mediaApi.getGalleryPage({
-        search: q,
-        page: 0,
-        size: 36,
-      });
-      setPortraitCandidates(page.content);
+      const item = await mediaApi.getMediaById(bio.avatarMediaId);
+      setPortraitLightboxItem(item);
     } catch {
       // Ignore error
     }
   };
 
-  const handleOpenPortraitModal = () => {
-    setPortraitUploadFile(null);
-    setPortraitSearchQuery('');
-    setPortraitModalError(null);
-    setShowPortraitModal(true);
-    void fetchGalleryPortraitCandidates('');
-    void (async () => {
-      try {
-        const cols = await mediaApi.getAllCollections();
-        setAvailableCollections(cols);
-        if (cols.length > 0 && selectedPortraitCollectionId === null) {
-          const firstCol = cols.at(0);
-          if (firstCol) {
-            setSelectedPortraitCollectionId(firstCol.id);
-          }
-        }
-      } catch {
-        // Ignore error
-      }
-    })();
-  };
-
-  const handleUploadNewPortrait = async () => {
-    if (!bio || !portraitUploadFile) return;
-    if (!selectedPortraitCollectionId) {
-      setPortraitModalError('Wybierz istniejącą kolekcję dla wgrywanego portretu.');
-      return;
-    }
+  const handleSelectExistingAsPortrait = async (selectedIds: number[]) => {
+    const mediaId = selectedIds.at(0);
+    if (!bio || mediaId === undefined) return;
     setIsSubmittingPortrait(true);
-    setPortraitModalError(null);
-    try {
-      await mediaApi.uploadMedia({
-        file: portraitUploadFile,
-        primaryContext: 'PERSON',
-        personIds: [bio.id],
-        collectionId: selectedPortraitCollectionId,
-        setAsPersonAvatar: true,
-        clientLastModifiedMs: portraitUploadFile.lastModified || undefined,
-      });
-      setShowPortraitModal(false);
-      await fetchBio();
-      setShowCropperModal(true);
-    } catch {
-      setPortraitModalError('Nie udało się wgrać nowego portretu.');
-    } finally {
-      setIsSubmittingPortrait(false);
-    }
-  };
-
-  const handleSelectExistingAsPortrait = async (mediaId: number) => {
-    if (!bio) return;
-    setIsSubmittingPortrait(true);
-    setPortraitModalError(null);
+    setActionErrorMessage(null);
     try {
       await mediaApi.linkExistingMedia({
         mediaIds: [mediaId],
@@ -299,7 +241,7 @@ export default function PersonBiographyPage() {
       await fetchBio();
       setShowCropperModal(true);
     } catch {
-      setPortraitModalError('Nie udało się ustawić wybranego zdjęcia jako portretu.');
+      setActionErrorMessage('Nie udało się ustawić wybranego zdjęcia jako portretu.');
     } finally {
       setIsSubmittingPortrait(false);
     }
@@ -429,11 +371,11 @@ export default function PersonBiographyPage() {
             type="button"
             data-testid="toggle-raw-gedcom-button"
             onClick={() => {
-              setShowRawGedcom(prev => !prev);
+              setShowRawGedcom(true);
             }}
             className={styles.btnSecondary}
           >
-            {showRawGedcom ? 'Ukryj dane surowe GEDCOM' : 'Podgląd surowych danych GEDCOM'}
+            Podgląd surowych danych GEDCOM
           </button>
         )}
       </div>
@@ -464,10 +406,7 @@ export default function PersonBiographyPage() {
             >
               Drzewo przodków
             </h2>
-            <Link
-              to={`/tree?personId=${String(bio.id)}`}
-              className={styles.btnSecondary}
-            >
+            <Link to={`/tree?personId=${String(bio.id)}`} className={styles.btnSecondary}>
               🌳 Otwórz w pełnym drzewie →
             </Link>
           </div>
@@ -477,16 +416,14 @@ export default function PersonBiographyPage() {
         {/* 3. UNIFIED RIGHT-HAND INFOBOX TABLE */}
         <aside className={styles.infobox}>
           <div className={styles.infoboxTitleBanner}>{fullName}</div>
-
           <div className={styles.infoboxAvatarArea}>
             {bio.avatarMediaId ? (
               <button
                 type="button"
                 data-testid="infobox-portrait-fullscreen-trigger"
-                title="Kliknij, aby otworzyć na pełnym ekranie i powiększyć"
+                title="Kliknij, aby otworzyć podgląd oraz szczegóły i opcje"
                 onClick={() => {
-                  setPortraitZoom(1);
-                  setIsPortraitFullscreen(true);
+                  void handleOpenPortraitLightbox();
                 }}
                 className={styles.infoboxPortraitButton}
               >
@@ -511,15 +448,25 @@ export default function PersonBiographyPage() {
             ) : (
               <PersonAvatar sex={bio.sex} size="xl" />
             )}
-
             {bio.archived && <span className={styles.archivedBadge}>Osoba zarchiwizowana</span>}
 
             {isAdmin && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '0.4rem', marginTop: '0.25rem' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  justifyContent: 'center',
+                  gap: '0.4rem',
+                  marginTop: '0.25rem',
+                }}
+              >
                 <button
                   type="button"
                   data-testid="open-infobox-portrait-modal-button"
-                  onClick={handleOpenPortraitModal}
+                  onClick={() => {
+                    setActionErrorMessage(null);
+                    setShowPortraitModal(true);
+                  }}
                   className={styles.btnSecondary}
                   style={{ padding: '0.32rem 0.7rem', fontSize: '0.78rem' }}
                 >
@@ -546,7 +493,11 @@ export default function PersonBiographyPage() {
                         setShowConfirmRemoveAvatar(true);
                       }}
                       className={styles.btnSecondary}
-                      style={{ padding: '0.32rem 0.7rem', fontSize: '0.78rem', color: '#b91c1c' }}
+                      style={{
+                        padding: '0.32rem 0.7rem',
+                        fontSize: '0.78rem',
+                        color: '#b91c1c',
+                      }}
                       title="Usuń portret z profilu"
                     >
                       🗑️ Usuń portret
@@ -571,10 +522,7 @@ export default function PersonBiographyPage() {
           <div className={styles.infoboxSectionHeader}>Urodzenie i śmierć</div>
           <table className={styles.infoboxTable}>
             <tbody>
-              {renderInfoboxRow(
-                bio.age !== null ? 'Wiek' : 'Status',
-                ageAndStatusText
-              )}
+              {renderInfoboxRow(bio.age !== null ? 'Wiek' : 'Status', ageAndStatusText)}
               {renderInfoboxRow('Data urodzenia', bio.birthDateText)}
               {renderInfoboxRow('Miejsce urodzenia', bio.birthPlace)}
               {bio.lifeState === 'DECEASED' && (
@@ -588,7 +536,11 @@ export default function PersonBiographyPage() {
                       bio.burialGraveId ? (
                         <Link
                           to={`/burials/graves/${String(bio.burialGraveId)}`}
-                          style={{ color: '#1d4ed8', fontWeight: 700, textDecoration: 'underline' }}
+                          style={{
+                            color: '#1d4ed8',
+                            fontWeight: 700,
+                            textDecoration: 'underline',
+                          }}
                         >
                           {bio.burialPlace}
                         </Link>
@@ -644,10 +596,7 @@ export default function PersonBiographyPage() {
 
           {bio.spouseFamilies.map((fam, idx) => {
             const sectionTitle =
-              bio.spouseFamilies.length > 1
-                ? `Związek (${String(idx + 1)})`
-                : 'Związek';
-
+              bio.spouseFamilies.length > 1 ? `Związek (${String(idx + 1)})` : 'Związek';
             const spouseFullName = fam.spouse
               ? `${fam.spouse.givenName ?? ''} ${fam.spouse.surname ?? ''}`.trim()
               : null;
@@ -663,9 +612,7 @@ export default function PersonBiographyPage() {
                 ch.motherRelationshipType !== 'BIOLOGICAL'
             );
 
-            const childrenLabel = spouseFullName
-              ? `Dzieci (${spouseFullName})`
-              : 'Dzieci';
+            const childrenLabel = spouseFullName ? `Dzieci (${spouseFullName})` : 'Dzieci';
             const adoptedChildrenLabel = spouseFullName
               ? `Dzieci adopcyjne / przybrane (${spouseFullName})`
               : 'Dzieci adopcyjne / przybrane';
@@ -711,47 +658,8 @@ export default function PersonBiographyPage() {
           })}
         </aside>
 
-        {/* 4. LEFT MAIN CONTENT (Wikipedia-Style Biography with Embedded Photos/Videos) */}
+        {/* 4. LEFT MAIN CONTENT */}
         <div className={styles.articleBodyBlock}>
-          {showRawGedcom && bio.rawGedcomData && (
-            <section className={styles.wikiSection} data-testid="raw-gedcom-panel">
-              <h2 className={styles.wikiSectionTitle}>
-                Surowe dane z ostatniego importu GEDCOM (widok administratora)
-              </h2>
-              <table className={styles.infoboxTable}>
-                <tbody>
-                  {renderInfoboxRow('Identyfikator XREF w pliku', bio.rawGedcomData.gedRefId)}
-                  {renderInfoboxRow('Ostatni zapisany _UID', bio.rawGedcomData.gedUid)}
-                  {renderInfoboxRow(
-                    'Surowe imię i nazwisko',
-                    `${bio.rawGedcomData.rawGivenName ?? '—'} /${
-                      bio.rawGedcomData.rawSurname ?? '—'
-                    }/`
-                  )}
-                  {renderInfoboxRow('Surowa data urodzenia', bio.rawGedcomData.rawBirthDate)}
-                  {renderInfoboxRow('Surowe miejsce urodzenia', bio.rawGedcomData.rawBirthPlace)}
-                  {renderInfoboxRow('Surowa data śmierci', bio.rawGedcomData.rawDeathDate)}
-                  {renderInfoboxRow('Surowe miejsce śmierci', bio.rawGedcomData.rawDeathPlace)}
-                  {renderInfoboxRow(
-                    'Surowa przyczyna śmierci',
-                    bio.rawGedcomData.rawCauseOfDeath
-                  )}
-                  {renderInfoboxRow(
-                    'Surowe miejsce pochówku',
-                    bio.rawGedcomData.rawBurialPlace
-                  )}
-                  {bio.rawGedcomData.externalIds.length > 0 &&
-                    renderInfoboxRow(
-                      'Zewnętrzne identyfikatory (_UID)',
-                      bio.rawGedcomData.externalIds
-                        .map(e => `${e.sourceSystem}: ${e.uidValue}`)
-                        .join(', ')
-                    )}
-                </tbody>
-              </table>
-            </section>
-          )}
-
           <WikiBiographySection
             personId={bio.id}
             biographyContent={bio.biographyContent}
@@ -763,8 +671,8 @@ export default function PersonBiographyPage() {
         </div>
       </div>
 
-      {/* Modal: Set or Change Main Portrait (Upload New or Pick from Gallery) */}
-      {isAdmin && showPortraitModal && (
+      {/* Point 17: Raw GEDCOM Data Modal */}
+      {showRawGedcom && bio.rawGedcomData && (
         <div
           style={{
             position: 'fixed',
@@ -777,239 +685,122 @@ export default function PersonBiographyPage() {
             padding: '1rem',
           }}
           onClick={() => {
-            setShowPortraitModal(false);
+            setShowRawGedcom(false);
           }}
         >
           <div
+            data-testid="raw-gedcom-panel"
             style={{
               backgroundColor: '#ffffff',
               borderRadius: '12px',
               border: '1px solid #cbd5e1',
               width: '100%',
-              maxWidth: '820px',
-              maxHeight: '88vh',
+              maxWidth: '680px',
+              maxHeight: '85vh',
               overflowY: 'auto',
-              padding: '1.25rem 1.5rem',
+              padding: '1.35rem 1.65rem',
               display: 'flex',
               flexDirection: 'column',
               gap: '1rem',
+              boxShadow: '0 20px 45px rgba(15, 23, 42, 0.25)',
             }}
             onClick={e => {
               e.stopPropagation();
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <strong style={{ fontSize: '1.08rem', color: '#0f172a' }}>
-                📷 Ustaw lub zmień portret główny osoby: {fullName}
-              </strong>
+              <h2 className={styles.wikiSectionTitle} style={{ border: 'none', padding: 0 }}>
+                Surowe dane z ostatniego importu GEDCOM (widok administratora)
+              </h2>
               <button
                 type="button"
                 onClick={() => {
-                  setShowPortraitModal(false);
+                  setShowRawGedcom(false);
                 }}
                 className={styles.btnSecondary}
               >
                 ✕ Zamknij
               </button>
             </div>
-
-            {bio.avatarMediaId && (
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '0.75rem 1rem',
-                  backgroundColor: '#fef2f2',
-                  border: '1px solid #fecaca',
-                  borderRadius: '8px',
-                  gap: '1rem',
-                  flexWrap: 'wrap',
-                }}
-              >
-                <span style={{ fontSize: '0.84rem', color: '#991b1b', fontWeight: 500 }}>
-                  Ta osoba ma obecnie ustawiony portret. Możesz go usunąć z profilu (plik pozostanie nienaruszony w galerii).
-                </span>
-                <button
-                  type="button"
-                  disabled={isSubmittingPortrait}
-                  onClick={() => {
-                    setShowConfirmRemoveAvatar(true);
-                  }}
-                  className={styles.btnSecondary}
-                  style={{
-                    backgroundColor: '#dc2626',
-                    color: '#ffffff',
-                    borderColor: '#b91c1c',
-                    fontSize: '0.82rem',
-                    flexShrink: 0,
-                  }}
-                >
-                  🗑️ Usuń portret z profilu
-                </button>
-              </div>
-            )}
-
-            {/* Option 1: Upload from disk */}
-            <div
-              style={{
-                backgroundColor: '#f8fafc',
-                border: '1px solid #cbd5e1',
-                borderRadius: '8px',
-                padding: '0.9rem 1.1rem',
-                display: 'flex',
-                flexWrap: 'wrap',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '0.75rem',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-                <label
-                  htmlFor={portraitInputId}
-                  className={styles.btnSecondary}
-                  style={{ cursor: 'pointer' }}
-                >
-                  📂 Wybierz nowy plik portretu z dysku
-                </label>
-                <input
-                  id={portraitInputId}
-                  type="file"
-                  accept="image/*,video/*"
-                  onChange={e => {
-                    setPortraitUploadFile(e.target.files?.[0] ?? null);
-                  }}
-                  style={{ display: 'none' }}
-                />
-                <span style={{ fontSize: '0.84rem', color: '#475569', fontWeight: 600 }}>
-                  {portraitUploadFile ? portraitUploadFile.name : 'Nie wybrano pliku'}
-                </span>
-              </div>
-
-              {availableCollections.length > 0 && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%' }}>
-                  <label htmlFor="portrait-col-select" style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155' }}>
-                    Kolekcja docelowa:
-                  </label>
-                  <select
-                    id="portrait-col-select"
-                    value={selectedPortraitCollectionId ?? ''}
-                    onChange={e => {
-                      setSelectedPortraitCollectionId(e.target.value ? Number(e.target.value) : null);
-                    }}
-                    className={styles.selectInput}
-                    style={{ flex: 1, maxWidth: '300px' }}
-                  >
-                    <option value="">-- Wybierz kolekcję --</option>
-                    {availableCollections.map(col => (
-                      <option key={col.id} value={col.id}>
-                        📁 {col.name} {col.datedCollection ? `(${String(col.startYear ?? '')})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              <button
-                type="button"
-                disabled={!portraitUploadFile || isSubmittingPortrait}
-                onClick={() => {
-                  void handleUploadNewPortrait();
-                }}
-                className={styles.btnSecondary}
-                style={{ backgroundColor: '#2563eb', color: '#ffffff', borderColor: '#1d4ed8' }}
-              >
-                {isSubmittingPortrait ? 'Wgrywanie...' : 'Wgraj i ustaw jako portret'}
-              </button>
-
-              {portraitModalError && (
-                <div role="alert" className={styles.AlertError} style={{ margin: '0.35rem 0' }}>
-                  {portraitModalError}
-                </div>
-              )}
-            </div>
-
-            {/* Option 2: Pick existing from Gallery */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-              <strong style={{ fontSize: '0.9rem', color: '#1e293b' }}>
-                Lub wybierz istniejące zdjęcie / film z galerii:
-              </strong>
-              <input
-                type="text"
-                placeholder="Szukaj w galerii po tytule, nazwie pliku lub osobie..."
-                value={portraitSearchQuery}
-                onChange={e => {
-                  const q = e.target.value;
-                  setPortraitSearchQuery(q);
-                  void fetchGalleryPortraitCandidates(q);
-                }}
-                className={styles.textInput}
-              />
-
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(145px, 1fr))',
-                  gap: '0.75rem',
-                  maxHeight: '360px',
-                  overflowY: 'auto',
-                }}
-              >
-                {portraitCandidates.map(cand => (
-                  <button
-                    key={cand.id}
-                    type="button"
-                    disabled={isSubmittingPortrait}
-                    onClick={() => {
-                      void handleSelectExistingAsPortrait(cand.id);
-                    }}
-                    style={{
-                      backgroundColor: '#f8fafc',
-                      border: '1px solid #cbd5e1',
-                      borderRadius: '8px',
-                      overflow: 'hidden',
-                      padding: 0,
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                    }}
-                  >
-                    <div style={{ width: '100%', height: '120px', backgroundColor: '#0f172a' }}>
-                      {cand.mediaType === 'IMAGE' ? (
-                        <img
-                          src={mediaApi.getThumbnailUrl(cand.id)}
-                          alt={cand.title ?? ''}
-                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                        />
-                      ) : (
-                        <video
-                          src={`${mediaApi.getFileUrl(cand.id)}#t=0.5`}
-                          preload="metadata"
-                          muted
-                          playsInline
-                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                        />
-                      )}
-                    </div>
-                    <div
-                      style={{
-                        padding: '0.4rem 0.55rem',
-                        fontSize: '0.76rem',
-                        fontWeight: 600,
-                        color: '#0f172a',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                      }}
-                    >
-                      {cand.title ?? cand.fileName}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
+            <table className={styles.infoboxTable}>
+              <tbody>
+                {renderInfoboxRow('Identyfikator XREF w pliku', bio.rawGedcomData.gedRefId)}
+                {renderInfoboxRow('Ostatni zapisany _UID', bio.rawGedcomData.gedUid)}
+                {renderInfoboxRow(
+                  'Surowe imię i nazwisko',
+                  `${bio.rawGedcomData.rawGivenName ?? '—'} /${bio.rawGedcomData.rawSurname ?? '—'}/`
+                )}
+                {renderInfoboxRow('Surowa data urodzenia', bio.rawGedcomData.rawBirthDate)}
+                {renderInfoboxRow('Surowe miejsce urodzenia', bio.rawGedcomData.rawBirthPlace)}
+                {renderInfoboxRow('Surowa data śmierci', bio.rawGedcomData.rawDeathDate)}
+                {renderInfoboxRow('Surowe miejsce śmierci', bio.rawGedcomData.rawDeathPlace)}
+                {renderInfoboxRow('Surowa przyczyna śmierci', bio.rawGedcomData.rawCauseOfDeath)}
+                {renderInfoboxRow('Surowe miejsce pochówku', bio.rawGedcomData.rawBurialPlace)}
+                {bio.rawGedcomData.externalIds.length > 0 &&
+                  renderInfoboxRow(
+                    'Zewnętrzne identyfikatory (_UID)',
+                    bio.rawGedcomData.externalIds
+                      .map(e => `${e.sourceSystem}: ${e.uidValue}`)
+                      .join(', ')
+                  )}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
+
+      {/* Point 29: Full Gallery Browser Modal for Selecting Main Portrait (no disk upload here) */}
+      <GalleryBrowserModal
+        isOpen={isAdmin && showPortraitModal}
+        mode="single"
+        title={`📷 Wybierz z galerii portret główny dla osoby: ${fullName}`}
+        isSubmitting={isSubmittingPortrait}
+        headerBanner={
+          bio.avatarMediaId ? (
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '0.75rem 1rem',
+                backgroundColor: '#fef2f2',
+                border: '1px solid #fecaca',
+                borderRadius: '8px',
+                gap: '1rem',
+                flexWrap: 'wrap',
+              }}
+            >
+              <span style={{ fontSize: '0.84rem', color: '#991b1b', fontWeight: 500 }}>
+                Ta osoba ma obecnie ustawiony portret. Możesz go usunąć z profilu (plik pozostanie
+                nienaruszony w galerii).
+              </span>
+              <button
+                type="button"
+                disabled={isSubmittingPortrait}
+                onClick={() => {
+                  setShowConfirmRemoveAvatar(true);
+                }}
+                className={styles.btnSecondary}
+                style={{
+                  backgroundColor: '#dc2626',
+                  color: '#ffffff',
+                  borderColor: '#b91c1c',
+                  fontSize: '0.82rem',
+                  flexShrink: 0,
+                }}
+              >
+                🗑️ Usuń portret z profilu
+              </button>
+            </div>
+          ) : undefined
+        }
+        onClose={() => {
+          setShowPortraitModal(false);
+        }}
+        onConfirmSelection={ids => {
+          void handleSelectExistingAsPortrait(ids);
+        }}
+      />
 
       {/* Modal: Confirm Remove Portrait */}
       {isAdmin && showConfirmRemoveAvatar && (
@@ -1045,8 +836,16 @@ export default function PersonBiographyPage() {
             <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '1.2rem', color: '#1e293b' }}>
               🗑️ Usunąć portret profilu?
             </h3>
-            <p style={{ fontSize: '0.92rem', color: '#64748b', lineHeight: 1.5, margin: '0 0 1.25rem 0' }}>
-              Czy na pewno chcesz usunąć portret z profilu tej osoby? Plik multimedialny nadal pozostanie zachowany w galerii.
+            <p
+              style={{
+                fontSize: '0.92rem',
+                color: '#64748b',
+                lineHeight: 1.5,
+                margin: '0 0 1.25rem 0',
+              }}
+            >
+              Czy na pewno chcesz usunąć portret z profilu tej osoby? Plik multimedialny nadal
+              pozostanie zachowany w galerii.
             </p>
             {actionErrorMessage && (
               <div role="alert" className={styles.AlertError} style={{ marginBottom: '1rem' }}>
@@ -1127,113 +926,32 @@ export default function PersonBiographyPage() {
         </div>
       )}
 
-      {/* Fullscreen Infobox Portrait Preview */}
-      {isPortraitFullscreen && bio.avatarMediaId && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(5, 8, 15, 0.96)',
-            zIndex: 1300,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
+      {/* Point 28: Full Lightbox with Details & Options for Infobox Portrait */}
+      {portraitLightboxItem && (
+        <MediaItemLightboxModal
+          items={[portraitLightboxItem]}
+          activeIndex={0}
+          context="PERSON"
+          personId={bio.id}
+          primaryMediaId={bio.avatarMediaId}
+          isAdmin={isAdmin}
+          onClose={() => {
+            setPortraitLightboxItem(null);
           }}
-          onClick={() => {
-            setIsPortraitFullscreen(false);
+          onNavigateIndex={() => {
+            // Single item preview
           }}
-          onWheel={e => {
-            e.preventDefault();
-            const delta = e.deltaY < 0 ? 0.25 : -0.25;
-            setPortraitZoom(prev => Math.min(5, Math.max(1, prev + delta)));
+          onMediaUpdated={async () => {
+            await fetchBio();
+            try {
+              const refreshed = await mediaApi.getMediaById(portraitLightboxItem.id);
+              setPortraitLightboxItem(refreshed);
+            } catch {
+              setPortraitLightboxItem(null);
+            }
           }}
-        >
-          <div
-            style={{
-              position: 'absolute',
-              top: '1rem',
-              right: '1rem',
-              display: 'flex',
-              gap: '0.5rem',
-              zIndex: 10,
-            }}
-            onClick={e => {
-              e.stopPropagation();
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => {
-                setPortraitZoom(prev => Math.max(1, prev - 0.5));
-              }}
-              className={styles.btnSecondary}
-            >
-              −
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setPortraitZoom(1);
-              }}
-              className={styles.btnSecondary}
-            >
-              {Math.round(portraitZoom * 100)}%
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setPortraitZoom(prev => Math.min(5, prev + 0.5));
-              }}
-              className={styles.btnSecondary}
-            >
-              +
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setIsPortraitFullscreen(false);
-              }}
-              className={styles.btnSecondary}
-            >
-              ✕ Zamknij
-            </button>
-          </div>
-
-          <div
-            onClick={e => {
-              e.stopPropagation();
-            }}
-            style={{
-              transform: `scale(${String(portraitZoom)})`,
-              transition: 'transform 0.1s ease-out',
-              maxWidth: '94vw',
-              maxHeight: '88vh',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            {bio.avatarMediaType === 'VIDEO' ? (
-              <video
-                src={mediaApi.getFileUrl(bio.avatarMediaId)}
-                autoPlay
-                loop
-                muted
-                playsInline
-                style={{ maxWidth: '94vw', maxHeight: '88vh', objectFit: 'contain' }}
-              />
-            ) : (
-              <img
-                src={mediaApi.getFileUrl(bio.avatarMediaId)}
-                alt={fullName}
-                style={{ maxWidth: '94vw', maxHeight: '88vh', objectFit: 'contain' }}
-              />
-            )}
-          </div>
-        </div>
+        />
       )}
-
     </div>
   );
 }

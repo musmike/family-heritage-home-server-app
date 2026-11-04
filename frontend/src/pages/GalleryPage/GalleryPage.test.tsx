@@ -9,14 +9,23 @@ import type { MediaGalleryPageDto } from '../../types/media';
 vi.mock('../../api/mediaApi', () => ({
   mediaApi: {
     getGalleryPage: vi.fn(),
-    getAllCollections: vi.fn(),
+    getAllCollections: vi.fn().mockResolvedValue([]),
     createCollection: vi.fn(),
+    updateCollection: vi.fn(),
     deleteCollection: vi.fn(),
+    previewFilename: vi.fn(),
     uploadMedia: vi.fn(),
     uploadBatchMedia: vi.fn(),
+    getMediaById: vi.fn(),
+    updateMedia: vi.fn(),
+    bulkUpdateMedia: vi.fn(),
+    linkExistingMedia: vi.fn(),
+    unlinkMediaFromContext: vi.fn(),
     deleteMedia: vi.fn(),
     getThumbnailUrl: (id: number) => `http://mock/media/${String(id)}/thumbnail`,
     getFileUrl: (id: number) => `http://mock/media/${String(id)}/file`,
+    getVersionFileUrl: (id: number, vId: number) =>
+      `http://mock/media/${String(id)}/versions/${String(vId)}/file`,
   },
 }));
 

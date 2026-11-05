@@ -70,6 +70,28 @@ public class Event {
     @OneToMany(mappedBy = "event", cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<EventParticipant> participants = new HashSet<>();
 
+    @OneToMany(mappedBy = "event", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("sortOrder ASC, id ASC")
+    private List<EventCollectionLink> collectionLinks = new ArrayList<>();
+
+    public List<MediaCollection> getOrderedCollections() {
+        List<MediaCollection> ordered = new ArrayList<>();
+        Set<Long> seenIds = new HashSet<>();
+        if (collectionLinks != null) {
+            List<EventCollectionLink> sorted = new ArrayList<>(collectionLinks);
+            sorted.sort(Comparator
+                    .comparing(EventCollectionLink::getSortOrder, Comparator.nullsLast(Integer::compareTo))
+                    .thenComparing(EventCollectionLink::getId, Comparator.nullsLast(Long::compareTo)));
+            for (EventCollectionLink link : sorted) {
+                MediaCollection c = link.getCollection();
+                if (c != null && (c.getId() == null || seenIds.add(c.getId()))) {
+                    ordered.add(c);
+                }
+            }
+        }
+        return ordered;
+    }
+
     public void addParticipant(EventParticipant participant) {
         participants.add(participant);
         participant.setEvent(this);

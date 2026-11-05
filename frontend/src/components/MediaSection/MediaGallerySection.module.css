@@ -214,10 +214,9 @@
 .stagedList {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  max-height: 440px;
-  overflow-y: auto;
-  padding: 0.6rem;
+  gap: 0.85rem;
+  flex-shrink: 0;
+  padding: 0.65rem;
   background-color: #ffffff;
   border: 1px solid #cbd5e1;
   border-radius: 8px;
@@ -736,6 +735,37 @@
   color: #dc2626;
 }
 
+.sortControlGroup {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1 1 220px;
+  max-width: 100%;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.sortSelect {
+  height: 36px;
+  padding: 0 0.65rem;
+  font-size: 0.84rem;
+  color: #1e293b;
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  width: 100%;
+  max-width: 310px;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+
+.timeHmsGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-wrap: nowrap;
+}
+
 @media (max-width: 767px) {
   .sectionCard {
     padding: 1rem;
@@ -743,5 +773,25 @@
 
   .stagedInputsGrid {
     grid-template-columns: 1fr;
+  }
+
+  .sortControlGroup {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .sortSelect {
+    max-width: 100%;
+    flex: 1;
+  }
+
+  .stagedMainRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .stagedThumbButton {
+    width: 100%;
+    height: 130px;
   }
 }

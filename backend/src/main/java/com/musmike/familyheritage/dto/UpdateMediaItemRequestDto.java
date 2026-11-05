@@ -18,10 +18,11 @@ public class UpdateMediaItemRequestDto {
     private String inscriptionText;
     private String description;
     private String sourceText;
-
     private Boolean portrait;
+    private Boolean groupPortrait;
     private Boolean unknownMedia;
     private Long collectionId;
+    private List<Long> collectionIds;
 
     // "MANUAL", "METADATA", "EVENT", "UNDATED"
     private String dateSourceMode;

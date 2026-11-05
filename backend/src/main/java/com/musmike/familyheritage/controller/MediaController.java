@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -112,6 +113,7 @@ public class MediaController {
             @RequestParam(name = "graveId", required = false) Long graveId,
             @RequestParam(name = "eventId", required = false) Long eventId,
             @RequestParam(name = "collectionId", required = false) Long collectionId,
+            @RequestParam(name = "collectionIds", required = false) String collectionIdsParam,
             @RequestParam(name = "portraitMedia", required = false) Boolean portraitMedia,
             @RequestParam(name = "unknownMedia", required = false) Boolean unknownMedia,
             @RequestParam(name = "isBetweenRange", defaultValue = "false") boolean isBetweenRange,
@@ -139,10 +141,11 @@ public class MediaController {
     ) throws IOException {
         ensureAdmin();
         List<Long> personIds = parseIdsList(personIdsParam);
-        MediaItemDto created = mediaService.uploadMediaExtended(
+        List<Long> collectionIds = parseCollectionIds(collectionId, collectionIdsParam);
+        MediaItemDto created = mediaService.uploadMediaWithCollections(
                 file, primaryContext, customFolderName, customFileName,
                 title, inscriptionText, description, sourceText,
-                graveId, eventId, collectionId, portraitMedia, unknownMedia,
+                graveId, eventId, collectionIds, portraitMedia, unknownMedia,
                 isBetweenRange, dateQualifier, customYear, customMonth, customDay,
                 timeQualifier, customHour, customMinute, customSecond,
                 rangeEndQualifier, rangeEndYear, rangeEndMonth, rangeEndDay,
@@ -171,6 +174,7 @@ public class MediaController {
             @RequestParam(name = "graveId", required = false) Long graveId,
             @RequestParam(name = "eventId", required = false) Long eventId,
             @RequestParam(name = "collectionId", required = false) Long collectionId,
+            @RequestParam(name = "collectionIds", required = false) String collectionIdsParam,
             @RequestParam(name = "portraitMedia", required = false) Boolean portraitMedia,
             @RequestParam(name = "unknownMedia", required = false) Boolean unknownMedia,
             @RequestParam(name = "defaultYear", required = false) Integer defaultYear,
@@ -178,11 +182,12 @@ public class MediaController {
     ) throws IOException {
         ensureAdmin();
         List<Long> personIds = parseIdsList(personIdsParam);
-        List<MediaItemDto> created = mediaService.uploadBatchMediaExtended(
+        List<Long> collectionIds = parseCollectionIds(collectionId, collectionIdsParam);
+        List<MediaItemDto> created = mediaService.uploadBatchMediaWithCollections(
                 files, primaryContext, customFolderName, customFileNames, titles,
                 customYears, customMonths, customDays, customHours, customMinutes, customSeconds,
                 selectedMetadataSourceTags, clientLastModifiedList,
-                graveId, eventId, collectionId, portraitMedia, unknownMedia, defaultYear, personIds
+                graveId, eventId, collectionIds, portraitMedia, unknownMedia, defaultYear, personIds
         );
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
@@ -264,10 +269,20 @@ public class MediaController {
             @RequestParam(name = "graveId", required = false) Long graveId,
             @RequestParam(name = "personId", required = false) Long personId,
             @RequestParam(name = "eventId", required = false) Long eventId,
-            @RequestParam(name = "targetCollectionId", required = false) Long targetCollectionId
+            @RequestParam(name = "collectionId", required = false) Long collectionId,
+            @RequestParam(name = "targetCollectionId", required = false) Long targetCollectionId,
+            @RequestParam(name = "targetCollectionIds", required = false) String targetCollectionIdsParam
     ) {
         ensureAdmin();
-        mediaService.unlinkMediaFromContext(mediaId, graveId, personId, eventId, targetCollectionId);
+        List<Long> targetColIds = parseCollectionIds(targetCollectionId, targetCollectionIdsParam);
+        mediaService.unlinkMediaFromContext(mediaId, graveId, personId, eventId, collectionId, targetColIds);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/bulk-delete")
+    public ResponseEntity<Void> bulkDeleteMedia(@RequestBody List<Long> mediaIds) {
+        ensureAdmin();
+        mediaService.bulkDeleteMedia(mediaIds);
         return ResponseEntity.noContent().build();
     }
 
@@ -355,6 +370,14 @@ public class MediaController {
                 .filter(s -> !s.isEmpty())
                 .map(Long::valueOf)
                 .toList();
+    }
+
+    private List<Long> parseCollectionIds(Long singleId, String rawListParam) {
+        List<Long> ids = new ArrayList<>(parseIdsList(rawListParam));
+        if (singleId != null && !ids.contains(singleId)) {
+            ids.addFirst(singleId);
+        }
+        return ids;
     }
 
     private void ensureAdmin() {

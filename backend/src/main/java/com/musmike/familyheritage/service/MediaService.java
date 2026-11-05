@@ -72,7 +72,7 @@ public class MediaService {
         List<MediaItemDto> filtered = allItems.stream()
                 .filter(m -> mediaType == null || m.getMediaType() == mediaType)
                 .filter(m -> primaryContext == null || m.getPrimaryContext() == primaryContext)
-                .filter(m -> collectionId == null || (m.getCollection() != null && m.getCollection().getId().equals(collectionId)))
+                .filter(m -> collectionId == null || m.getOrderedCollections().stream().anyMatch(c -> c.getId().equals(collectionId)))
                 .filter(m -> matchesPersonFilter(m, filterPersonIds, matchAllPersons))
                 .map(m -> toDto(m, isAdmin, userCodeTranslations))
                 .filter(dto -> matchesDatedMode(dto, datedMode))
@@ -161,7 +161,6 @@ public class MediaService {
     public MediaCollectionDto updateCollection(Long collectionId, SaveMediaCollectionRequestDto req) {
         MediaCollection col = mediaCollectionRepository.findById(collectionId)
                 .orElseThrow(() -> new IllegalArgumentException("Collection not found: " + collectionId));
-
         if (req.getName() == null || req.getName().isBlank()) {
             throw new IllegalArgumentException("Collection name cannot be blank.");
         }
@@ -198,23 +197,25 @@ public class MediaService {
         cleanUserSlug = cleanUserSlug.replaceFirst("^\\d{4}(_\\d{2})*(_\\d{2})*(-_)?(\\d{4}(_\\d{2})*(_\\d{2})*_)?", "");
         if (cleanUserSlug.isBlank()) cleanUserSlug = storageService.toSnakeCase(req.getName());
 
-        final Long targetColId = col.getId();
         String desiredSlug = !datePrefix.isEmpty() ? datePrefix + "_" + cleanUserSlug : cleanUserSlug;
         if (!desiredSlug.equals(col.getSlug())) {
             String uniqueSlug = desiredSlug;
             int counter = 2;
             while (mediaCollectionRepository.findBySlug(uniqueSlug)
-                    .filter(c -> !c.getId().equals(targetColId)).isPresent()) {
+                    .filter(c -> !c.getId().equals(collectionId))
+                    .isPresent()) {
                 uniqueSlug = desiredSlug + "_" + counter++;
             }
             col.setSlug(uniqueSlug);
         }
 
-        col = mediaCollectionRepository.saveAndFlush(col);
+        MediaCollection savedCol = mediaCollectionRepository.saveAndFlush(col);
+        String newDir = resolveCollectionDirectoryPath(savedCol);
 
-        String newDir = resolveCollectionDirectoryPath(col);
         if (!oldDir.equals(newDir)) {
-            List<MediaItem> items = mediaItemRepository.findByCollectionId(col.getId());
+            List<MediaItem> items = mediaItemRepository.findAll().stream()
+                    .filter(m -> m.getOrderedCollections().stream().anyMatch(c -> c.getId().equals(collectionId)))
+                    .toList();
             for (MediaItem item : items) {
                 String oldRelPath = item.getRelativePath();
                 if (oldRelPath != null && oldRelPath.startsWith(oldDir + "/")) {
@@ -228,7 +229,7 @@ public class MediaService {
             storageService.deleteDirectoryRecursively(oldDir);
         }
 
-        return toCollectionDto(col);
+        return toCollectionDto(savedCol);
     }
 
     @Transactional
@@ -236,16 +237,19 @@ public class MediaService {
         MediaCollection col = mediaCollectionRepository.findById(collectionId)
                 .orElseThrow(() -> new IllegalArgumentException("Collection not found: " + collectionId));
 
-        List<MediaItem> items = mediaItemRepository.findByCollectionId(collectionId);
-
+        List<MediaItem> items = mediaItemRepository.findAll().stream()
+                .filter(m -> m.getOrderedCollections().stream().anyMatch(c -> c.getId().equals(collectionId)))
+                .toList();
         List<MediaItem> exclusiveItems = new ArrayList<>();
         List<MediaItem> sharedItems = new ArrayList<>();
 
         for (MediaItem item : items) {
+            boolean hasOtherCollections = item.getOrderedCollections().stream()
+                    .anyMatch(c -> !c.getId().equals(collectionId));
             boolean hasEvents = !item.getEvents().isEmpty();
             boolean hasGraves = !item.getGraves().isEmpty();
             boolean hasPersons = !item.getPersons().isEmpty() || !item.getPersonLinks().isEmpty();
-            if (!hasEvents && !hasGraves && !hasPersons) {
+            if (!hasOtherCollections && !hasEvents && !hasGraves && !hasPersons) {
                 exclusiveItems.add(item);
             } else {
                 sharedItems.add(item);
@@ -253,28 +257,31 @@ public class MediaService {
         }
 
         if (!exclusiveItems.isEmpty()) {
-            throw new IllegalStateException("Nie można usunąć kolekcji, ponieważ zawiera pliki multimedialne przypisane wyłącznie do niej ("
-                    + exclusiveItems.size() + " plików). Usuń lub przenieś te multimedia przed usunięciem kolekcji.");
+            throw new IllegalStateException(
+                    "Nie można usunąć kolekcji, ponieważ zawiera pliki multimedialne przypisane wyłącznie do niej ("
+                            + exclusiveItems.size() + " plików). Usuń lub przenieś te multimedia przed usunięciem kolekcji."
+            );
         }
 
         for (MediaItem item : sharedItems) {
-            item.setCollection(null);
+            List<MediaCollection> remainingCols = item.getOrderedCollections().stream()
+                    .filter(c -> !c.getId().equals(collectionId))
+                    .toList();
+            applyOrderedCollectionsToMediaItem(item, remainingCols);
+            MediaCollection newPrimary = item.getPrimaryCollection();
+
             String targetDir = resolveDirectoryForContext(
                     item.getPrimaryContext(),
                     item.getGraves().stream().findFirst().map(Grave::getId).orElse(null),
                     item.getPersons().stream().findFirst().map(Person::getId).orElse(null),
                     item.getEvents().stream().findFirst().map(Event::getId).orElse(null),
-                    null,
+                    newPrimary != null ? newPrimary.getId() : null,
                     extractYearFromItem(item),
                     Boolean.TRUE.equals(item.getIsPortrait()),
                     Boolean.TRUE.equals(item.getIsUnknown()),
                     item.getPersons().size()
             );
-            String newRelPath = targetDir + "/" + item.getFileName();
-            if (!Objects.equals(item.getRelativePath(), newRelPath)) {
-                String finalPath = storageService.moveFileToRelativePath(item.getRelativePath(), newRelPath);
-                item.setRelativePath(finalPath);
-            }
+            relocateSingleMediaItemToDirectory(item, targetDir, item.getFileName());
             mediaItemRepository.save(item);
         }
 
@@ -315,7 +322,7 @@ public class MediaService {
         for (MediaItem item : eventMedia) {
             boolean hasOtherEvents = item.getEvents().stream().anyMatch(e -> !e.getId().equals(eventId));
             boolean hasGraves = !item.getGraves().isEmpty();
-            boolean hasCollection = item.getCollection() != null;
+            boolean hasCollection = !item.getOrderedCollections().isEmpty();
             boolean hasPersons = !item.getPersons().isEmpty() || !item.getPersonLinks().isEmpty();
 
             if (!hasOtherEvents && !hasGraves && !hasCollection && !hasPersons) {
@@ -334,7 +341,7 @@ public class MediaService {
             item.getEvents().removeIf(e -> e.getId().equals(eventId));
 
             Long remainingEvtId = item.getEvents().stream().findFirst().map(Event::getId).orElse(null);
-            Long remainingColId = item.getCollection() != null ? item.getCollection().getId() : null;
+            Long remainingColId = item.getPrimaryCollection() != null ? item.getPrimaryCollection().getId() : null;
             Long remainingGraveId = item.getGraves().stream().findFirst().map(Grave::getId).orElse(null);
             Long remainingPersonId = item.getPersons().stream().findFirst().map(Person::getId).orElse(null);
 
@@ -352,11 +359,7 @@ public class MediaService {
                     item.getPersons().size()
             );
 
-            String newRelPath = targetDir + "/" + item.getFileName();
-            if (!Objects.equals(item.getRelativePath(), newRelPath)) {
-                String finalPath = storageService.moveFileToRelativePath(item.getRelativePath(), newRelPath);
-                item.setRelativePath(finalPath);
-            }
+            relocateSingleMediaItemToDirectory(item, targetDir, item.getFileName());
             mediaItemRepository.save(item);
         }
 
@@ -552,6 +555,58 @@ public class MediaService {
             boolean setAsPersonAvatar,
             boolean setAsGravePrimary
     ) throws IOException {
+        List<Long> colIds = collectionId != null ? List.of(collectionId) : List.of();
+        return uploadMediaWithCollections(
+                file, primaryContext, customFolderName, customFileName,
+                title, inscriptionText, description, sourceText,
+                graveId, eventId, colIds, portraitMedia, unknownMedia,
+                isBetweenRange, dateQualifier, customYear, customMonth, customDay,
+                timeQualifier, customHour, customMinute, customSecond,
+                rangeEndQualifier, rangeEndYear, rangeEndMonth, rangeEndDay,
+                rangeEndTimeQualifier, rangeEndHour, rangeEndMinute, rangeEndSecond,
+                selectedMetadataSourceTag, clientLastModifiedMs, personIds,
+                setAsPersonAvatar, setAsGravePrimary
+        );
+    }
+
+    @Transactional
+    public MediaItemDto uploadMediaWithCollections(
+            MultipartFile file,
+            MediaPrimaryContext primaryContext,
+            String customFolderName,
+            String customFileName,
+            String title,
+            String inscriptionText,
+            String description,
+            String sourceText,
+            Long graveId,
+            Long eventId,
+            List<Long> collectionIds,
+            Boolean portraitMedia,
+            Boolean unknownMedia,
+            Boolean isBetweenRange,
+            String dateQualifier,
+            Integer customYear,
+            Integer customMonth,
+            Integer customDay,
+            String timeQualifier,
+            Integer customHour,
+            Integer customMinute,
+            Integer customSecond,
+            String rangeEndQualifier,
+            Integer rangeEndYear,
+            Integer rangeEndMonth,
+            Integer rangeEndDay,
+            String rangeEndTimeQualifier,
+            Integer rangeEndHour,
+            Integer rangeEndMinute,
+            Integer rangeEndSecond,
+            String selectedMetadataSourceTag,
+            Long clientLastModifiedMs,
+            List<Long> personIds,
+            boolean setAsPersonAvatar,
+            boolean setAsGravePrimary
+    ) throws IOException {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("Uploaded file cannot be empty.");
         }
@@ -562,11 +617,15 @@ public class MediaService {
         MediaType mediaType;
         if (lowerMime.startsWith("video/")) {
             mediaType = MediaType.VIDEO;
-        } else if (lowerMime.startsWith("audio/") || lowerMime.contains("ogg") || lowerMime.contains("mp3") || lowerMime.contains("wav") || lowerMime.contains("flac") || lowerMime.contains("aac") || lowerMime.contains("m4a")) {
+        } else if (lowerMime.startsWith("audio/") || lowerMime.contains("ogg") || lowerMime.contains("mp3")
+                || lowerMime.contains("wav") || lowerMime.contains("flac") || lowerMime.contains("aac")
+                || lowerMime.contains("m4a")) {
             mediaType = MediaType.AUDIO;
         } else {
             mediaType = MediaType.IMAGE;
         }
+
+        List<MediaCollection> resolvedCollections = resolveOrderedCollections(collectionIds);
 
         Event linkedEvent = null;
         if (eventId != null) {
@@ -580,27 +639,28 @@ public class MediaService {
                     syncEventMediaPathsOnEventChange(linkedEvent);
                 }
             }
+            if (extractYearFromEvent(linkedEvent) == null) {
+                List<MediaCollection> existingEvtCols = findExistingCollectionsForUndatedEvent(linkedEvent);
+                if (resolvedCollections.isEmpty() && !existingEvtCols.isEmpty()) {
+                    resolvedCollections = existingEvtCols;
+                } else if (!resolvedCollections.isEmpty()) {
+                    syncUndatedEventCollections(linkedEvent, resolvedCollections);
+                }
+            } else {
+                resolvedCollections = List.of();
+            }
         }
 
+        Long primaryCollectionId = resolvedCollections.isEmpty() ? null : resolvedCollections.getFirst().getId();
         boolean isPortrait = Boolean.TRUE.equals(portraitMedia) || primaryContext == MediaPrimaryContext.PERSON;
         boolean isUnknown = Boolean.TRUE.equals(unknownMedia);
         int personsCount = personIds != null ? personIds.size() : 0;
-
         Long primaryPersonId = (personIds != null && !personIds.isEmpty()) ? personIds.getFirst() : null;
+
         MediaFilenamePreviewDto preview = previewFilenameWithFolder(
-                primaryContext,
-                graveId,
-                primaryPersonId,
-                eventId,
-                collectionId,
-                customYear,
-                customFolderName,
-                customFileName,
-                file.getOriginalFilename(),
-                mimeType,
-                isPortrait,
-                isUnknown,
-                personsCount
+                primaryContext, graveId, primaryPersonId, eventId,
+                primaryCollectionId, customYear, customFolderName, customFileName,
+                file.getOriginalFilename(), mimeType, isPortrait, isUnknown, personsCount
         );
 
         MediaItem item = new MediaItem();
@@ -619,7 +679,8 @@ public class MediaService {
 
         List<MediaMetadataExtractor.ExtractedMetadata> allMeta =
                 metadataExtractor.extractAllDates(fileBytes, mimeType, clientLastModifiedMs);
-        MediaMetadataExtractor.ExtractedMetadata chosenMeta = selectMetadataOption(allMeta, selectedMetadataSourceTag);
+        MediaMetadataExtractor.ExtractedMetadata chosenMeta =
+                selectMetadataOption(allMeta, selectedMetadataSourceTag);
         if (chosenMeta != null && chosenMeta.year() != null) {
             item.setMetadataDateDescriptor(chosenMeta.toDateDescriptor());
             item.setMetadataDateSource(chosenMeta.sourceTag());
@@ -628,34 +689,17 @@ public class MediaService {
         if (customYear != null && customYear >= 1000 && customYear <= 2999) {
             DateDescriptor dd = new DateDescriptor();
             populateMediaDateDescriptor(
-                    dd,
-                    isBetweenRange,
-                    dateQualifier,
-                    customYear,
-                    customMonth,
-                    customDay,
-                    timeQualifier,
-                    customHour,
-                    customMinute,
-                    customSecond,
-                    rangeEndQualifier,
-                    rangeEndYear,
-                    rangeEndMonth,
-                    rangeEndDay,
-                    rangeEndTimeQualifier,
-                    rangeEndHour,
-                    rangeEndMinute,
-                    rangeEndSecond
+                    dd, isBetweenRange,
+                    dateQualifier, customYear, customMonth, customDay,
+                    timeQualifier, customHour, customMinute, customSecond,
+                    rangeEndQualifier, rangeEndYear, rangeEndMonth, rangeEndDay,
+                    rangeEndTimeQualifier, rangeEndHour, rangeEndMinute, rangeEndSecond
             );
             item.setDateDescriptor(dd);
         }
 
-        if (collectionId != null) {
-            mediaCollectionRepository.findById(collectionId).ifPresent(item::setCollection);
-        }
-
         if (personIds != null && !personIds.isEmpty()) {
-            List<Person> people = personRepository.findAllById(personIds);
+            List<Person> people = personRepository.findAllById(personIds.stream().filter(id -> id != null && id > 0).toList());
             item.getPersons().addAll(people);
             for (Person p : people) {
                 item.getPersonLinks().add(new MediaPersonLink(item, p, MediaPersonLinkType.DEPICTED));
@@ -668,24 +712,22 @@ public class MediaService {
                     .orElseThrow(() -> new IllegalArgumentException("Grave not found: " + graveId));
             item.getGraves().add(linkedGrave);
         }
-
         if (linkedEvent != null) {
             item.getEvents().add(linkedEvent);
         }
 
         item = mediaItemRepository.saveAndFlush(item);
+        applyOrderedCollectionsToMediaItem(item, resolvedCollections);
+        item = mediaItemRepository.saveAndFlush(item);
 
         Long diskTimestampMs = resolveOriginalTimestampMs(clientLastModifiedMs, chosenMeta);
         boolean isGif = mimeType.toLowerCase(Locale.ROOT).contains("gif");
         storageService.saveFileAndThumbnail(
-                item.getRelativePath(),
-                item.getId(),
-                fileBytes,
-                mediaType == MediaType.IMAGE && !isGif,
-                diskTimestampMs
+                item.getRelativePath(), item.getId(), fileBytes,
+                mediaType == MediaType.IMAGE && !isGif, diskTimestampMs
         );
 
-        if (primaryPersonId != null) {
+        if (primaryPersonId != null && primaryPersonId > 0) {
             Person person = personRepository.findById(primaryPersonId).orElse(null);
             if (person != null && (setAsPersonAvatar || (primaryContext == MediaPrimaryContext.PERSON && person.getAvatarMedia() == null))) {
                 person.setAvatarMedia(item);
@@ -727,26 +769,11 @@ public class MediaService {
             List<Long> commonPersonIds
     ) throws IOException {
         return uploadBatchMediaExtended(
-                files,
-                primaryContext,
-                null,
-                customFileNames,
-                titles,
-                customYears,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                graveId,
-                eventId,
-                collectionId,
-                primaryContext == MediaPrimaryContext.PERSON,
-                false,
-                defaultYear,
-                commonPersonIds
+                files, primaryContext, null, customFileNames, titles, customYears,
+                null, null, null, null, null, null, null,
+                graveId, eventId, collectionId,
+                primaryContext == MediaPrimaryContext.PERSON, false,
+                defaultYear, commonPersonIds
         );
     }
 
@@ -773,10 +800,41 @@ public class MediaService {
             Integer defaultYear,
             List<Long> commonPersonIds
     ) throws IOException {
+        List<Long> colIds = collectionId != null ? List.of(collectionId) : List.of();
+        return uploadBatchMediaWithCollections(
+                files, primaryContext, customFolderName, customFileNames, titles,
+                customYears, customMonths, customDays, customHours, customMinutes, customSeconds,
+                selectedMetadataSourceTags, clientLastModifiedList,
+                graveId, eventId, colIds, portraitMedia, unknownMedia, defaultYear, commonPersonIds
+        );
+    }
+
+    @Transactional
+    public List<MediaItemDto> uploadBatchMediaWithCollections(
+            List<MultipartFile> files,
+            MediaPrimaryContext primaryContext,
+            String customFolderName,
+            List<String> customFileNames,
+            List<String> titles,
+            List<Integer> customYears,
+            List<Integer> customMonths,
+            List<Integer> customDays,
+            List<Integer> customHours,
+            List<Integer> customMinutes,
+            List<Integer> customSeconds,
+            List<String> selectedMetadataSourceTags,
+            List<Long> clientLastModifiedList,
+            Long graveId,
+            Long eventId,
+            List<Long> collectionIds,
+            Boolean portraitMedia,
+            Boolean unknownMedia,
+            Integer defaultYear,
+            List<Long> commonPersonIds
+    ) throws IOException {
         if (files == null || files.isEmpty()) {
             throw new IllegalArgumentException("Files list cannot be empty.");
         }
-
         List<MediaItemDto> results = new ArrayList<>();
         for (int i = 0; i < files.size(); i++) {
             MultipartFile f = files.get(i);
@@ -791,42 +849,12 @@ public class MediaService {
             String cMetaTag = getListElem(selectedMetadataSourceTags, i);
             Long cLastMod = getListElem(clientLastModifiedList, i);
 
-            results.add(uploadMediaExtended(
-                    f,
-                    primaryContext,
-                    customFolderName,
-                    cName,
-                    cTitle,
-                    null,
-                    null,
-                    null,
-                    graveId,
-                    eventId,
-                    collectionId,
-                    portraitMedia,
-                    unknownMedia,
-                    false,
-                    "EXACT",
-                    cYear,
-                    cMonth,
-                    cDay,
-                    "EXACT",
-                    cHour,
-                    cMinute,
-                    cSecond,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    cMetaTag,
-                    cLastMod,
-                    commonPersonIds,
-                    false,
-                    false
+            results.add(uploadMediaWithCollections(
+                    f, primaryContext, customFolderName, cName, cTitle, null, null, null,
+                    graveId, eventId, collectionIds, portraitMedia, unknownMedia,
+                    false, "EXACT", cYear, cMonth, cDay, "EXACT", cHour, cMinute, cSecond,
+                    null, null, null, null, null, null, null, null,
+                    cMetaTag, cLastMod, commonPersonIds, false, false
             ));
         }
         return results;
@@ -839,12 +867,28 @@ public class MediaService {
 
         if (req.getPortrait() != null) {
             item.setIsPortrait(req.getPortrait());
+            if (Boolean.TRUE.equals(req.getPortrait())) {
+                item.setIsUnknown(false);
+            }
         }
         if (req.getUnknownMedia() != null) {
             item.setIsUnknown(req.getUnknownMedia());
+            if (Boolean.TRUE.equals(req.getUnknownMedia())) {
+                item.setIsPortrait(false);
+            }
         }
-        if (req.getCollectionId() != null) {
-            mediaCollectionRepository.findById(req.getCollectionId()).ifPresent(item::setCollection);
+
+        if (req.getCollectionIds() != null || req.getCollectionId() != null) {
+            List<Long> requestedColIds = req.getCollectionIds() != null
+                    ? req.getCollectionIds()
+                    : List.of(req.getCollectionId());
+            List<MediaCollection> resolvedCols = resolveOrderedCollections(requestedColIds);
+            applyOrderedCollectionsToMediaItem(item, resolvedCols);
+
+            Event primaryEvt = resolvePrimaryEventForMedia(item, req.getContextEventId());
+            if (!resolvedCols.isEmpty() && primaryEvt != null && extractYearFromEvent(primaryEvt) == null) {
+                syncUndatedEventCollections(primaryEvt, resolvedCols);
+            }
         }
 
         if (req.getCustomFolderName() != null && !req.getCustomFolderName().isBlank()) {
@@ -855,14 +899,20 @@ public class MediaService {
                 targetEvent = eventRepository.saveAndFlush(targetEvent);
                 syncEventMediaPathsOnEventChange(targetEvent);
                 item = mediaItemRepository.findById(mediaId).orElseThrow();
+            } else if (item.getPrimaryCollection() != null && item.getEvents().isEmpty() && item.getGraves().isEmpty()) {
+                updateCollectionSlugAndRelocateAll(item.getPrimaryCollection(), newFolderSlug);
+                item = mediaItemRepository.findById(mediaId).orElseThrow();
             } else {
                 String currentDir = extractDirectoryPath(item.getRelativePath());
-                String targetDir = replaceLastDirectorySegment(currentDir, newFolderSlug);
-                String targetRelPath = targetDir + "/" + item.getFileName();
-                if (!targetRelPath.equals(item.getRelativePath())) {
-                    String movedPath = storageService.moveFileToRelativePath(item.getRelativePath(), targetRelPath);
-                    item.setRelativePath(movedPath);
-                }
+                MediaCollection pCol = item.getPrimaryCollection();
+                String safeSlug = preserveMandatoryDatePrefixForFolder(
+                        item.getPrimaryContext(), null,
+                        pCol != null ? pCol.getId() : null,
+                        extractYearFromItem(item), newFolderSlug
+                );
+                String targetDir = replaceLastDirectorySegment(currentDir, safeSlug);
+                moveAllMediaInDirectory(currentDir, targetDir);
+                item = mediaItemRepository.findById(mediaId).orElseThrow();
             }
         }
 
@@ -896,27 +946,12 @@ public class MediaService {
         }
 
         applyDateModeToMediaItem(
-                item,
-                req.getDateSourceMode(),
-                req.getSelectedMetadataSourceTag(),
-                req.getContextEventId(),
+                item, req.getDateSourceMode(), req.getSelectedMetadataSourceTag(), req.getContextEventId(),
                 req.getIsBetweenRange(),
-                req.getDateQualifier(),
-                req.getYear(),
-                req.getMonth(),
-                req.getDay(),
-                req.getTimeQualifier(),
-                req.getHour(),
-                req.getMinute(),
-                req.getSecond(),
-                req.getRangeEndQualifier(),
-                req.getRangeEndYear(),
-                req.getRangeEndMonth(),
-                req.getRangeEndDay(),
-                req.getRangeEndTimeQualifier(),
-                req.getRangeEndHour(),
-                req.getRangeEndMinute(),
-                req.getRangeEndSecond()
+                req.getDateQualifier(), req.getYear(), req.getMonth(), req.getDay(),
+                req.getTimeQualifier(), req.getHour(), req.getMinute(), req.getSecond(),
+                req.getRangeEndQualifier(), req.getRangeEndYear(), req.getRangeEndMonth(), req.getRangeEndDay(),
+                req.getRangeEndTimeQualifier(), req.getRangeEndHour(), req.getRangeEndMinute(), req.getRangeEndSecond()
         );
 
         if (req.getPersonLinks() != null) {
@@ -950,21 +985,17 @@ public class MediaService {
             }
         }
 
+        relocateCollectionMediaItemIfNeeded(item, req.getGroupPortrait());
+
         item = mediaItemRepository.saveAndFlush(item);
 
         if (req.getSetAsAvatarForPersonId() != null) {
             MediaItem finalItem = item;
             personRepository.findById(req.getSetAsAvatarForPersonId()).ifPresent(p -> {
                 p.setAvatarMedia(finalItem);
-                if (req.getAvatarCropX() != null) {
-                    p.setAvatarCropX(Math.clamp(req.getAvatarCropX(), 0, 100));
-                }
-                if (req.getAvatarCropY() != null) {
-                    p.setAvatarCropY(Math.clamp(req.getAvatarCropY(), 0, 100));
-                }
-                if (req.getAvatarCropZoom() != null) {
-                    p.setAvatarCropZoom(Math.clamp(req.getAvatarCropZoom(), 1.0, 5.0));
-                }
+                if (req.getAvatarCropX() != null) p.setAvatarCropX(Math.clamp(req.getAvatarCropX(), 0, 100));
+                if (req.getAvatarCropY() != null) p.setAvatarCropY(Math.clamp(req.getAvatarCropY(), 0, 100));
+                if (req.getAvatarCropZoom() != null) p.setAvatarCropZoom(Math.clamp(req.getAvatarCropZoom(), 1.0, 5.0));
                 personRepository.saveAndFlush(p);
             });
         }
@@ -983,7 +1014,6 @@ public class MediaService {
                 "MEDIA",
                 item.getId()
         );
-
         return toDto(item, true, loadUserCodeTranslations());
     }
 
@@ -1031,7 +1061,8 @@ public class MediaService {
         String dir = extractDirectoryPath(item.getRelativePath());
         String mimeType = file.getContentType() != null ? file.getContentType() : item.getMimeType();
         String ext = storageService.extractExtension(file.getOriginalFilename(), mimeType);
-        String stem = item.getFileName().replaceFirst("\\.[^.]+$", "").replaceFirst("_(original|restored|colorized|enhanced|reverse|other)(_\\d+)?$", "");
+        String stem = item.getFileName().replaceFirst("\\.[^.]+$", "")
+                .replaceFirst("_(original|restored|colorized|enhanced|reverse|other)(_\\d+)?$", "");
         String verFileName = findAvailableFileName(dir, stem + "_" + vType.name().toLowerCase(Locale.ROOT), ext);
         String verRelPath = dir + "/" + verFileName;
 
@@ -1165,15 +1196,50 @@ public class MediaService {
             });
         }
 
-        MediaCollection targetCollection = null;
-        if (req.getTargetCollectionId() != null) {
-            targetCollection = mediaCollectionRepository.findById(req.getTargetCollectionId())
-                    .orElseThrow(() -> new IllegalArgumentException("Collection not found: " + req.getTargetCollectionId()));
+        List<Long> targetColIds = new ArrayList<>();
+        if (req.getTargetCollectionIds() != null && !req.getTargetCollectionIds().isEmpty()) {
+            targetColIds.addAll(req.getTargetCollectionIds());
+        } else if (req.getTargetCollectionId() != null) {
+            targetColIds.add(req.getTargetCollectionId());
         }
+        List<MediaCollection> targetCollections = resolveOrderedCollections(targetColIds);
 
         List<MediaItem> items = mediaItemRepository.findAllById(req.getMediaIds()).stream()
                 .sorted(Comparator.comparing(MediaItem::getId))
                 .toList();
+
+        if (newFolderSlug != null && req.getContextEventId() == null && targetCollections.isEmpty() && !items.isEmpty()) {
+            MediaItem first = items.getFirst();
+            if (first.getPrimaryCollection() != null && first.getEvents().isEmpty() && first.getGraves().isEmpty()) {
+                updateCollectionSlugAndRelocateAll(first.getPrimaryCollection(), newFolderSlug);
+                items = mediaItemRepository.findAllById(req.getMediaIds()).stream()
+                        .sorted(Comparator.comparing(MediaItem::getId))
+                        .toList();
+            } else {
+                String currentDir = extractDirectoryPath(first.getRelativePath());
+                MediaCollection pCol = first.getPrimaryCollection();
+                String safeSlug = preserveMandatoryDatePrefixForFolder(
+                        first.getPrimaryContext(), null,
+                        pCol != null ? pCol.getId() : null,
+                        extractYearFromItem(first), newFolderSlug
+                );
+                String targetDir = replaceLastDirectorySegment(currentDir, safeSlug);
+                moveAllMediaInDirectory(currentDir, targetDir);
+                items = mediaItemRepository.findAllById(req.getMediaIds()).stream()
+                        .sorted(Comparator.comparing(MediaItem::getId))
+                        .toList();
+            }
+        }
+
+        if (!targetCollections.isEmpty() && req.getContextEventId() != null) {
+            Event ctxEvt = eventRepository.findById(req.getContextEventId()).orElse(null);
+            if (ctxEvt != null && extractYearFromEvent(ctxEvt) == null) {
+                syncUndatedEventCollections(ctxEvt, targetCollections);
+                items = mediaItemRepository.findAllById(req.getMediaIds()).stream()
+                        .sorted(Comparator.comparing(MediaItem::getId))
+                        .toList();
+            }
+        }
 
         String cleanStem = (req.getBaseFileNameStem() != null && !req.getBaseFileNameStem().isBlank())
                 ? storageService.toSnakeCase(req.getBaseFileNameStem()).replaceFirst("_\\d{1,3}$", "")
@@ -1182,68 +1248,56 @@ public class MediaService {
         List<MediaItemDto> updatedDtos = new ArrayList<>();
         int index = 1;
         for (MediaItem item : items) {
-            String currentDir = extractDirectoryPath(item.getRelativePath());
-            String targetDir = currentDir;
-
-            if (targetCollection != null) {
-                item.setCollection(targetCollection);
-                if (item.getEvents().isEmpty() && item.getGraves().isEmpty()) {
-                    String colDir = resolveCollectionDirectoryPath(targetCollection);
-                    if (Boolean.TRUE.equals(item.getIsPortrait())) {
-                        colDir = colDir + "/" + (item.getPersons().size() > 1 ? "portraits/group" : "portraits/single");
-                    } else if (Boolean.TRUE.equals(item.getIsUnknown())) {
-                        colDir = colDir + "/unknown";
-                    }
-                    targetDir = colDir;
-                }
-            } else if (newFolderSlug != null && req.getContextEventId() == null) {
-                String safeSlug = preserveMandatoryDatePrefixForFolder(
-                        item.getPrimaryContext(),
-                        null,
-                        item.getCollection() != null ? item.getCollection().getId() : null,
-                        extractYearFromItem(item),
-                        newFolderSlug
-                );
-                targetDir = replaceLastDirectorySegment(currentDir, safeSlug);
+            if (!targetCollections.isEmpty()) {
+                applyOrderedCollectionsToMediaItem(item, targetCollections);
             }
 
+            Boolean bulkGroupPortrait = null;
+            if (req.getCategoryMode() != null && !"NO_CHANGE".equalsIgnoreCase(req.getCategoryMode())) {
+                switch (req.getCategoryMode().trim().toUpperCase(Locale.ROOT)) {
+                    case "REGULAR" -> {
+                        item.setIsPortrait(false);
+                        item.setIsUnknown(false);
+                        bulkGroupPortrait = false;
+                    }
+                    case "PORTRAIT_SINGLE" -> {
+                        item.setIsPortrait(true);
+                        item.setIsUnknown(false);
+                        bulkGroupPortrait = false;
+                    }
+                    case "PORTRAIT_GROUP" -> {
+                        item.setIsPortrait(true);
+                        item.setIsUnknown(false);
+                        bulkGroupPortrait = true;
+                    }
+                    case "UNKNOWN" -> {
+                        item.setIsPortrait(false);
+                        item.setIsUnknown(true);
+                        bulkGroupPortrait = false;
+                    }
+                    default -> {}
+                }
+            }
+
+            relocateCollectionMediaItemIfNeeded(item, bulkGroupPortrait);
+
+            String currentDir = extractDirectoryPath(item.getRelativePath());
             String targetFileName = item.getFileName();
             if (cleanStem != null && !cleanStem.isBlank()) {
                 String ext = storageService.extractExtension(item.getFileName(), item.getMimeType());
                 String candidate = String.format("%s_%02d.%s", cleanStem, index, ext);
-                String candidateRel = targetDir + "/" + candidate;
+                String candidateRel = currentDir + "/" + candidate;
                 if (!candidateRel.equals(item.getRelativePath())
                         && (mediaItemRepository.existsByRelativePath(candidateRel)
                         || Files.exists(storageService.resolveMediaFilePath(candidateRel)))) {
-                    candidate = findAvailableFileName(targetDir, cleanStem, ext);
+                    candidate = findAvailableFileName(currentDir, cleanStem, ext);
                 }
                 targetFileName = candidate;
             }
             index++;
 
-            String targetRelPath = targetDir + "/" + targetFileName;
-            if (!targetRelPath.equals(item.getRelativePath())) {
-                if (mediaItemRepository.existsByRelativePath(targetRelPath)
-                        || Files.exists(storageService.resolveMediaFilePath(targetRelPath))) {
-                    String ext = storageService.extractExtension(targetFileName, item.getMimeType());
-                    targetFileName = findAvailableFileName(targetDir, targetFileName, ext);
-                    targetRelPath = targetDir + "/" + targetFileName;
-                }
-                String movedPath = storageService.moveFileToRelativePath(item.getRelativePath(), targetRelPath);
-                item.setRelativePath(movedPath);
-                item.setFileName(targetFileName);
-                for (MediaVersion ver : item.getVersions()) {
-                    if (Boolean.TRUE.equals(ver.getIsMain())) {
-                        ver.setRelativePath(movedPath);
-                        ver.setFileName(targetFileName);
-                    } else {
-                        String verTargetRel = targetDir + "/" + ver.getFileName();
-                        if (!verTargetRel.equals(ver.getRelativePath())) {
-                            String verMoved = storageService.moveFileToRelativePath(ver.getRelativePath(), verTargetRel);
-                            ver.setRelativePath(verMoved);
-                        }
-                    }
-                }
+            if (!targetFileName.equals(item.getFileName())) {
+                relocateSingleMediaItemToDirectory(item, currentDir, targetFileName);
             }
 
             if (req.getTitle() != null && !req.getTitle().isBlank()) {
@@ -1309,7 +1363,6 @@ public class MediaService {
         if (req.getMediaIds() == null || req.getMediaIds().isEmpty()) {
             throw new IllegalArgumentException("Wybierz przynajmniej jedno zdjęcie lub film z galerii.");
         }
-
         Grave grave = req.getGraveId() != null
                 ? graveRepository.findById(req.getGraveId())
                 .orElseThrow(() -> new IllegalArgumentException("Grave not found: " + req.getGraveId()))
@@ -1322,10 +1375,14 @@ public class MediaService {
                 ? eventRepository.findById(req.getEventId())
                 .orElseThrow(() -> new IllegalArgumentException("Event not found: " + req.getEventId()))
                 : null;
-        MediaCollection col = req.getCollectionId() != null
-                ? mediaCollectionRepository.findById(req.getCollectionId())
-                .orElseThrow(() -> new IllegalArgumentException("Collection not found: " + req.getCollectionId()))
-                : null;
+
+        List<Long> requestedColIds = new ArrayList<>();
+        if (req.getCollectionIds() != null && !req.getCollectionIds().isEmpty()) {
+            requestedColIds.addAll(req.getCollectionIds());
+        } else if (req.getCollectionId() != null) {
+            requestedColIds.add(req.getCollectionId());
+        }
+        List<MediaCollection> collectionsToLink = resolveOrderedCollections(requestedColIds);
 
         Map<Long, String> userCodeTranslations = loadUserCodeTranslations();
         List<MediaItem> items = mediaItemRepository.findAllById(req.getMediaIds());
@@ -1346,21 +1403,26 @@ public class MediaService {
             }
             if (event != null) {
                 item.getEvents().add(event);
+                if (extractYearFromEvent(event) == null) {
+                    List<MediaCollection> evtCols = findExistingCollectionsForUndatedEvent(event);
+                    if (!evtCols.isEmpty()) {
+                        appendCollectionsToMediaItem(item, evtCols);
+                    }
+                }
             }
-            if (col != null) {
-                item.setCollection(col);
+            if (!collectionsToLink.isEmpty()) {
+                appendCollectionsToMediaItem(item, collectionsToLink);
             }
             MediaItem saved = mediaItemRepository.saveAndFlush(item);
             linkedDtos.add(toDto(saved, true, userCodeTranslations));
         }
         graveRepository.flush();
-
         return linkedDtos;
     }
 
     @Transactional
     public void unlinkMediaFromContext(Long mediaId, Long graveId, Long personId, Long eventId) {
-        unlinkMediaFromContext(mediaId, graveId, personId, eventId, null);
+        unlinkMediaFromContext(mediaId, graveId, personId, eventId, null, List.of());
     }
 
     @Transactional
@@ -1370,6 +1432,21 @@ public class MediaService {
             Long personId,
             Long eventId,
             Long targetCollectionId
+    ) {
+        unlinkMediaFromContext(
+                mediaId, graveId, personId, eventId, null,
+                targetCollectionId != null ? List.of(targetCollectionId) : List.of()
+        );
+    }
+
+    @Transactional
+    public void unlinkMediaFromContext(
+            Long mediaId,
+            Long graveId,
+            Long personId,
+            Long eventId,
+            Long collectionIdToUnlink,
+            List<Long> targetCollectionIds
     ) {
         MediaItem item = mediaItemRepository.findById(mediaId)
                 .orElseThrow(() -> new IllegalArgumentException("Media item not found: " + mediaId));
@@ -1396,17 +1473,22 @@ public class MediaService {
         if (eventId != null) {
             item.getEvents().removeIf(e -> e.getId().equals(eventId));
         }
+        if (collectionIdToUnlink != null) {
+            List<MediaCollection> remaining = item.getOrderedCollections().stream()
+                    .filter(c -> !c.getId().equals(collectionIdToUnlink))
+                    .toList();
+            applyOrderedCollectionsToMediaItem(item, remaining);
+        }
 
-        if (targetCollectionId != null) {
-            MediaCollection targetCol = mediaCollectionRepository.findById(targetCollectionId)
-                    .orElseThrow(() -> new IllegalArgumentException("Collection not found: " + targetCollectionId));
-            item.setCollection(targetCol);
+        if (targetCollectionIds != null && !targetCollectionIds.isEmpty()) {
+            List<MediaCollection> targetCols = resolveOrderedCollections(targetCollectionIds);
+            appendCollectionsToMediaItem(item, targetCols);
         }
 
         boolean hasEvents = !item.getEvents().isEmpty();
         boolean hasGraves = !item.getGraves().isEmpty();
         boolean hasPersons = !item.getPersons().isEmpty() || !item.getPersonLinks().isEmpty();
-        boolean hasCollection = item.getCollection() != null;
+        boolean hasCollection = !item.getOrderedCollections().isEmpty();
 
         boolean lostEventFolder = (eventId != null && !hasEvents && item.getPrimaryContext() == MediaPrimaryContext.EVENT);
         boolean lostGraveFolder = (graveId != null && !hasGraves && item.getPrimaryContext() == MediaPrimaryContext.GRAVE);
@@ -1418,13 +1500,18 @@ public class MediaService {
             );
         }
 
-        // Determine if physical file needs to be relocated on disk after unlinking
-        if (lostEventFolder || lostGraveFolder || targetCollectionId != null) {
+        if (lostEventFolder || lostGraveFolder || collectionIdToUnlink != null
+                || (targetCollectionIds != null && !targetCollectionIds.isEmpty())) {
             String newTargetDir = null;
             if (hasEvents) {
                 Event remainingEvent = item.getEvents().stream().min(Comparator.comparing(Event::getId)).orElse(null);
                 if (remainingEvent != null) {
-                    newTargetDir = resolveEventDirectoryPath(remainingEvent, null);
+                    if (extractYearFromEvent(remainingEvent) == null && item.getPrimaryCollection() != null) {
+                        newTargetDir = resolveCollectionDirectoryPath(item.getPrimaryCollection())
+                                + "/events/" + resolveEffectiveEventFolderSlug(remainingEvent, null);
+                    } else {
+                        newTargetDir = resolveEventDirectoryPath(remainingEvent, null);
+                    }
                     item.setPrimaryContext(MediaPrimaryContext.EVENT);
                 }
             } else if (hasGraves) {
@@ -1436,10 +1523,12 @@ public class MediaService {
                     );
                     item.setPrimaryContext(MediaPrimaryContext.GRAVE);
                 }
-            } else if (item.getCollection() != null) {
-                String colDir = resolveCollectionDirectoryPath(item.getCollection());
+            } else if (item.getPrimaryCollection() != null) {
+                String colDir = resolveCollectionDirectoryPath(item.getPrimaryCollection());
                 if (Boolean.TRUE.equals(item.getIsPortrait())) {
-                    colDir = colDir + "/" + (item.getPersons().size() > 1 ? "portraits/group" : "portraits/single");
+                    boolean isGrp = (item.getRelativePath() != null && item.getRelativePath().contains("/portraits/group/"))
+                            || countDepictedPersonsOnItem(item) > 1;
+                    colDir = colDir + "/" + (isGrp ? "portraits/group" : "portraits/single");
                 } else if (Boolean.TRUE.equals(item.getIsUnknown())) {
                     colDir = colDir + "/unknown";
                 }
@@ -1450,37 +1539,27 @@ public class MediaService {
             }
 
             if (newTargetDir != null) {
-                String targetFileName = item.getFileName();
-                String targetRelPath = newTargetDir + "/" + targetFileName;
-                if (!targetRelPath.equals(item.getRelativePath())) {
-                    if (mediaItemRepository.existsByRelativePath(targetRelPath)
-                            || Files.exists(storageService.resolveMediaFilePath(targetRelPath))) {
-                        String ext = storageService.extractExtension(targetFileName, item.getMimeType());
-                        targetFileName = findAvailableFileName(newTargetDir, targetFileName, ext);
-                        targetRelPath = newTargetDir + "/" + targetFileName;
-                    }
-                    String movedPath = storageService.moveFileToRelativePath(item.getRelativePath(), targetRelPath);
-                    item.setRelativePath(movedPath);
-                    item.setFileName(targetFileName);
-                    for (MediaVersion ver : item.getVersions()) {
-                        if (Boolean.TRUE.equals(ver.getIsMain())) {
-                            ver.setRelativePath(movedPath);
-                            ver.setFileName(targetFileName);
-                        } else {
-                            String verTargetRel = newTargetDir + "/" + ver.getFileName();
-                            if (!verTargetRel.equals(ver.getRelativePath())) {
-                                String verMoved = storageService.moveFileToRelativePath(ver.getRelativePath(), verTargetRel);
-                                ver.setRelativePath(verMoved);
-                            }
-                        }
-                    }
-                }
+                relocateSingleMediaItemToDirectory(item, newTargetDir, item.getFileName());
             }
         }
 
         mediaItemRepository.saveAndFlush(item);
         graveRepository.flush();
         personRepository.flush();
+    }
+
+    @Transactional
+    public void bulkDeleteMedia(List<Long> mediaIds) {
+        if (mediaIds == null || mediaIds.isEmpty()) {
+            return;
+        }
+        for (Long mediaId : mediaIds) {
+            try {
+                deleteMedia(mediaId);
+            } catch (IllegalArgumentException ignored) {
+                // Skip missing item
+            }
+        }
     }
 
     @Transactional
@@ -1509,10 +1588,9 @@ public class MediaService {
                 continue;
             }
 
-            // If this is an undated event inside a collection, keep its collection/events/<slug> directory
             String effectiveTargetDir = targetDir;
-            if (extractYearFromEvent(evt) == null && item.getCollection() != null) {
-                effectiveTargetDir = resolveCollectionDirectoryPath(item.getCollection())
+            if (extractYearFromEvent(evt) == null && item.getPrimaryCollection() != null) {
+                effectiveTargetDir = resolveCollectionDirectoryPath(item.getPrimaryCollection())
                         + "/events/" + resolveEffectiveEventFolderSlug(evt, null);
             }
 
@@ -1745,24 +1823,10 @@ public class MediaService {
             }
             DateDescriptor dd = item.getDateDescriptor() != null ? item.getDateDescriptor() : new DateDescriptor();
             populateMediaDateDescriptor(
-                    dd,
-                    isBetweenRange,
-                    dateQual,
-                    year,
-                    month,
-                    day,
-                    timeQual,
-                    hour,
-                    minute,
-                    second,
-                    rangeEndQual,
-                    rangeEndYear,
-                    rangeEndMonth,
-                    rangeEndDay,
-                    rangeEndTimeQual,
-                    rangeEndHour,
-                    rangeEndMinute,
-                    rangeEndSecond
+                    dd, isBetweenRange,
+                    dateQual, year, month, day, timeQual, hour, minute, second,
+                    rangeEndQual, rangeEndYear, rangeEndMonth, rangeEndDay,
+                    rangeEndTimeQual, rangeEndHour, rangeEndMinute, rangeEndSecond
             );
             item.setDateDescriptor(dd);
         }
@@ -2450,7 +2514,6 @@ public class MediaService {
                 ? "portraits/group"
                 : "portraits/single";
 
-        // Event media (dated event -> dated/<dec>s/<year>/<evt>; undated event with collection -> collections/<col>/events/<evt>)
         if (context == MediaPrimaryContext.EVENT && eventId != null) {
             Event evt = eventRepository.findById(eventId).orElse(null);
             if (evt != null) {
@@ -2465,7 +2528,6 @@ public class MediaService {
             }
         }
 
-        // Collection-based media (including portraits, unknown media, dated collections, and sub-collections)
         if (col != null) {
             String colDir = resolveCollectionDirectoryPath(col);
             if (isPortrait) {
@@ -2477,7 +2539,6 @@ public class MediaService {
             return colDir;
         }
 
-        // Portrait without collection
         if (isPortrait) {
             if (customYear != null && customYear >= 1000 && customYear <= 2999) {
                 int decade = (customYear / 10) * 10;
@@ -2577,10 +2638,10 @@ public class MediaService {
                 return y;
             }
         }
-        if (item.getCollection() != null
-                && Boolean.TRUE.equals(item.getCollection().getIsDatedCollection())
-                && item.getCollection().getStartYear() != null) {
-            return item.getCollection().getStartYear();
+        if (item.getPrimaryCollection() != null
+                && Boolean.TRUE.equals(item.getPrimaryCollection().getIsDatedCollection())
+                && item.getPrimaryCollection().getStartYear() != null) {
+            return item.getPrimaryCollection().getStartYear();
         }
         if (item.getRelativePath() != null) {
             Matcher m = DATED_PATH_YEAR_PATTERN.matcher(item.getRelativePath());
@@ -2694,7 +2755,9 @@ public class MediaService {
                 + (f.getCachedSurname() != null ? f.getCachedSurname() : "")).trim()
                 : null;
         MediaCollection parent = col.getParentCollection();
-        List<MediaItem> colItems = mediaItemRepository.findByCollectionId(col.getId());
+        List<MediaItem> colItems = mediaItemRepository.findAll().stream()
+                .filter(m -> m.getOrderedCollections().stream().anyMatch(c -> c.getId().equals(col.getId())))
+                .toList();
         Long previewMediaId = colItems.stream().map(MediaItem::getId).findFirst().orElse(null);
 
         DateDescriptor startDd = col.getStartDate();
@@ -2889,6 +2952,9 @@ public class MediaService {
         List<String> rootEventLabels = rootEvents.stream()
                 .map(e -> resolveEventDisplayLabel(e, userCodeTranslations))
                 .toList();
+        List<String> rootEventTypeLabels = rootEvents.stream()
+                .map(e -> EventTimelineService.resolveEventTypeLabel(e.getEventType(), userCodeTranslations))
+                .toList();
         List<Integer> rootEventStartYears = rootEvents.stream()
                 .map(e -> extractYearFromEvent(e) != null ? extractYearFromEvent(e) : -1)
                 .toList();
@@ -2943,13 +3009,23 @@ public class MediaService {
                 .map(v -> toVersionDto(v, isAdmin))
                 .toList();
 
-        MediaCollection col = item.getCollection();
+        List<MediaCollection> orderedCols = item.getOrderedCollections();
+        MediaCollection primaryCol = orderedCols.isEmpty() ? null : orderedCols.getFirst();
+        List<Long> collectionIds = orderedCols.stream().map(MediaCollection::getId).toList();
+        List<String> collectionNames = orderedCols.stream().map(MediaCollection::getName).toList();
+
+        boolean isPortraitFlag = Boolean.TRUE.equals(item.getIsPortrait())
+                || item.getPrimaryContext() == MediaPrimaryContext.PERSON;
+        boolean isGroupPortraitFlag = isPortraitFlag
+                && ((item.getRelativePath() != null && item.getRelativePath().contains("/portraits/group/"))
+                || depicted.size() > 1);
 
         return MediaItemDto.builder()
                 .id(item.getId())
                 .mediaType(item.getMediaType())
                 .primaryContext(item.getPrimaryContext())
-                .portrait(Boolean.TRUE.equals(item.getIsPortrait()) || item.getPrimaryContext() == MediaPrimaryContext.PERSON)
+                .portrait(isPortraitFlag)
+                .groupPortrait(isGroupPortraitFlag)
                 .unknownMedia(Boolean.TRUE.equals(item.getIsUnknown()))
                 .relativePath(isAdmin ? item.getRelativePath() : null)
                 .directoryPath(isAdmin ? extractDirectoryPath(item.getRelativePath()) : null)
@@ -2989,10 +3065,12 @@ public class MediaService {
                 .metadataDateText(metaDd != null ? EventTimelineService.formatEventDates(metaDd, null) : null)
                 .metadataDateSource(item.getMetadataDateSource())
                 .availableMetadataDates(availableMetaOptions)
-                .collectionId(col != null ? col.getId() : null)
-                .collectionName(col != null ? col.getName() : null)
-                .datedCollectionItem(col != null && Boolean.TRUE.equals(col.getIsDatedCollection()))
-                .collectionStartYear(col != null ? col.getStartYear() : null)
+                .collectionId(primaryCol != null ? primaryCol.getId() : null)
+                .collectionName(primaryCol != null ? primaryCol.getName() : null)
+                .collectionIds(collectionIds)
+                .collectionNames(collectionNames)
+                .datedCollectionItem(primaryCol != null && Boolean.TRUE.equals(primaryCol.getIsDatedCollection()))
+                .collectionStartYear(primaryCol != null ? primaryCol.getStartYear() : null)
                 .createdAt(item.getCreatedAt())
                 .personIds(sortedPersons.stream().map(Person::getId).toList())
                 .personNames(personNames)
@@ -3009,10 +3087,197 @@ public class MediaService {
                 .eventStartYears(eventStartYears)
                 .rootEventIds(rootEventIds)
                 .rootEventLabels(rootEventLabels)
+                .rootEventTypeLabels(rootEventTypeLabels)
                 .rootEventStartYears(rootEventStartYears)
                 .subEventId(subEventId)
                 .subEventLabel(subEventLabel)
                 .build();
+    }
+
+    private List<MediaCollection> resolveOrderedCollections(List<Long> collectionIds) {
+        if (collectionIds == null || collectionIds.isEmpty()) {
+            return List.of();
+        }
+        List<MediaCollection> ordered = new ArrayList<>();
+        Set<Long> seen = new HashSet<>();
+        for (Long cid : collectionIds) {
+            if (cid != null && seen.add(cid)) {
+                MediaCollection col = mediaCollectionRepository.findById(cid)
+                        .orElseThrow(() -> new IllegalArgumentException("Collection not found: " + cid));
+                ordered.add(col);
+            }
+        }
+        return ordered;
+    }
+
+    private void applyOrderedCollectionsToMediaItem(MediaItem item, List<MediaCollection> orderedCollections) {
+        List<MediaCollection> safeList = orderedCollections != null ? orderedCollections : List.of();
+        item.setCollection(safeList.isEmpty() ? null : safeList.getFirst());
+        if (item.getId() == null) {
+            item = mediaItemRepository.saveAndFlush(item);
+        }
+        item.getCollectionLinks().clear();
+        mediaItemRepository.saveAndFlush(item);
+        for (int i = 0; i < safeList.size(); i++) {
+            item.getCollectionLinks().add(new MediaCollectionLink(item, safeList.get(i), i));
+        }
+    }
+
+    private void appendCollectionsToMediaItem(MediaItem item, List<MediaCollection> additionalCollections) {
+        if (additionalCollections == null || additionalCollections.isEmpty()) {
+            return;
+        }
+        List<MediaCollection> merged = new ArrayList<>(item.getOrderedCollections());
+        for (MediaCollection col : additionalCollections) {
+            if (merged.stream().noneMatch(existing -> existing.getId().equals(col.getId()))) {
+                merged.add(col);
+            }
+        }
+        applyOrderedCollectionsToMediaItem(item, merged);
+    }
+
+    private List<MediaCollection> findExistingCollectionsForUndatedEvent(Event evt) {
+        if (evt == null || evt.getId() == null) {
+            return List.of();
+        }
+        List<MediaCollection> fromEvent = evt.getOrderedCollections();
+        if (!fromEvent.isEmpty()) {
+            return fromEvent;
+        }
+        List<MediaItem> existingItems = mediaItemRepository.findByEventsIdOrderByIdAsc(evt.getId());
+        for (MediaItem m : existingItems) {
+            List<MediaCollection> itemCols = m.getOrderedCollections();
+            if (!itemCols.isEmpty()) {
+                return itemCols;
+            }
+        }
+        return List.of();
+    }
+
+    private void syncUndatedEventCollections(Event evt, List<MediaCollection> targetCols) {
+        if (evt == null || evt.getId() == null || targetCols == null || targetCols.isEmpty()) {
+            return;
+        }
+        evt.getCollectionLinks().clear();
+        eventRepository.saveAndFlush(evt);
+        for (int i = 0; i < targetCols.size(); i++) {
+            evt.getCollectionLinks().add(new EventCollectionLink(evt, targetCols.get(i), i));
+        }
+        eventRepository.saveAndFlush(evt);
+
+        MediaCollection primaryCol = targetCols.getFirst();
+        String targetDir = resolveCollectionDirectoryPath(primaryCol) + "/events/"
+                + resolveEffectiveEventFolderSlug(evt, null);
+        List<MediaItem> eventMedia = mediaItemRepository.findByEventsIdOrderByIdAsc(evt.getId());
+        for (MediaItem m : eventMedia) {
+            applyOrderedCollectionsToMediaItem(m, targetCols);
+            relocateSingleMediaItemToDirectory(m, targetDir, m.getFileName());
+            mediaItemRepository.saveAndFlush(m);
+        }
+    }
+
+    private void relocateCollectionMediaItemIfNeeded(MediaItem item, Boolean requestedGroupPortrait) {
+        MediaCollection primaryCol = item.getPrimaryCollection();
+        if (primaryCol == null || !item.getEvents().isEmpty() || !item.getGraves().isEmpty()) {
+            return;
+        }
+        String colDir = resolveCollectionDirectoryPath(primaryCol);
+        boolean isGroup = requestedGroupPortrait != null
+                ? requestedGroupPortrait
+                : (item.getRelativePath() != null && item.getRelativePath().contains("/portraits/group/"))
+                || countDepictedPersonsOnItem(item) > 1;
+
+        String expectedDir = colDir;
+        if (Boolean.TRUE.equals(item.getIsPortrait())) {
+            expectedDir = colDir + "/" + (isGroup ? "portraits/group" : "portraits/single");
+            item.setPrimaryContext(MediaPrimaryContext.PERSON);
+        } else if (Boolean.TRUE.equals(item.getIsUnknown())) {
+            expectedDir = colDir + "/unknown";
+            item.setPrimaryContext(MediaPrimaryContext.COLLECTION);
+        } else {
+            item.setPrimaryContext(MediaPrimaryContext.COLLECTION);
+        }
+
+        String currentDir = extractDirectoryPath(item.getRelativePath());
+        if (!currentDir.equals(expectedDir)) {
+            relocateSingleMediaItemToDirectory(item, expectedDir, item.getFileName());
+        }
+    }
+
+    private void updateCollectionSlugAndRelocateAll(MediaCollection col, String newFolderSlug) {
+        String oldDir = resolveCollectionDirectoryPath(col);
+        col.setSlug(storageService.toSnakeCase(newFolderSlug));
+        MediaCollection saved = mediaCollectionRepository.saveAndFlush(col);
+        String newDir = resolveCollectionDirectoryPath(saved);
+        if (!oldDir.equals(newDir)) {
+            List<MediaItem> items = mediaItemRepository.findAll().stream()
+                    .filter(m -> m.getOrderedCollections().stream().anyMatch(c -> c.getId().equals(col.getId())))
+                    .toList();
+            for (MediaItem item : items) {
+                String oldRelPath = item.getRelativePath();
+                if (oldRelPath != null && oldRelPath.startsWith(oldDir + "/")) {
+                    String sub = oldRelPath.substring(oldDir.length() + 1);
+                    String targetRelPath = newDir + "/" + sub;
+                    String finalPath = storageService.moveFileToRelativePath(oldRelPath, targetRelPath);
+                    item.setRelativePath(finalPath);
+                    mediaItemRepository.save(item);
+                }
+            }
+            storageService.deleteDirectoryRecursively(oldDir);
+        }
+    }
+
+    private void moveAllMediaInDirectory(String currentDir, String targetDir) {
+        if (Objects.equals(currentDir, targetDir)) {
+            return;
+        }
+        List<MediaItem> items = mediaItemRepository.findAll().stream()
+                .filter(m -> extractDirectoryPath(m.getRelativePath()).equals(currentDir))
+                .toList();
+        for (MediaItem item : items) {
+            relocateSingleMediaItemToDirectory(item, targetDir, item.getFileName());
+            mediaItemRepository.save(item);
+        }
+    }
+
+    private void relocateSingleMediaItemToDirectory(MediaItem item, String targetDir, String preferredFileName) {
+        if (targetDir == null) {
+            return;
+        }
+        String targetFileName = preferredFileName != null ? preferredFileName : item.getFileName();
+        String targetRelPath = targetDir + "/" + targetFileName;
+        if (Objects.equals(item.getRelativePath(), targetRelPath)) {
+            return;
+        }
+        if (mediaItemRepository.existsByRelativePath(targetRelPath)
+                || Files.exists(storageService.resolveMediaFilePath(targetRelPath))) {
+            String ext = storageService.extractExtension(targetFileName, item.getMimeType());
+            targetFileName = findAvailableFileName(targetDir, targetFileName, ext);
+            targetRelPath = targetDir + "/" + targetFileName;
+        }
+        String movedPath = storageService.moveFileToRelativePath(item.getRelativePath(), targetRelPath);
+        item.setRelativePath(movedPath);
+        item.setFileName(targetFileName);
+        for (MediaVersion ver : item.getVersions()) {
+            if (Boolean.TRUE.equals(ver.getIsMain())) {
+                ver.setRelativePath(movedPath);
+                ver.setFileName(targetFileName);
+            } else {
+                String verTargetRel = targetDir + "/" + ver.getFileName();
+                if (!verTargetRel.equals(ver.getRelativePath())) {
+                    String verMoved = storageService.moveFileToRelativePath(ver.getRelativePath(), verTargetRel);
+                    ver.setRelativePath(verMoved);
+                }
+            }
+        }
+    }
+
+    private int countDepictedPersonsOnItem(MediaItem item) {
+        return (int) item.getPersonLinks().stream()
+                .filter(l -> l.getLinkType() == MediaPersonLinkType.DEPICTED && l.getPerson() != null)
+                .map(l -> l.getPerson().getId())
+                .distinct()
+                .count();
     }
 
     private String trimToNull(String val) {

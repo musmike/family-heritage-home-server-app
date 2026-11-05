@@ -8,10 +8,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
 @Entity
 @Table(name = "media_items")
@@ -75,6 +72,10 @@ public class MediaItem {
     @JoinColumn(name = "collection_id")
     private MediaCollection collection;
 
+    @OneToMany(mappedBy = "mediaItem", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("sortOrder ASC, id ASC")
+    private List<MediaCollectionLink> collectionLinks = new ArrayList<>();
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 
@@ -109,4 +110,30 @@ public class MediaItem {
             inverseJoinColumns = @JoinColumn(name = "event_id")
     )
     private Set<Event> events = new HashSet<>();
+
+    public List<MediaCollection> getOrderedCollections() {
+        List<MediaCollection> ordered = new ArrayList<>();
+        Set<Long> seenIds = new HashSet<>();
+        if (collectionLinks != null) {
+            List<MediaCollectionLink> sorted = new ArrayList<>(collectionLinks);
+            sorted.sort(Comparator
+                    .comparing(MediaCollectionLink::getSortOrder, Comparator.nullsLast(Integer::compareTo))
+                    .thenComparing(MediaCollectionLink::getId, Comparator.nullsLast(Long::compareTo)));
+            for (MediaCollectionLink link : sorted) {
+                MediaCollection c = link.getCollection();
+                if (c != null && (c.getId() == null || seenIds.add(c.getId()))) {
+                    ordered.add(c);
+                }
+            }
+        }
+        if (collection != null && (collection.getId() == null || seenIds.add(collection.getId()))) {
+            ordered.addFirst(collection);
+        }
+        return ordered;
+    }
+
+    public MediaCollection getPrimaryCollection() {
+        List<MediaCollection> cols = getOrderedCollections();
+        return cols.isEmpty() ? null : cols.getFirst();
+    }
 }

@@ -54,6 +54,16 @@ const getTopPreviewItems = (
 const getFirstMediaId = (list: MediaItemDto[]): number | null =>
   list.length > 0 ? list[0].id : null;
 
+const itemBelongsToCollection = (item: MediaItemDto, colId: number): boolean => {
+  if (item.collectionIds && item.collectionIds.length > 0) {
+    return item.collectionIds.includes(colId);
+  }
+  return item.collectionId === colId;
+};
+
+const isGroupPortraitItem = (item: MediaItemDto): boolean =>
+  item.groupPortrait === true || (item.depictedPersons?.length ?? 0) > 1;
+
 const getPolishWeekdayLabel = (y: string, m: string, d: string): string | null => {
   const yNum = Number(y);
   const mNum = Number(m);
@@ -157,6 +167,9 @@ export default function GalleryPage() {
   const [selectedCollectionSubfolder, setSelectedCollectionSubfolder] = useState<string | null>(
     null
   );
+  const [selectedCollectionEventType, setSelectedCollectionEventType] = useState<string | null>(
+    null
+  );
 
   // Multi-Person Filter
   const [selectedPersons, setSelectedPersons] = useState<{ id: number; name: string }[]>([]);
@@ -164,7 +177,7 @@ export default function GalleryPage() {
   const [personQuery, setPersonQuery] = useState<string>('');
   const [personResults, setPersonResults] = useState<PersonListItemDto[]>([]);
 
-  // Admin Create/Edit Collection / Dated Album Modal State (Points 26, 31, 32)
+  // Admin Create/Edit Collection / Dated Album Modal State
   const [showCreateCollection, setShowCreateCollection] = useState<boolean>(false);
   const [editingCollectionId, setEditingCollectionId] = useState<number | null>(null);
   const [colName, setColName] = useState<string>('');
@@ -212,16 +225,16 @@ export default function GalleryPage() {
   const [colEndRangeEndMinute, setColEndRangeEndMinute] = useState<string>('');
   const [colEndRangeEndSecond, setColEndRangeEndSecond] = useState<string>('');
 
-  // Admin Upload, Bulk Edit & Link Existing Modals (Points 14, 24, 33)
+  // Admin Upload, Bulk Edit & Link Existing Modals
   const [showUploadModal, setShowUploadModal] = useState<boolean>(false);
   const [showBulkEditModal, setShowBulkEditModal] = useState<boolean>(false);
   const [linkToCollectionId, setLinkToCollectionId] = useState<number | null>(null);
 
-  // Fullscreen Lightbox state (Point 25)
+  // Fullscreen Lightbox state
   const [activeLightboxList, setActiveLightboxList] = useState<MediaItemDto[]>([]);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
 
-  // Small Confirmation Modal for Deleting Collection / Dated Album (Points 15, 31, 32)
+  // Small Confirmation Modal for Deleting Collection / Dated Album
   const [collectionToDelete, setCollectionToDelete] = useState<{
     id: number;
     title: string;
@@ -237,6 +250,7 @@ export default function GalleryPage() {
     setSelectedGraveId(null);
     setSelectedCollectionId(null);
     setSelectedCollectionSubfolder(null);
+    setSelectedCollectionEventType(null);
   };
 
   const fetchGallery = async () => {
@@ -298,7 +312,7 @@ export default function GalleryPage() {
   };
 
   // ============================================================================
-  // VIEW 2: DATA WYKONANIA (with Event Participant Names, Sub-Events & Dated Album Edit/Delete)
+  // VIEW 2: DATA WYKONANIA
   // ============================================================================
   const timelineViewContent = useMemo<DrillDownViewData>(() => {
     if (viewMode !== 'TIMELINE') {
@@ -357,7 +371,10 @@ export default function GalleryPage() {
     if (selectedDecade === 'UNDATED_EVENTS') {
       const evtMap = new Map<number, { label: string; list: MediaItemDto[] }>();
       for (const item of undatedEventItems) {
-        const rIds = item.rootEventIds && item.rootEventIds.length > 0 ? item.rootEventIds : item.eventIds;
+        const rIds =
+          item.rootEventIds && item.rootEventIds.length > 0
+            ? item.rootEventIds
+            : item.eventIds;
         const rLabels =
           item.rootEventLabels && item.rootEventLabels.length > 0
             ? item.rootEventLabels
@@ -497,7 +514,6 @@ export default function GalleryPage() {
       }
     }
 
-    // Also include empty dated albums created for this year so admin can edit/delete/populate them (Point 32)
     for (const col of allCollections) {
       if (col.datedCollection && col.startYear === selectedYear) {
         const bKey = `DCOL_${String(col.id)}`;
@@ -611,10 +627,10 @@ export default function GalleryPage() {
           bucket.allPersonMedia.push(item);
         }
         if (isPortraitItem) {
-          if (depicted.length <= 1) {
-            bucket.singlePortraits.push(item);
-          } else {
+          if (isGroupPortraitItem(item)) {
             bucket.groupPortraits.push(item);
+          } else {
+            bucket.singlePortraits.push(item);
           }
         } else {
           bucket.otherDepictedMedia.push(item);
@@ -823,7 +839,8 @@ export default function GalleryPage() {
   }, [allItems, viewMode, selectedCemeteryName, selectedGraveId]);
 
   // ============================================================================
-  // VIEW 5: KOLEKCJE (Points 22, 34, 35 - No technical paths like "Podfolder: portraits/single")
+  // VIEW 5: KOLEKCJE (Points 13, 20, 21, 35)
+  // Collection -> "📅 Wydarzenia bez daty" -> Event Type tiles -> Event tiles -> Media
   // ============================================================================
   const collectionViewContent = useMemo<DrillDownViewData>(() => {
     if (viewMode !== 'COLLECTION') {
@@ -831,10 +848,14 @@ export default function GalleryPage() {
     }
     const archivalCollections = allCollections.filter(c => !c.datedCollection);
     const countTotalInCollectionTree = (colId: number): MediaItemDto[] => {
-      const direct = allItems.filter(i => i.collectionId === colId);
+      const direct = allItems.filter(i => itemBelongsToCollection(i, colId));
       const children = archivalCollections.filter(c => c.parentCollectionId === colId);
       const childMedia = children.flatMap(ch => countTotalInCollectionTree(ch.id));
-      return [...direct, ...childMedia];
+      const uniqueMap = new Map<number, MediaItemDto>();
+      for (const m of [...direct, ...childMedia]) {
+        uniqueMap.set(m.id, m);
+      }
+      return Array.from(uniqueMap.values());
     };
 
     if (selectedCollectionId === null) {
@@ -861,17 +882,19 @@ export default function GalleryPage() {
     const childCols = archivalCollections.filter(
       c => c.parentCollectionId === selectedCollectionId
     );
-    const directColMedia = allItems.filter(i => i.collectionId === selectedCollectionId);
+    const directColMedia = allItems.filter(i =>
+      itemBelongsToCollection(i, selectedCollectionId)
+    );
 
     const singlePortraits = directColMedia.filter(
       i =>
         (i.portrait === true || i.primaryContext === 'PERSON') &&
-        (i.depictedPersons?.length ?? 0) <= 1
+        !isGroupPortraitItem(i)
     );
     const groupPortraits = directColMedia.filter(
       i =>
         (i.portrait === true || i.primaryContext === 'PERSON') &&
-        (i.depictedPersons?.length ?? 0) > 1
+        isGroupPortraitItem(i)
     );
     const unknownMedia = directColMedia.filter(i => i.unknownMedia === true);
     const eventMediaInCol = directColMedia.filter(
@@ -890,7 +913,13 @@ export default function GalleryPage() {
         (!i.eventIds || i.eventIds.length === 0)
     );
 
-    const colEventsMap = new Map<number, { label: string; list: MediaItemDto[] }>();
+    interface ColUndatedEventBucket {
+      eventId: number;
+      eventLabel: string;
+      typeLabel: string;
+      list: MediaItemDto[];
+    }
+    const colEventsMap = new Map<number, ColUndatedEventBucket>();
     for (const em of eventMediaInCol) {
       const rIds =
         em.rootEventIds && em.rootEventIds.length > 0 ? em.rootEventIds : em.eventIds;
@@ -898,14 +927,21 @@ export default function GalleryPage() {
         em.rootEventLabels && em.rootEventLabels.length > 0
           ? em.rootEventLabels
           : em.eventLabels;
+      const rTypeLabels = em.rootEventTypeLabels;
       const eId = rIds?.at(0);
       const eLbl = rLabels?.at(0) ?? 'Wydarzenie';
+      const tLbl = rTypeLabels?.at(0) ?? 'Inne wydarzenia';
       if (eId !== undefined) {
         const existing = colEventsMap.get(eId);
         if (existing) {
           existing.list.push(em);
         } else {
-          colEventsMap.set(eId, { label: eLbl, list: [em] });
+          colEventsMap.set(eId, {
+            eventId: eId,
+            eventLabel: eLbl,
+            typeLabel: tLbl,
+            list: [em],
+          });
         }
       }
     }
@@ -927,17 +963,18 @@ export default function GalleryPage() {
           },
         });
       }
-      for (const [eId, eData] of colEventsMap.entries()) {
+      // Point 13 & 20: Single folder tile "📅 Wydarzenia bez daty" inside Collection
+      if (eventMediaInCol.length > 0) {
         subTiles.push({
-          key: `COLEVT_${String(eId)}`,
-          title: `📅 ${eData.label}`,
-          subtitle: 'Wydarzenie powiązane z kolekcją',
-          count: eData.list.length,
-          previewItems: getTopPreviewItems(eData.list),
-          previewMediaId: getFirstMediaId(eData.list),
-          eventId: eId,
+          key: 'SUB_UNDATED_EVENTS',
+          title: '📅 Wydarzenia bez daty',
+          subtitle: `Liczba wydarzeń: ${String(colEventsMap.size)}`,
+          count: eventMediaInCol.length,
+          previewItems: getTopPreviewItems(eventMediaInCol),
+          previewMediaId: getFirstMediaId(eventMediaInCol),
           onClick: () => {
-            setSelectedCollectionSubfolder(`EVT_${String(eId)}`);
+            setSelectedCollectionSubfolder('UNDATED_EVENTS');
+            setSelectedCollectionEventType(null);
           },
         });
       }
@@ -988,6 +1025,70 @@ export default function GalleryPage() {
       };
     }
 
+    // Point 20: Inside "Wydarzenia bez daty" -> Step 1: Group by Event Type, Step 2: Events of that type
+    if (selectedCollectionSubfolder === 'UNDATED_EVENTS') {
+      const byTypeMap = new Map<string, ColUndatedEventBucket[]>();
+      for (const evtBucket of colEventsMap.values()) {
+        const list = byTypeMap.get(evtBucket.typeLabel) ?? [];
+        list.push(evtBucket);
+        byTypeMap.set(evtBucket.typeLabel, list);
+      }
+
+      if (selectedCollectionEventType === null) {
+        const typeTiles: FolderTileItem[] = Array.from(byTypeMap.entries())
+          .sort((a, b) => a[0].localeCompare(b[0], 'pl'))
+          .map(([tLabel, evtBuckets]) => {
+            const allMediaForType = evtBuckets.flatMap(b => b.list);
+            return {
+              key: `UTYPE_${tLabel}`,
+              title: `🏷️ ${tLabel}`,
+              subtitle: `Wydarzenia tego typu: ${String(evtBuckets.length)}`,
+              count: allMediaForType.length,
+              previewItems: getTopPreviewItems(allMediaForType),
+              previewMediaId: getFirstMediaId(allMediaForType),
+              onClick: () => {
+                setSelectedCollectionEventType(tLabel);
+              },
+            };
+          });
+        return {
+          tiles: typeTiles,
+          mediaItems: [],
+          activeCollectionId: selectedCollectionId,
+          breadcrumb: [
+            'Kolekcje',
+            currentCol?.name ?? 'Kolekcja',
+            'Wydarzenia bez daty',
+          ],
+        };
+      }
+
+      const eventsInChosenType = byTypeMap.get(selectedCollectionEventType) ?? [];
+      const eventTiles: FolderTileItem[] = eventsInChosenType.map(eb => ({
+        key: `COLEVT_${String(eb.eventId)}`,
+        title: `📅 ${eb.eventLabel}`,
+        subtitle: eb.typeLabel,
+        count: eb.list.length,
+        previewItems: getTopPreviewItems(eb.list),
+        previewMediaId: getFirstMediaId(eb.list),
+        eventId: eb.eventId,
+        onClick: () => {
+          setSelectedCollectionSubfolder(`EVT_${String(eb.eventId)}`);
+        },
+      }));
+      return {
+        tiles: eventTiles,
+        mediaItems: [],
+        activeCollectionId: selectedCollectionId,
+        breadcrumb: [
+          'Kolekcje',
+          currentCol?.name ?? 'Kolekcja',
+          'Wydarzenia bez daty',
+          selectedCollectionEventType,
+        ],
+      };
+    }
+
     if (selectedCollectionSubfolder.startsWith('EVT_')) {
       const eId = Number(selectedCollectionSubfolder.replace('EVT_', ''));
       const chosenEvt = colEventsMap.get(eId);
@@ -1001,7 +1102,9 @@ export default function GalleryPage() {
         breadcrumb: [
           'Kolekcje',
           currentCol?.name ?? 'Kolekcja',
-          chosenEvt?.label ?? 'Wydarzenie',
+          'Wydarzenia bez daty',
+          chosenEvt?.typeLabel ?? 'Typ wydarzenia',
+          chosenEvt?.eventLabel ?? 'Wydarzenie',
         ],
       };
     }
@@ -1022,7 +1125,14 @@ export default function GalleryPage() {
         chosenSub?.label ?? 'Kategoria',
       ],
     };
-  }, [allItems, allCollections, viewMode, selectedCollectionId, selectedCollectionSubfolder]);
+  }, [
+    allItems,
+    allCollections,
+    viewMode,
+    selectedCollectionId,
+    selectedCollectionSubfolder,
+    selectedCollectionEventType,
+  ]);
 
   const handleStepBackDrillDown = () => {
     if (viewMode === 'TIMELINE') {
@@ -1036,8 +1146,16 @@ export default function GalleryPage() {
       if (selectedGraveId !== null) setSelectedGraveId(null);
       else setSelectedCemeteryName(null);
     } else if (viewMode === 'COLLECTION') {
-      if (selectedCollectionSubfolder !== null) {
+      if (selectedCollectionSubfolder?.startsWith('EVT_')) {
+        setSelectedCollectionSubfolder('UNDATED_EVENTS');
+      } else if (
+        selectedCollectionSubfolder === 'UNDATED_EVENTS' &&
+        selectedCollectionEventType !== null
+      ) {
+        setSelectedCollectionEventType(null);
+      } else if (selectedCollectionSubfolder !== null) {
         setSelectedCollectionSubfolder(null);
+        setSelectedCollectionEventType(null);
       } else if (selectedCollectionId !== null) {
         const currentCol = allCollections.find(c => c.id === selectedCollectionId);
         setSelectedCollectionId(currentCol?.parentCollectionId ?? null);
@@ -1303,6 +1421,7 @@ export default function GalleryPage() {
       if (selectedCollectionId === collectionToDelete.id) {
         setSelectedCollectionId(null);
         setSelectedCollectionSubfolder(null);
+        setSelectedCollectionEventType(null);
       }
       if (selectedYearBucketKey === `DCOL_${String(collectionToDelete.id)}`) {
         setSelectedYearBucketKey(null);
@@ -1462,7 +1581,6 @@ export default function GalleryPage() {
           </div>
         </div>
 
-        {/* Point 26: Separate Time Row so inputs never overflow */}
         <div className={styles.timeRowGrid}>
           <div className={styles.filterField}>
             <label htmlFor={`${params.idPrefix}-tqual`} className={styles.filterLabel}>
@@ -1578,14 +1696,19 @@ export default function GalleryPage() {
           {item.personNames && item.personNames.length > 0 && (
             <div className={styles.cardSub}>👤 {item.personNames.join(', ')}</div>
           )}
-          {item.collectionName && (
-            <div className={styles.cardSub}>📦 {item.collectionName}</div>
+          {item.collectionNames && item.collectionNames.length > 0 ? (
+            <div className={styles.cardSub}>📦 {item.collectionNames.join(', ')}</div>
+          ) : (
+            item.collectionName && (
+              <div className={styles.cardSub}>📦 {item.collectionName}</div>
+            )
           )}
         </div>
       )}
     </button>
   );
 
+  // Point 15: No Edit/Delete buttons underneath folder tiles on the grid
   const renderFolderTilesGrid = (tiles: FolderTileItem[]) => (
     <div className={styles.folderTilesGrid} data-testid="gallery-grouped-sections">
       {tiles.map(tile => {
@@ -1596,110 +1719,79 @@ export default function GalleryPage() {
               ? [{ id: tile.previewMediaId, mediaType: 'IMAGE' as MediaType }]
               : [];
         return (
-          <div key={tile.key} style={{ display: 'flex', flexDirection: 'column' }}>
-            <button
-              type="button"
-              onClick={tile.onClick}
-              className={`${styles.folderTileCard} ${
-                tile.isTextPerson ? styles.folderTileTextPerson : ''
-              }`}
-            >
-              <div className={styles.folderThumbBox}>
-                {previews.length > 1 ? (
-                  <div className={styles.collageThumbGrid}>
-                    {previews.map(pv => (
-                      <div key={pv.id} className={styles.collageThumbCell}>
-                        {pv.mediaType === 'IMAGE' ? (
-                          <img
-                            src={mediaApi.getThumbnailUrl(pv.id)}
-                            alt=""
-                            className={styles.collageThumbImg}
-                          />
-                        ) : pv.mediaType === 'VIDEO' ? (
-                          <video
-                            src={`${mediaApi.getFileUrl(pv.id)}#t=0.5`}
-                            preload="metadata"
-                            muted
-                            playsInline
-                            className={styles.collageThumbImg}
-                          />
-                        ) : (
-                          <div className={styles.audioThumbBox}>
-                            <span className={styles.audioThumbIcon}>🎵</span>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : previews.length === 1 ? (
-                  previews[0].mediaType === 'IMAGE' ? (
-                    <img
-                      src={mediaApi.getThumbnailUrl(previews[0].id)}
-                      alt=""
-                      className={styles.thumbImg}
-                    />
-                  ) : previews[0].mediaType === 'VIDEO' ? (
-                    <video
-                      src={`${mediaApi.getFileUrl(previews[0].id)}#t=0.5`}
-                      preload="metadata"
-                      muted
-                      playsInline
-                      className={styles.thumbImg}
-                    />
-                  ) : (
-                    <div className={styles.audioThumbBox}>
-                      <span className={styles.audioThumbIcon}>🎵</span>
-                      <span className={styles.audioThumbLabel}>Nagranie audio</span>
+          <button
+            key={tile.key}
+            type="button"
+            onClick={tile.onClick}
+            className={`${styles.folderTileCard} ${
+              tile.isTextPerson ? styles.folderTileTextPerson : ''
+            }`}
+          >
+            <div className={styles.folderThumbBox}>
+              {previews.length > 1 ? (
+                <div className={styles.collageThumbGrid}>
+                  {previews.map(pv => (
+                    <div key={pv.id} className={styles.collageThumbCell}>
+                      {pv.mediaType === 'IMAGE' ? (
+                        <img
+                          src={mediaApi.getThumbnailUrl(pv.id)}
+                          alt=""
+                          className={styles.collageThumbImg}
+                        />
+                      ) : pv.mediaType === 'VIDEO' ? (
+                        <video
+                          src={`${mediaApi.getFileUrl(pv.id)}#t=0.5`}
+                          preload="metadata"
+                          muted
+                          playsInline
+                          className={styles.collageThumbImg}
+                        />
+                      ) : (
+                        <div className={styles.audioThumbBox}>
+                          <span className={styles.audioThumbIcon}>🎵</span>
+                        </div>
+                      )}
                     </div>
-                  )
+                  ))}
+                </div>
+              ) : previews.length === 1 ? (
+                previews[0].mediaType === 'IMAGE' ? (
+                  <img
+                    src={mediaApi.getThumbnailUrl(previews[0].id)}
+                    alt=""
+                    className={styles.thumbImg}
+                  />
+                ) : previews[0].mediaType === 'VIDEO' ? (
+                  <video
+                    src={`${mediaApi.getFileUrl(previews[0].id)}#t=0.5`}
+                    preload="metadata"
+                    muted
+                    playsInline
+                    className={styles.thumbImg}
+                  />
                 ) : (
-                  <span style={{ fontSize: '2.2rem' }}>📁</span>
-                )}
-                {tile.isTextPerson && (
-                  <span className={styles.textPersonBadge}>Spoza drzewa</span>
-                )}
-                <span className={styles.folderCountBadge}>
-                  Pliki: {String(tile.count)}
-                </span>
-              </div>
-              <div className={styles.folderTileBody}>
-                <div className={styles.folderTileTitle}>{tile.title}</div>
-                {tile.subtitle && (
-                  <div className={styles.folderTileSub}>{tile.subtitle}</div>
-                )}
-              </div>
-            </button>
-
-            {/* Point 32: Edit & Delete buttons for both Archival Collections and Dated Albums */}
-            {isAdmin && tile.collectionId !== undefined && (
-              <div className={styles.colCardActions}>
-                <button
-                  type="button"
-                  onClick={e => {
-                    e.stopPropagation();
-                    const target = allCollections.find(c => c.id === tile.collectionId);
-                    if (target) handleStartEditCollection(target);
-                  }}
-                  className={styles.colActionBtn}
-                >
-                  ✏️ Edytuj
-                </button>
-                <button
-                  type="button"
-                  onClick={e => {
-                    e.stopPropagation();
-                    setCollectionToDelete({
-                      id: tile.collectionId ?? 0,
-                      title: tile.title,
-                    });
-                  }}
-                  className={`${styles.colActionBtn} ${styles.colActionBtnDanger}`}
-                >
-                  🗑️ Usuń
-                </button>
-              </div>
-            )}
-          </div>
+                  <div className={styles.audioThumbBox}>
+                    <span className={styles.audioThumbIcon}>🎵</span>
+                    <span className={styles.audioThumbLabel}>Nagranie audio</span>
+                  </div>
+                )
+              ) : (
+                <span style={{ fontSize: '2.2rem' }}>📁</span>
+              )}
+              {tile.isTextPerson && (
+                <span className={styles.textPersonBadge}>Spoza drzewa</span>
+              )}
+              <span className={styles.folderCountBadge}>
+                Pliki: {String(tile.count)}
+              </span>
+            </div>
+            <div className={styles.folderTileBody}>
+              <div className={styles.folderTileTitle}>{tile.title}</div>
+              {tile.subtitle && (
+                <div className={styles.folderTileSub}>{tile.subtitle}</div>
+              )}
+            </div>
+          </button>
         );
       })}
     </div>
@@ -1727,7 +1819,6 @@ export default function GalleryPage() {
               ))}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-              {/* Point 22: Button to navigate directly to the Event */}
               {content.activeEventId !== undefined && content.activeEventId !== null && (
                 <Link
                   to={`/events/${String(content.activeEventId)}`}
@@ -1739,7 +1830,6 @@ export default function GalleryPage() {
                 </Link>
               )}
 
-              {/* Point 14, 32, 33: Actions when viewing a Collection or Dated Album */}
               {isAdmin && activeColObj && (
                 <>
                   <button
@@ -1795,31 +1885,30 @@ export default function GalleryPage() {
           </div>
         )}
 
-        {/* Point 34: Sub-Events displayed as distinct sections with photos below main event photos */}
         {content.subEventBuckets?.map(sub => (
           <div
             key={sub.subEventId}
             className={styles.subEventGroupBox}
             data-testid={`gallery-subevent-section-${String(sub.subEventId)}`}
           >
-              <div className={styles.subEventHeader}>
-                <span className={styles.subEventTitle}>
-                  ↳ Zdjęcia i filmy z podwydarzenia: {sub.subEventLabel} (
-                  {String(sub.items.length)})
-                </span>
-                <Link
-                  to={`/events/${String(sub.subEventId)}`}
-                  className={styles.btnSecondary}
-                  style={{ textDecoration: 'none' }}
-                >
-                  📅 Przejdź do podwydarzenia →
-                </Link>
-              </div>
-              <div className={styles.mediaGrid}>
-                {sub.items.map(item => renderMediaTile(item, combinedViewable))}
-              </div>
+            <div className={styles.subEventHeader}>
+              <span className={styles.subEventTitle}>
+                ↳ Zdjęcia i filmy z podwydarzenia: {sub.subEventLabel} (
+                {String(sub.items.length)})
+              </span>
+              <Link
+                to={`/events/${String(sub.subEventId)}`}
+                className={styles.btnSecondary}
+                style={{ textDecoration: 'none' }}
+              >
+                📅 Przejdź do podwydarzenia →
+              </Link>
             </div>
-          ))}
+            <div className={styles.mediaGrid}>
+              {sub.items.map(item => renderMediaTile(item, combinedViewable))}
+            </div>
+          </div>
+        ))}
 
         {content.tiles.length === 0 &&
           content.mediaItems.length === 0 &&
@@ -1832,7 +1921,6 @@ export default function GalleryPage() {
     );
   };
 
-  // Current items context for Bulk Edit / Move between collections
   const currentContextItemsForBulk: MediaItemDto[] =
     viewMode === 'TIMELINE' && timelineViewContent.mediaItems.length > 0
       ? timelineViewContent.mediaItems
@@ -1904,9 +1992,7 @@ export default function GalleryPage() {
         </div>
       </div>
 
-      {/* =======================================================================
-          LARGE MODAL: CREATE / EDIT COLLECTION OR DATED ALBUM (Points 26, 31, 32)
-          ======================================================================= */}
+      {/* LARGE MODAL: CREATE / EDIT COLLECTION OR DATED ALBUM */}
       {isAdmin && showCreateCollection && (
         <div
           className={styles.modalBackdrop}
@@ -2048,7 +2134,6 @@ export default function GalleryPage() {
                   </label>
                 </div>
 
-                {/* Point 26: Full Start Date (with Between) + End Date (with Between) for Dated Album */}
                 {colIsDated && (
                   <div
                     style={{
@@ -2290,9 +2375,7 @@ export default function GalleryPage() {
         </div>
       )}
 
-      {/* =======================================================================
-          SHARED UPLOAD & BULK-EDIT MODALS FROM MediaGallerySection (Points 24 & 33)
-          ======================================================================= */}
+      {/* SHARED UPLOAD & BULK-EDIT MODALS FROM MediaGallerySection */}
       {isAdmin && (showUploadModal || showBulkEditModal) && (
         <MediaGallerySection
           context="COLLECTION"
@@ -2410,7 +2493,6 @@ export default function GalleryPage() {
           )}
         </div>
 
-        {/* Multi-Person Filter */}
         <div className={styles.personFilterRow}>
           <span className={styles.filterLabel}>Filtruj według osób:</span>
           <input
@@ -2543,11 +2625,14 @@ export default function GalleryPage() {
         renderDrillDownSection(collectionViewContent)
       )}
 
-      {/* Point 25: Unified Fullscreen Lightbox (with Details & Options drawer) */}
       <MediaItemLightboxModal
         items={activeLightboxList}
         activeIndex={activeIndex}
         context="COLLECTION"
+        collectionId={
+          selectedCollectionId ??
+          (viewMode === 'TIMELINE' ? timelineViewContent.activeCollectionId : null)
+        }
         isAdmin={isAdmin}
         onClose={() => {
           setActiveIndex(null);
@@ -2560,13 +2645,14 @@ export default function GalleryPage() {
         }}
       />
 
-      {/* Point 14: Link Existing Media from Other Sections into Collection */}
       <GalleryBrowserModal
         isOpen={linkToCollectionId !== null}
         mode="multiple"
         title="🔗 Przypisz istniejące pliki z galerii (np. z wydarzeń) do tej kolekcji"
         excludeMediaIds={allItems
-          .filter(i => i.collectionId === linkToCollectionId)
+          .filter(i =>
+            linkToCollectionId !== null ? itemBelongsToCollection(i, linkToCollectionId) : false
+          )
           .map(i => i.id)}
         onClose={() => {
           setLinkToCollectionId(null);
@@ -2576,7 +2662,6 @@ export default function GalleryPage() {
         }}
       />
 
-      {/* Points 15, 31, 32: Small Confirmation Modal for Deleting Collection / Dated Album */}
       {collectionToDelete && (
         <div
           className={styles.modalBackdrop}

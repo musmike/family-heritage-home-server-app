@@ -20,6 +20,7 @@ interface MediaItemLightboxModalProps {
   graveId?: number;
   personId?: number;
   eventId?: number;
+  collectionId?: number | null;
   primaryMediaId?: number | null;
   isAdmin: boolean;
   onClose: () => void;
@@ -35,15 +36,47 @@ const QUALIFIER_OPTIONS = [
   { value: 'AFTER', label: 'Po' },
 ];
 
-const PERSON_LINK_TYPE_LABELS: Record<'DEPICTED' | 'RELATED' | 'AUTHOR', string> = {
-  DEPICTED: '👁️ Na zdjęciu/filmie',
-  RELATED: '🔗 Powiązana',
-  AUTHOR: '📷 Autor',
+export const getMediaPersonLabels = (mediaType: MediaType) => {
+  if (mediaType === 'VIDEO') {
+    return {
+      sectionTitle: 'Osoby na nagraniu wideo, osoby powiązane oraz autorzy (z bazy lub tekstowo):',
+      depictedOption: '🎬 Osoba widoczna na filmie',
+      relatedOption: '🔗 Osoba powiązana z filmem',
+      authorOption: '🎥 Autor nagrania wideo (kto nagrał)',
+      depictedBadge: '🎬 Na filmie',
+      relatedBadge: '🔗 Powiązana',
+      authorBadge: '🎥 Autor',
+      depictedSummary: '🎬 Osoby na filmie:',
+      authorSummary: '🎥 Autor filmu:',
+    };
+  }
+  if (mediaType === 'AUDIO') {
+    return {
+      sectionTitle: 'Osoby na nagraniu audio (głos), osoby powiązane oraz autorzy (z bazy lub tekstowo):',
+      depictedOption: '🎙️ Osoba słyszalna na nagraniu',
+      relatedOption: '🔗 Osoba powiązana z nagraniem',
+      authorOption: '🎧 Autor nagrania audio',
+      depictedBadge: '🎙️ Na nagraniu',
+      relatedBadge: '🔗 Powiązana',
+      authorBadge: '🎧 Autor',
+      depictedSummary: '🎙️ Osoby na nagraniu audio:',
+      authorSummary: '🎧 Autor nagrania:',
+    };
+  }
+  return {
+    sectionTitle: 'Osoby na zdjęciu, osoby powiązane oraz autorzy (z bazy lub tekstowo):',
+    depictedOption: '👁️ Osoba widoczna na zdjęciu',
+    relatedOption: '🔗 Osoba powiązana ze zdjęciem',
+    authorOption: '📷 Autor zdjęcia (kto wykonał)',
+    depictedBadge: '👁️ Na zdjęciu',
+    relatedBadge: '🔗 Powiązana',
+    authorBadge: '📷 Autor',
+    depictedSummary: '👁️ Osoby na zdjęciu:',
+    authorSummary: '📷 Autor:',
+  };
 };
 
-const getVersionTypeOptions = (
-  mediaType: MediaType
-): { value: string; label: string }[] => {
+const getVersionTypeOptions = (mediaType: MediaType): { value: string; label: string }[] => {
   if (mediaType === 'VIDEO') {
     return [
       { value: 'RESTORED', label: 'Wersja odnowiona / zrekonstruowana' },
@@ -75,13 +108,9 @@ const getPolishWeekdayLabel = (y: string, m: string, d: string): string | null =
   const yNum = Number(y);
   const mNum = Number(m);
   const dNum = Number(d);
-  if (!yNum || !mNum || !dNum || mNum < 1 || mNum > 12 || dNum < 1 || dNum > 31) {
-    return null;
-  }
+  if (!yNum || !mNum || !dNum || mNum < 1 || mNum > 12 || dNum < 1 || dNum > 31) return null;
   const date = new Date(Date.UTC(yNum, mNum - 1, dNum, 12, 0, 0));
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
+  if (Number.isNaN(date.getTime())) return null;
   return new Intl.DateTimeFormat('pl-PL', { weekday: 'long' }).format(date);
 };
 
@@ -89,9 +118,7 @@ const toIsoDateInputValue = (y: string, m: string, d: string): string => {
   const yNum = Number(y);
   const mNum = Number(m);
   const dNum = Number(d);
-  if (!yNum || !mNum || !dNum || mNum < 1 || mNum > 12 || dNum < 1 || dNum > 31) {
-    return '';
-  }
+  if (!yNum || !mNum || !dNum || mNum < 1 || mNum > 12 || dNum < 1 || dNum > 31) return '';
   return `${String(yNum).padStart(4, '0')}-${String(mNum).padStart(2, '0')}-${String(dNum).padStart(2, '0')}`;
 };
 
@@ -112,6 +139,7 @@ export default function MediaItemLightboxModal({
   graveId,
   personId,
   eventId,
+  collectionId,
   primaryMediaId,
   isAdmin,
   onClose,
@@ -120,16 +148,24 @@ export default function MediaItemLightboxModal({
 }: MediaItemLightboxModalProps) {
   const versionFileInputId = useId();
 
-  const activeItem =
+  const rawActiveItem =
     activeIndex !== null && activeIndex >= 0 && activeIndex < items.length
       ? items[activeIndex]
       : null;
+
+  // Point 9: Live updated item override so version/reverse changes reflect in 0ms
+  const [liveUpdatedItem, setLiveUpdatedItem] = useState<MediaItemDto | null>(null);
+  const activeItem =
+    liveUpdatedItem !== null && liveUpdatedItem.id === rawActiveItem?.id
+      ? liveUpdatedItem
+      : rawActiveItem;
 
   const [selectedVersionId, setSelectedVersionId] = useState<number | null>(null);
   const [zoom, setZoom] = useState<number>(1);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   const [pinchStartDist, setPinchStartDist] = useState<number | null>(null);
+  const [swipeTouchStart, setSwipeTouchStart] = useState<{ x: number; y: number } | null>(null);
   const [showDetailsDrawer, setShowDetailsDrawer] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -145,7 +181,12 @@ export default function MediaItemLightboxModal({
   const [isEditingItem, setIsEditingItem] = useState<boolean>(false);
   const [editFileName, setEditFileName] = useState<string>('');
   const [editFolderName, setEditFolderName] = useState<string>('');
-  const [editCollectionId, setEditCollectionId] = useState<string>('');
+  const [editCollectionIds, setEditCollectionIds] = useState<number[]>([]);
+  const [addCollectionSelectId, setAddCollectionSelectId] = useState<string>('');
+  const [editIsPortrait, setEditIsPortrait] = useState<boolean>(false);
+  const [editPortraitType, setEditPortraitType] = useState<'SINGLE' | 'GROUP'>('SINGLE');
+  const [editIsUnknown, setEditIsUnknown] = useState<boolean>(false);
+
   const [editTitle, setEditTitle] = useState<string>('');
   const [editInscription, setEditInscription] = useState<string>('');
   const [editDescription, setEditDescription] = useState<string>('');
@@ -180,10 +221,7 @@ export default function MediaItemLightboxModal({
   const [linkTextInput, setLinkTextInput] = useState<string>('');
   const [linkTextSex, setLinkTextSex] = useState<PersonSex>('UNKNOWN');
 
-  // Avatar cropper state
   const [showCropper, setShowCropper] = useState<boolean>(false);
-
-  // Small confirmation modals state (Points 11 & 13)
   const [showDeleteFileConfirm, setShowDeleteFileConfirm] = useState<boolean>(false);
   const [versionIdToDelete, setVersionIdToDelete] = useState<number | null>(null);
   const [showUnlinkConfirm, setShowUnlinkConfirm] = useState<boolean>(false);
@@ -191,9 +229,19 @@ export default function MediaItemLightboxModal({
   const [unlinkTargetCollectionId, setUnlinkTargetCollectionId] = useState<string>('');
 
   const syncSingleEditFields = (item: MediaItemDto) => {
+    const pLabels = getMediaPersonLabels(item.mediaType);
     setEditFileName(item.fileName);
     setEditFolderName('');
-    setEditCollectionId(item.collectionId ? String(item.collectionId) : '');
+    setEditCollectionIds(
+      item.collectionIds && item.collectionIds.length > 0
+        ? item.collectionIds
+        : item.collectionId
+          ? [item.collectionId]
+          : []
+    );
+    setEditIsPortrait(Boolean(item.portrait));
+    setEditPortraitType(item.groupPortrait ? 'GROUP' : 'SINGLE');
+    setEditIsUnknown(Boolean(item.unknownMedia));
     setEditTitle(item.title ?? '');
     setEditInscription(item.inscriptionText ?? '');
     setEditDescription(item.description ?? '');
@@ -227,7 +275,7 @@ export default function MediaItemLightboxModal({
         personText: d.personText,
         personSex: d.sex,
         linkType: 'DEPICTED',
-        displayLabel: `${PERSON_LINK_TYPE_LABELS.DEPICTED}: ${d.displayName}`,
+        displayLabel: `${pLabels.depictedBadge}: ${d.displayName}`,
       });
     }
     for (const r of item.relatedPersons ?? []) {
@@ -236,7 +284,7 @@ export default function MediaItemLightboxModal({
         personText: r.personText,
         personSex: r.sex,
         linkType: 'RELATED',
-        displayLabel: `${PERSON_LINK_TYPE_LABELS.RELATED}: ${r.displayName}`,
+        displayLabel: `${pLabels.relatedBadge}: ${r.displayName}`,
       });
     }
     for (const a of item.authors ?? []) {
@@ -245,14 +293,15 @@ export default function MediaItemLightboxModal({
         personText: a.personText,
         personSex: a.sex,
         linkType: 'AUTHOR',
-        displayLabel: `${PERSON_LINK_TYPE_LABELS.AUTHOR}: ${a.displayName}`,
+        displayLabel: `${pLabels.authorBadge}: ${a.displayName}`,
       });
     }
     setEditPersonLinks(combinedLinks);
   };
 
   useEffect(() => {
-    if (!activeItem) return;
+    if (!rawActiveItem) return;
+    setLiveUpdatedItem(null);
     setSelectedVersionId(null);
     setZoom(1);
     setPan({ x: 0, y: 0 });
@@ -260,8 +309,8 @@ export default function MediaItemLightboxModal({
     setShowCropper(false);
     setShowVersionUpload(false);
     setErrorMessage(null);
-    syncSingleEditFields(activeItem);
-  }, [activeItem?.id]);
+    syncSingleEditFields(rawActiveItem);
+  }, [rawActiveItem?.id]);
 
   useEffect(() => {
     if (activeIndex === null) return;
@@ -282,11 +331,19 @@ export default function MediaItemLightboxModal({
 
   if (!activeItem || activeIndex === null) return null;
 
+  const personLabels = getMediaPersonLabels(activeItem.mediaType);
+
   const doesUnlinkRequireTargetCollection = (): boolean => {
     const remainingEvents = (activeItem.eventIds ?? []).filter(id => id !== eventId);
     const remainingGraves = activeItem.graveIds.filter(id => id !== graveId);
     const remainingPersons = activeItem.personIds.filter(id => id !== personId);
-    const hasCollection = activeItem.collectionId !== null && activeItem.collectionId !== undefined;
+    const currentCols =
+      activeItem.collectionIds && activeItem.collectionIds.length > 0
+        ? activeItem.collectionIds
+        : activeItem.collectionId
+          ? [activeItem.collectionId]
+          : [];
+    const remainingCols = currentCols.filter(id => id !== collectionId);
 
     const losingEventFolder =
       eventId !== undefined &&
@@ -300,12 +357,12 @@ export default function MediaItemLightboxModal({
       remainingEvents.length === 0 &&
       remainingGraves.length === 0 &&
       remainingPersons.length === 0 &&
-      !hasCollection;
+      remainingCols.length === 0;
 
     return (
       losingAllRefs ||
       ((losingEventFolder || losingGraveFolder) &&
-        !hasCollection &&
+        remainingCols.length === 0 &&
         remainingEvents.length === 0 &&
         remainingGraves.length === 0)
     );
@@ -317,12 +374,6 @@ export default function MediaItemLightboxModal({
     try {
       const cols = await mediaApi.getAllCollections();
       setAvailableCollections(cols);
-      if (cols.length > 0 && unlinkTargetCollectionId === '') {
-        const firstCol = cols.at(0);
-        if (firstCol) {
-          setUnlinkTargetCollectionId(String(firstCol.id));
-        }
-      }
     } catch {
       setAvailableCollections([]);
     }
@@ -341,6 +392,7 @@ export default function MediaItemLightboxModal({
         graveId,
         personId,
         eventId,
+        collectionId: collectionId ?? undefined,
         targetCollectionId:
           unlinkTargetCollectionId !== '' ? Number(unlinkTargetCollectionId) : undefined,
       });
@@ -376,7 +428,8 @@ export default function MediaItemLightboxModal({
     if (versionIdToDelete === null) return;
     setIsSubmitting(true);
     try {
-      await mediaApi.deleteMediaVersion(activeItem.id, versionIdToDelete);
+      const updated = await mediaApi.deleteMediaVersion(activeItem.id, versionIdToDelete);
+      setLiveUpdatedItem(updated);
       setVersionIdToDelete(null);
       setSelectedVersionId(null);
       await onMediaUpdated();
@@ -411,14 +464,29 @@ export default function MediaItemLightboxModal({
     }
   };
 
+  const handleMoveCollectionOrder = (idx: number, dir: -1 | 1) => {
+    setEditCollectionIds(prev => {
+      const target = idx + dir;
+      if (target < 0 || target >= prev.length) return prev;
+      const copy = [...prev];
+      const tmp = copy[idx];
+      copy[idx] = copy[target];
+      copy[target] = tmp;
+      return copy;
+    });
+  };
+
   const handleSaveItemEdit = async () => {
     setIsSubmitting(true);
     setErrorMessage(null);
     try {
-      await mediaApi.updateMedia(activeItem.id, {
+      const updated = await mediaApi.updateMedia(activeItem.id, {
         fileName: editFileName,
         customFolderName: editFolderName.trim() || null,
-        collectionId: editCollectionId !== '' ? Number(editCollectionId) : null,
+        collectionIds: editCollectionIds,
+        portrait: editIsPortrait,
+        groupPortrait: editIsPortrait ? editPortraitType === 'GROUP' : false,
+        unknownMedia: editIsUnknown,
         title: editTitle,
         inscriptionText: editInscription,
         description: editDescription,
@@ -450,6 +518,8 @@ export default function MediaItemLightboxModal({
           linkType: l.linkType,
         })),
       });
+      setLiveUpdatedItem(updated);
+      syncSingleEditFields(updated);
       setIsEditingItem(false);
       await onMediaUpdated();
     } catch (err: unknown) {
@@ -467,13 +537,14 @@ export default function MediaItemLightboxModal({
     if (!versionFile) return;
     setIsSubmitting(true);
     try {
-      await mediaApi.uploadMediaVersion({
+      const updated = await mediaApi.uploadMediaVersion({
         mediaId: activeItem.id,
         file: versionFile,
         versionType: versionTypeInput,
         versionLabel: versionLabelInput.trim() || undefined,
         setAsMain: versionTypeInput !== 'REVERSE' && versionSetAsMain,
       });
+      setLiveUpdatedItem(updated);
       setShowVersionUpload(false);
       setVersionFile(null);
       setVersionLabelInput('');
@@ -488,7 +559,8 @@ export default function MediaItemLightboxModal({
 
   const handleSetVersionAsMain = async (versionId: number) => {
     try {
-      await mediaApi.setMainMediaVersion(activeItem.id, versionId);
+      const updated = await mediaApi.setMainMediaVersion(activeItem.id, versionId);
+      setLiveUpdatedItem(updated);
       setSelectedVersionId(null);
       await onMediaUpdated();
     } catch {
@@ -498,13 +570,14 @@ export default function MediaItemLightboxModal({
 
   const handleSavePrimaryOrAvatarCrop = async (cx?: number, cy?: number, cz?: number) => {
     try {
-      await mediaApi.updateMedia(activeItem.id, {
+      const updated = await mediaApi.updateMedia(activeItem.id, {
         setAsAvatarForPersonId: personId ?? null,
         avatarCropX: personId !== undefined ? (cx ?? 50) : null,
         avatarCropY: personId !== undefined ? (cy ?? 50) : null,
         avatarCropZoom: personId !== undefined ? (cz ?? 1.0) : null,
         setAsPrimaryForGraveId: graveId ?? null,
       });
+      setLiveUpdatedItem(updated);
       setShowCropper(false);
       await onMediaUpdated();
     } catch {
@@ -524,6 +597,12 @@ export default function MediaItemLightboxModal({
   const versionOptions = getVersionTypeOptions(activeItem.mediaType);
   const startWeekday = getPolishWeekdayLabel(editYear, editMonth, editDay);
   const endWeekday = getPolishWeekdayLabel(editRangeEndYear, editRangeEndMonth, editRangeEndDay);
+
+  const roleBadgeForType = (role: 'DEPICTED' | 'RELATED' | 'AUTHOR'): string => {
+    if (role === 'DEPICTED') return personLabels.depictedBadge;
+    if (role === 'RELATED') return personLabels.relatedBadge;
+    return personLabels.authorBadge;
+  };
 
   return (
     <div
@@ -612,6 +691,7 @@ export default function MediaItemLightboxModal({
               </button>
             </>
           )}
+          {/* Point 6: "Szczegóły i opcje" only for Admin, "Szczegóły" for non-admins */}
           <button
             type="button"
             data-testid="toggle-media-details-drawer"
@@ -620,7 +700,7 @@ export default function MediaItemLightboxModal({
             }}
             className={styles.btnSecondary}
           >
-            ℹ️ {showDetailsDrawer ? 'Ukryj szczegóły' : 'Szczegóły i opcje'}
+            ℹ️ {showDetailsDrawer ? 'Ukryj szczegóły' : isAdmin ? 'Szczegóły i opcje' : 'Szczegóły'}
           </button>
           <button type="button" onClick={onClose} className={styles.btnSecondary}>
             ✕ Zamknij
@@ -628,6 +708,7 @@ export default function MediaItemLightboxModal({
         </div>
       </div>
 
+      {/* Point 16: Viewer Stage with Smartphone Swipe Left/Right support when zoom === 1 */}
       <div
         className={styles.viewerStage}
         onClick={e => {
@@ -661,11 +742,20 @@ export default function MediaItemLightboxModal({
             const dx = e.touches[0].clientX - e.touches[1].clientX;
             const dy = e.touches[0].clientY - e.touches[1].clientY;
             setPinchStartDist(Math.hypot(dx, dy));
-          } else if (e.touches.length === 1 && zoom > 1) {
-            setDragStart({
-              x: e.touches[0].clientX - pan.x,
-              y: e.touches[0].clientY - pan.y,
-            });
+            setSwipeTouchStart(null);
+          } else if (e.touches.length === 1) {
+            if (zoom > 1) {
+              setDragStart({
+                x: e.touches[0].clientX - pan.x,
+                y: e.touches[0].clientY - pan.y,
+              });
+              setSwipeTouchStart(null);
+            } else {
+              setSwipeTouchStart({
+                x: e.touches[0].clientX,
+                y: e.touches[0].clientY,
+              });
+            }
           }
         }}
         onTouchMove={e => {
@@ -683,7 +773,24 @@ export default function MediaItemLightboxModal({
             });
           }
         }}
-        onTouchEnd={() => {
+        onTouchEnd={e => {
+          if (
+            swipeTouchStart &&
+            zoom === 1 &&
+            items.length > 1 &&
+            e.changedTouches.length === 1
+          ) {
+            const dx = e.changedTouches[0].clientX - swipeTouchStart.x;
+            const dy = e.changedTouches[0].clientY - swipeTouchStart.y;
+            if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+              if (dx < 0) {
+                onNavigateIndex((activeIndex + 1) % items.length);
+              } else {
+                onNavigateIndex((activeIndex - 1 + items.length) % items.length);
+              }
+            }
+          }
+          setSwipeTouchStart(null);
           setPinchStartDist(null);
           setDragStart(null);
         }}
@@ -745,11 +852,7 @@ export default function MediaItemLightboxModal({
               >
                 {activeItem.title ?? activeItem.fileName}
               </div>
-              <audio
-                src={activeStageUrl}
-                controls
-                style={{ width: '100%', borderRadius: '30px' }}
-              />
+              <audio src={activeStageUrl} controls style={{ width: '100%', borderRadius: '30px' }} />
             </div>
           ) : (
             <img
@@ -807,7 +910,7 @@ export default function MediaItemLightboxModal({
                 </div>
                 <div className={styles.formField}>
                   <label htmlFor="edit-media-folder" className={styles.label}>
-                    Zmień nazwę folderu docelowego (opcjonalnie)
+                    Zmień nazwę całego folderu docelowego (opcjonalnie)
                   </label>
                   <input
                     id="edit-media-folder"
@@ -820,28 +923,6 @@ export default function MediaItemLightboxModal({
                     className={styles.input}
                   />
                 </div>
-                {availableCollections.length > 0 && (
-                  <div className={styles.formField}>
-                    <label htmlFor="edit-media-col-select" className={styles.label}>
-                      Przypisana kolekcja / album datowany
-                    </label>
-                    <select
-                      id="edit-media-col-select"
-                      value={editCollectionId}
-                      onChange={e => {
-                        setEditCollectionId(e.target.value);
-                      }}
-                      className={styles.input}
-                    >
-                      <option value="">— Brak przypisanej kolekcji —</option>
-                      {availableCollections.map(col => (
-                        <option key={col.id} value={String(col.id)}>
-                          {col.datedCollection ? `📅 [Album] ${col.name}` : `📦 [Kolekcja] ${col.name}`}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
                 <div className={styles.formField}>
                   <label htmlFor="edit-media-title" className={styles.label}>
                     Tytuł (krótka nazwa kafelka)
@@ -858,7 +939,7 @@ export default function MediaItemLightboxModal({
                 </div>
                 <div className={styles.formField}>
                   <label htmlFor="edit-media-source" className={styles.label}>
-                    Źródło zdjęcia/filmu (tekstowo)
+                    Źródło pliku (tekstowo)
                   </label>
                   <input
                     id="edit-media-source"
@@ -888,6 +969,158 @@ export default function MediaItemLightboxModal({
                 </div>
               </div>
 
+              {/* Multi-Collections & Portrait / Unknown Category Selector */}
+              <div
+                style={{
+                  backgroundColor: '#f8fafc',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '8px',
+                  padding: '0.75rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.65rem',
+                }}
+              >
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.2rem', alignItems: 'center' }}>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.83rem', fontWeight: 600 }}>
+                    <input
+                      type="checkbox"
+                      checked={editIsPortrait}
+                      onChange={e => {
+                        setEditIsPortrait(e.target.checked);
+                        if (e.target.checked) setEditIsUnknown(false);
+                      }}
+                    />
+                    <span>Portret (zdjęcie portretowe osoby)</span>
+                  </label>
+
+                  {editIsPortrait && (
+                    <div style={{ display: 'flex', gap: '0.85rem', flexWrap: 'wrap' }}>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.82rem', fontWeight: 600 }}>
+                        <input
+                          type="radio"
+                          name="editPortraitType"
+                          checked={editPortraitType === 'SINGLE'}
+                          onChange={() => {
+                            setEditPortraitType('SINGLE');
+                          }}
+                        />
+                        <span>👤 Portret pojedynczy</span>
+                      </label>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.82rem', fontWeight: 600 }}>
+                        <input
+                          type="radio"
+                          name="editPortraitType"
+                          checked={editPortraitType === 'GROUP'}
+                          onChange={() => {
+                            setEditPortraitType('GROUP');
+                          }}
+                        />
+                        <span>👥 Portret grupowy</span>
+                      </label>
+                    </div>
+                  )}
+
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.83rem', fontWeight: 600 }}>
+                    <input
+                      type="checkbox"
+                      checked={editIsUnknown}
+                      onChange={e => {
+                        setEditIsUnknown(e.target.checked);
+                        if (e.target.checked) setEditIsPortrait(false);
+                      }}
+                    />
+                    <span>❓ Oznacz jako nieznane (do identyfikacji)</span>
+                  </label>
+                </div>
+
+                {availableCollections.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                    <span className={styles.label}>
+                      Przypisane kolekcje (pierwsza kolekcja na liście określa folder na dysku):
+                    </span>
+                    <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>
+                      <select
+                        value={addCollectionSelectId}
+                        onChange={e => {
+                          setAddCollectionSelectId(e.target.value);
+                        }}
+                        className={styles.input}
+                        style={{ maxWidth: '340px' }}
+                      >
+                        <option value="">— Wybierz kolekcję do dodania —</option>
+                        {availableCollections
+                          .filter(c => !editCollectionIds.includes(c.id))
+                          .map(col => (
+                            <option key={col.id} value={String(col.id)}>
+                              {col.datedCollection ? `📅 [Album] ${col.name}` : `📦 [Kolekcja] ${col.name}`}
+                            </option>
+                          ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!addCollectionSelectId) return;
+                          const cId = Number(addCollectionSelectId);
+                          if (!editCollectionIds.includes(cId)) {
+                            setEditCollectionIds(prev => [...prev, cId]);
+                          }
+                          setAddCollectionSelectId('');
+                        }}
+                        className={styles.btnSecondary}
+                      >
+                        + Dodaj do kolekcji
+                      </button>
+                    </div>
+
+                    {editCollectionIds.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.45rem' }}>
+                        {editCollectionIds.map((cId, cIdx) => {
+                          const colObj = availableCollections.find(c => c.id === cId);
+                          return (
+                            <span key={cId} className={styles.selectedFilesBadge} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                              <span>
+                                {cIdx === 0 ? '📁 [Główna] ' : '📦 '}
+                                {colObj?.name ?? 'Kolekcja'}
+                              </span>
+                              <button
+                                type="button"
+                                disabled={cIdx === 0}
+                                onClick={() => {
+                                  handleMoveCollectionOrder(cIdx, -1);
+                                }}
+                                style={{ border: 'none', background: 'none', cursor: 'pointer', fontWeight: 700 }}
+                              >
+                                ↑
+                              </button>
+                              <button
+                                type="button"
+                                disabled={cIdx === editCollectionIds.length - 1}
+                                onClick={() => {
+                                  handleMoveCollectionOrder(cIdx, 1);
+                                }}
+                                style={{ border: 'none', background: 'none', cursor: 'pointer', fontWeight: 700 }}
+                              >
+                                ↓
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditCollectionIds(prev => prev.filter(id => id !== cId));
+                                }}
+                                className={styles.pillRemoveBtn}
+                              >
+                                ✕
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               <div className={styles.formField} style={{ width: '100%' }}>
                 <label htmlFor="edit-media-desc" className={styles.label}>
                   Opis tekstowy (zwykły tekst)
@@ -904,7 +1137,7 @@ export default function MediaItemLightboxModal({
                 />
               </div>
 
-              {/* Date & Time Mode with Calendar Picker and Polish Weekday (Point 9) */}
+              {/* Date & Time Mode */}
               <div className={styles.formGrid}>
                 <div className={styles.formField}>
                   <label htmlFor="edit-media-date-mode" className={styles.label}>
@@ -994,15 +1227,7 @@ export default function MediaItemLightboxModal({
                     padding: '0.75rem',
                   }}
                 >
-                  <label
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.45rem',
-                      fontSize: '0.82rem',
-                      fontWeight: 600,
-                    }}
-                  >
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.82rem', fontWeight: 600 }}>
                     <input
                       type="checkbox"
                       checked={editIsBetween}
@@ -1098,7 +1323,7 @@ export default function MediaItemLightboxModal({
                             setEditTimeQual(e.target.value);
                           }}
                           className={styles.input}
-                          style={{ width: '130px', height: '34px' }}
+                          style={{ width: '125px', height: '34px' }}
                         >
                           {QUALIFIER_OPTIONS.map(q => (
                             <option key={q.value} value={q.value}>
@@ -1106,52 +1331,49 @@ export default function MediaItemLightboxModal({
                             </option>
                           ))}
                         </select>
-                        <input
-                          type="number"
-                          min={0}
-                          max={23}
-                          placeholder="GG"
-                          value={editHour}
-                          onChange={e => {
-                            setEditHour(e.target.value);
-                          }}
-                          className={styles.miniDateInput}
-                        />
-                        <span>:</span>
-                        <input
-                          type="number"
-                          min={0}
-                          max={59}
-                          placeholder="MM"
-                          value={editMinute}
-                          onChange={e => {
-                            setEditMinute(e.target.value);
-                          }}
-                          className={styles.miniDateInput}
-                        />
-                        <span>:</span>
-                        <input
-                          type="number"
-                          min={0}
-                          max={59}
-                          placeholder="SS"
-                          value={editSecond}
-                          onChange={e => {
-                            setEditSecond(e.target.value);
-                          }}
-                          className={styles.miniDateInput}
-                        />
+                        <div className={styles.timeHmsGroup}>
+                          <input
+                            type="number"
+                            min={0}
+                            max={23}
+                            placeholder="GG"
+                            value={editHour}
+                            onChange={e => {
+                              setEditHour(e.target.value);
+                            }}
+                            className={styles.miniDateInput}
+                          />
+                          <span>:</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={59}
+                            placeholder="MM"
+                            value={editMinute}
+                            onChange={e => {
+                              setEditMinute(e.target.value);
+                            }}
+                            className={styles.miniDateInput}
+                          />
+                          <span>:</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={59}
+                            placeholder="SS"
+                            value={editSecond}
+                            onChange={e => {
+                              setEditSecond(e.target.value);
+                            }}
+                            className={styles.miniDateInput}
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
 
                   {editIsBetween && (
-                    <div
-                      style={{
-                        borderTop: '1px dashed #cbd5e1',
-                        paddingTop: '0.65rem',
-                      }}
-                    >
+                    <div style={{ borderTop: '1px dashed #cbd5e1', paddingTop: '0.65rem' }}>
                       <div className={styles.formGrid}>
                         <div className={styles.formField}>
                           <span className={styles.label}>Druga granica („… a …”)</span>
@@ -1241,7 +1463,7 @@ export default function MediaItemLightboxModal({
                                 setEditRangeEndTimeQual(e.target.value);
                               }}
                               className={styles.input}
-                              style={{ width: '130px', height: '34px' }}
+                              style={{ width: '125px', height: '34px' }}
                             >
                               {QUALIFIER_OPTIONS.map(q => (
                                 <option key={q.value} value={q.value}>
@@ -1249,41 +1471,43 @@ export default function MediaItemLightboxModal({
                                 </option>
                               ))}
                             </select>
-                            <input
-                              type="number"
-                              min={0}
-                              max={23}
-                              placeholder="GG"
-                              value={editRangeEndHour}
-                              onChange={e => {
-                                setEditRangeEndHour(e.target.value);
-                              }}
-                              className={styles.miniDateInput}
-                            />
-                            <span>:</span>
-                            <input
-                              type="number"
-                              min={0}
-                              max={59}
-                              placeholder="MM"
-                              value={editRangeEndMinute}
-                              onChange={e => {
-                                setEditRangeEndMinute(e.target.value);
-                              }}
-                              className={styles.miniDateInput}
-                            />
-                            <span>:</span>
-                            <input
-                              type="number"
-                              min={0}
-                              max={59}
-                              placeholder="SS"
-                              value={editRangeEndSecond}
-                              onChange={e => {
-                                setEditRangeEndSecond(e.target.value);
-                              }}
-                              className={styles.miniDateInput}
-                            />
+                            <div className={styles.timeHmsGroup}>
+                              <input
+                                type="number"
+                                min={0}
+                                max={23}
+                                placeholder="GG"
+                                value={editRangeEndHour}
+                                onChange={e => {
+                                  setEditRangeEndHour(e.target.value);
+                                }}
+                                className={styles.miniDateInput}
+                              />
+                              <span>:</span>
+                              <input
+                                type="number"
+                                min={0}
+                                max={59}
+                                placeholder="MM"
+                                value={editRangeEndMinute}
+                                onChange={e => {
+                                  setEditRangeEndMinute(e.target.value);
+                                }}
+                                className={styles.miniDateInput}
+                              />
+                              <span>:</span>
+                              <input
+                                type="number"
+                                min={0}
+                                max={59}
+                                placeholder="SS"
+                                value={editRangeEndSecond}
+                                onChange={e => {
+                                  setEditRangeEndSecond(e.target.value);
+                                }}
+                                className={styles.miniDateInput}
+                              />
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1292,7 +1516,7 @@ export default function MediaItemLightboxModal({
                 </div>
               )}
 
-              {/* Person Links Builder */}
+              {/* Point 11: Media-Type-Aware Person Links Builder */}
               <div
                 style={{
                   backgroundColor: '#f8fafc',
@@ -1304,9 +1528,7 @@ export default function MediaItemLightboxModal({
                   gap: '0.55rem',
                 }}
               >
-                <span className={styles.label}>
-                  Osoby na zdjęciu, osoby powiązane oraz autorzy (z bazy lub tekstowo):
-                </span>
+                <span className={styles.label}>{personLabels.sectionTitle}</span>
                 <div className={styles.personLinksGrid}>
                   <div className={styles.formField}>
                     <span className={styles.label}>Rodzaj powiązania</span>
@@ -1317,9 +1539,9 @@ export default function MediaItemLightboxModal({
                       }}
                       className={styles.input}
                     >
-                      <option value="DEPICTED">👁️ Osoba widoczna na zdjęciu/filmie</option>
-                      <option value="RELATED">🔗 Osoba powiązana ze zdjęciem/filmem</option>
-                      <option value="AUTHOR">📷 Autor zdjęcia/nagrania (kto wykonał)</option>
+                      <option value="DEPICTED">{personLabels.depictedOption}</option>
+                      <option value="RELATED">{personLabels.relatedOption}</option>
+                      <option value="AUTHOR">{personLabels.authorOption}</option>
                     </select>
                   </div>
 
@@ -1382,7 +1604,7 @@ export default function MediaItemLightboxModal({
                               personText: txt,
                               personSex: linkTextSex,
                               linkType: linkRoleType,
-                              displayLabel: `${PERSON_LINK_TYPE_LABELS[linkRoleType]}: ${txt} [spoza bazy]`,
+                              displayLabel: `${roleBadgeForType(linkRoleType)}: ${txt} [spoza bazy]`,
                             },
                           ]);
                           setLinkTextInput('');
@@ -1408,7 +1630,7 @@ export default function MediaItemLightboxModal({
                             {
                               personId: p.id,
                               linkType: linkRoleType,
-                              displayLabel: `${PERSON_LINK_TYPE_LABELS[linkRoleType]}: ${fullName}`,
+                              displayLabel: `${roleBadgeForType(linkRoleType)}: ${fullName}`,
                             },
                           ]);
                           setLinkPersonResults([]);
@@ -1478,13 +1700,13 @@ export default function MediaItemLightboxModal({
               )}
               {activeItem.authors && activeItem.authors.length > 0 && (
                 <div style={{ fontSize: '0.82rem', color: '#475569' }}>
-                  📷 Autor:{' '}
+                  {personLabels.authorSummary}{' '}
                   <strong>{activeItem.authors.map(a => a.displayName).join(', ')}</strong>
                 </div>
               )}
               {activeItem.depictedPersons && activeItem.depictedPersons.length > 0 && (
                 <div style={{ fontSize: '0.82rem', color: '#475569' }}>
-                  👁️ Osoby na zdjęciu/filmie:{' '}
+                  {personLabels.depictedSummary}{' '}
                   <strong>{activeItem.depictedPersons.map(d => d.displayName).join(', ')}</strong>
                 </div>
               )}
@@ -1494,7 +1716,11 @@ export default function MediaItemLightboxModal({
                   <strong>{activeItem.relatedPersons.map(r => r.displayName).join(', ')}</strong>
                 </div>
               )}
-              {/* Point 9: Clean metadata date badge without nested double parentheses */}
+              {activeItem.collectionNames && activeItem.collectionNames.length > 0 && (
+                <div style={{ fontSize: '0.82rem', color: '#475569' }}>
+                  📦 Kolekcje: <strong>{activeItem.collectionNames.join(', ')}</strong>
+                </div>
+              )}
               {isAdmin && activeItem.metadataDateText && (
                 <div className={styles.metadataBadge} style={{ alignSelf: 'flex-start' }}>
                   📷 Data z metadanych — {activeItem.metadataDateSource ?? 'Metadane'}:{' '}
@@ -1514,7 +1740,7 @@ export default function MediaItemLightboxModal({
             </div>
           )}
 
-          {/* Point 10: Media-Type-Aware Version Upload Form */}
+          {/* Version Upload Form */}
           {isAdmin && showVersionUpload && (
             <div
               style={{
@@ -1714,7 +1940,8 @@ export default function MediaItemLightboxModal({
                     )}
                   {(graveId !== undefined ||
                     personId !== undefined ||
-                    eventId !== undefined) && (
+                    eventId !== undefined ||
+                    collectionId !== undefined) && (
                     <button
                       type="button"
                       onClick={() => {
@@ -1725,6 +1952,7 @@ export default function MediaItemLightboxModal({
                       🔗 Odepnij z tego miejsca
                     </button>
                   )}
+                  {/* Point 10: "Usuń całkowicie" */}
                   <button
                     type="button"
                     onClick={() => {
@@ -1732,7 +1960,7 @@ export default function MediaItemLightboxModal({
                     }}
                     className={styles.btnDanger}
                   >
-                    🗑️ Usuń całkowicie z dysku
+                    🗑️ Usuń całkowicie
                   </button>
                 </>
               ) : (
@@ -1763,7 +1991,7 @@ export default function MediaItemLightboxModal({
         </div>
       )}
 
-      {/* Small Confirmation Modal: Unlink Media from Context (Points 11 & 13) */}
+      {/* Small Confirmation Modal: Unlink Media from Context */}
       {isAdmin && showUnlinkConfirm && (
         <div
           className={styles.modalBackdrop}
@@ -1849,7 +2077,7 @@ export default function MediaItemLightboxModal({
         </div>
       )}
 
-      {/* Small Confirmation Modal: Delete File from Disk (Point 11) */}
+      {/* Small Confirmation Modal: Delete File */}
       {isAdmin && showDeleteFileConfirm && (
         <div
           className={styles.modalBackdrop}
@@ -1866,12 +2094,11 @@ export default function MediaItemLightboxModal({
             }}
           >
             <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#0f172a' }}>
-              🗑️ Usunąć plik całkowicie z dysku?
+              🗑️ Usunąć plik całkowicie?
             </h3>
             <p style={{ margin: 0, fontSize: '0.9rem', color: '#475569', lineHeight: 1.5 }}>
               Czy na pewno chcesz bezpowrotnie usunąć plik{' '}
-              <strong>„{activeItem.title ?? activeItem.fileName}”</strong> z dysku i ze wszystkich
-              sekcji?
+              <strong>„{activeItem.title ?? activeItem.fileName}”</strong> ze wszystkich sekcji?
             </p>
             <div style={{ display: 'flex', justifyContent: 'center', gap: '0.65rem' }}>
               <button
@@ -1891,14 +2118,14 @@ export default function MediaItemLightboxModal({
                 }}
                 className={styles.btnDanger}
               >
-                Tak, usuń plik z dysku
+                Tak, usuń całkowicie
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Small Confirmation Modal: Delete Media Version (Point 11) */}
+      {/* Small Confirmation Modal: Delete Media Version */}
       {isAdmin && versionIdToDelete !== null && (
         <div
           className={styles.modalBackdrop}
@@ -1918,7 +2145,7 @@ export default function MediaItemLightboxModal({
               🗑️ Usunąć tę wersję pliku?
             </h3>
             <p style={{ margin: 0, fontSize: '0.9rem', color: '#475569', lineHeight: 1.5 }}>
-              Czy na pewno chcesz bezpowrotnie usunąć wybraną wersję pliku z dysku?
+              Czy na pewno chcesz bezpowrotnie usunąć wybraną wersję pliku?
             </p>
             <div style={{ display: 'flex', justifyContent: 'center', gap: '0.65rem' }}>
               <button

@@ -358,7 +358,7 @@
   clear: right;
   margin: 0.35rem 0 1rem 1.25rem;
   width: fit-content;
-  max-width: 240px;
+  max-width: 220px;
 }
 
 .wikiMediaLeft {
@@ -366,14 +366,14 @@
   clear: left;
   margin: 0.35rem 1.25rem 1rem 0;
   width: fit-content;
-  max-width: 240px;
+  max-width: 220px;
 }
 
 .wikiMediaCenter {
   float: none;
   margin: 1.25rem auto;
   width: fit-content;
-  max-width: 360px;
+  max-width: 340px;
   clear: both;
 }
 
@@ -398,7 +398,7 @@
   width: auto;
   height: auto;
   max-width: 100%;
-  max-height: 340px;
+  max-height: 215px;
   background-color: transparent;
   cursor: zoom-in;
   transition: opacity 0.15s ease;

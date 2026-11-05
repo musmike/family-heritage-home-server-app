@@ -20,6 +20,10 @@ public class BulkUpdateMediaRequestDto {
     private String customFolderName;
     private Long contextEventId;
     private Long targetCollectionId;
+    private List<Long> targetCollectionIds;
+
+    // "NO_CHANGE", "REGULAR", "PORTRAIT_SINGLE", "PORTRAIT_GROUP", "UNKNOWN"
+    private String categoryMode;
 
     private String title;
     private String sourceText;

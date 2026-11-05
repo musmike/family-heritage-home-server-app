@@ -1419,7 +1419,7 @@ export default function EventsPage() {
         </div>
       )}
 
-      {/* Filters Bar */}
+      {/* Filters Bar (Point 14: Aligned to top by filter titles, Year Range on the far right) */}
       <section className={styles.filterCard}>
         <div className={styles.filterTopRow}>
           <div className={styles.filterField}>
@@ -1458,10 +1458,42 @@ export default function EventsPage() {
             </button>
           </div>
 
+          <div className={styles.filterField}>
+            <label htmlFor="events-sort-select" className={styles.filterLabel}>
+              Kolejność dekad i lat
+            </label>
+            <select
+              id="events-sort-select"
+              data-testid="events-sort-select"
+              value={sortOrder}
+              onChange={e => {
+                setSortOrder(e.target.value);
+              }}
+              className={styles.selectInput}
+            >
+              <option value="DESC">Od najnowszych dekad</option>
+              <option value="ASC">Od najstarszych (chronologicznie)</option>
+            </select>
+          </div>
+
+          <div className={styles.filterField} style={{ flex: '0 1 auto' }}>
+            <span className={styles.filterLabel}>Archiwum</span>
+            <label className={styles.checkboxLabel}>
+              <input
+                type="checkbox"
+                checked={includeArchived}
+                onChange={e => {
+                  setIncludeArchived(e.target.checked);
+                }}
+              />
+              <span>Pokaż zarchiwizowane osoby</span>
+            </label>
+          </div>
+
           {boundsInitialized && (
             <div className={`${styles.filterField} ${styles.filterFieldYears}`}>
               <span className={styles.filterLabel}>
-                Zakres lat ({String(minBound)} – {String(maxBound)})
+                Zakres lat ({String(minBound)}–{String(maxBound)})
               </span>
               <div className={styles.yearRangeGroup}>
                 <input
@@ -1500,6 +1532,7 @@ export default function EventsPage() {
                   className={styles.textInput}
                 />
               </div>
+
               {maxBound > minBound && (
                 <div className={styles.dualSliderContainer}>
                   <div className={styles.sliderTrackBg} />
@@ -1544,35 +1577,6 @@ export default function EventsPage() {
               )}
             </div>
           )}
-
-          <div className={styles.filterField}>
-            <label htmlFor="events-sort-select" className={styles.filterLabel}>
-              Kolejność dekad i lat
-            </label>
-            <select
-              id="events-sort-select"
-              data-testid="events-sort-select"
-              value={sortOrder}
-              onChange={e => {
-                setSortOrder(e.target.value);
-              }}
-              className={styles.selectInput}
-            >
-              <option value="DESC">Od najnowszych dekad</option>
-              <option value="ASC">Od najstarszych (chronologicznie)</option>
-            </select>
-          </div>
-
-          <label className={styles.checkboxLabel}>
-            <input
-              type="checkbox"
-              checked={includeArchived}
-              onChange={e => {
-                setIncludeArchived(e.target.checked);
-              }}
-            />
-            <span>Pokaż zarchiwizowane osoby</span>
-          </label>
         </div>
 
         {/* Active Filter Type Pills visible even when selector is collapsed */}

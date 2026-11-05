@@ -57,6 +57,7 @@ export interface MediaItemDto {
   mediaType: MediaType;
   primaryContext: MediaPrimaryContext;
   portrait?: boolean;
+  groupPortrait?: boolean;
   unknownMedia?: boolean;
   relativePath: string | null;
   directoryPath?: string | null;
@@ -98,6 +99,8 @@ export interface MediaItemDto {
   availableMetadataDates?: MetadataDateOptionDto[];
   collectionId?: number | null;
   collectionName?: string | null;
+  collectionIds?: number[];
+  collectionNames?: string[];
   datedCollectionItem?: boolean;
   collectionStartYear?: number | null;
   createdAt: string;
@@ -116,6 +119,7 @@ export interface MediaItemDto {
   eventStartYears?: number[];
   rootEventIds?: number[];
   rootEventLabels?: string[];
+  rootEventTypeLabels?: string[];
   rootEventStartYears?: number[];
   subEventId?: number | null;
   subEventLabel?: string | null;
@@ -270,8 +274,10 @@ export interface UpdateMediaItemRequestDto {
   description?: string | null;
   sourceText?: string | null;
   portrait?: boolean | null;
+  groupPortrait?: boolean | null;
   unknownMedia?: boolean | null;
   collectionId?: number | null;
+  collectionIds?: number[];
   dateSourceMode?: 'MANUAL' | 'METADATA' | 'EVENT' | 'UNDATED' | null;
   selectedMetadataSourceTag?: string | null;
   contextEventId?: number | null;
@@ -307,6 +313,14 @@ export interface BulkUpdateMediaRequestDto {
   customFolderName?: string | null;
   contextEventId?: number | null;
   targetCollectionId?: number | null;
+  targetCollectionIds?: number[];
+  categoryMode?:
+    | 'NO_CHANGE'
+    | 'REGULAR'
+    | 'PORTRAIT_SINGLE'
+    | 'PORTRAIT_GROUP'
+    | 'UNKNOWN'
+    | null;
   title?: string | null;
   sourceText?: string | null;
   inscriptionText?: string | null;
@@ -339,4 +353,5 @@ export interface LinkExistingMediaRequestDto {
   personId?: number | null;
   eventId?: number | null;
   collectionId?: number | null;
+  collectionIds?: number[];
 }

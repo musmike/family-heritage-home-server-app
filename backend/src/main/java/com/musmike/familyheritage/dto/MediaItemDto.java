@@ -20,6 +20,7 @@ public class MediaItemDto {
     private MediaType mediaType;
     private MediaPrimaryContext primaryContext;
     private boolean portrait;
+    private boolean groupPortrait;
     private boolean unknownMedia;
     private String relativePath;
     private String directoryPath;
@@ -70,6 +71,13 @@ public class MediaItemDto {
 
     private Long collectionId;
     private String collectionName;
+
+    @Builder.Default
+    private List<Long> collectionIds = new ArrayList<>();
+
+    @Builder.Default
+    private List<String> collectionNames = new ArrayList<>();
+
     private boolean datedCollectionItem;
     private Integer collectionStartYear;
     private LocalDateTime createdAt;
@@ -118,6 +126,9 @@ public class MediaItemDto {
 
     @Builder.Default
     private List<String> rootEventLabels = new ArrayList<>();
+
+    @Builder.Default
+    private List<String> rootEventTypeLabels = new ArrayList<>();
 
     @Builder.Default
     private List<Integer> rootEventStartYears = new ArrayList<>();

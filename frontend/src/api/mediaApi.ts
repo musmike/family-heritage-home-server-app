@@ -138,6 +138,7 @@ export const mediaApi = {
     graveId?: number;
     eventId?: number;
     collectionId?: number;
+    collectionIds?: number[];
     portraitMedia?: boolean;
     unknownMedia?: boolean;
     isBetweenRange?: boolean;
@@ -192,6 +193,9 @@ export const mediaApi = {
     }
     if (params.collectionId !== undefined) {
       formData.append('collectionId', String(params.collectionId));
+    }
+    if (params.collectionIds && params.collectionIds.length > 0) {
+      formData.append('collectionIds', params.collectionIds.join(','));
     }
     if (params.portraitMedia !== undefined) {
       formData.append('portraitMedia', String(params.portraitMedia));
@@ -289,6 +293,7 @@ export const mediaApi = {
     graveId?: number;
     eventId?: number;
     collectionId?: number;
+    collectionIds?: number[];
     portraitMedia?: boolean;
     unknownMedia?: boolean;
     defaultYear?: number | null;
@@ -354,6 +359,9 @@ export const mediaApi = {
     }
     if (params.collectionId !== undefined) {
       formData.append('collectionId', String(params.collectionId));
+    }
+    if (params.collectionIds && params.collectionIds.length > 0) {
+      formData.append('collectionIds', params.collectionIds.join(','));
     }
     if (params.portraitMedia !== undefined) {
       formData.append('portraitMedia', String(params.portraitMedia));
@@ -445,9 +453,20 @@ export const mediaApi = {
 
   unlinkMediaFromContext: async (
     mediaId: number,
-    params: { graveId?: number; personId?: number; eventId?: number; targetCollectionId?: number }
+    params: {
+      graveId?: number;
+      personId?: number;
+      eventId?: number;
+      collectionId?: number;
+      targetCollectionId?: number;
+      targetCollectionIds?: string;
+    }
   ): Promise<void> => {
     await api.delete(`/media/${String(mediaId)}/unlink`, { params });
+  },
+
+  bulkDeleteMedia: async (mediaIds: number[]): Promise<void> => {
+    await api.post('/media/bulk-delete', mediaIds);
   },
 
   deleteMedia: async (mediaId: number): Promise<void> => {

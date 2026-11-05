@@ -15,9 +15,9 @@ import java.util.List;
 public class LinkExistingMediaRequestDto {
     @Builder.Default
     private List<Long> mediaIds = new ArrayList<>();
-
     private Long graveId;
     private Long personId;
     private Long eventId;
     private Long collectionId;
+    private List<Long> collectionIds;
 }

@@ -5,8 +5,8 @@ spring:
     name: family-heritage-backend
   servlet:
     multipart:
-      max-file-size: 500MB
-      max-request-size: 500MB
+      max-file-size: 30GB
+      max-request-size: 30GB
   jpa:
     hibernate:
       ddl-auto: validate
@@ -24,11 +24,7 @@ server:
   tomcat:
     max-part-count: -1
     max-swallow-size: -1
-
-servlet:
-  multipart:
-    max-file-size: -1
-    max-request-size: -1
+    max-http-form-post-size: -1
 
 app:
   media:

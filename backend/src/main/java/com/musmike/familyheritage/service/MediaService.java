@@ -43,6 +43,132 @@ public class MediaService {
     private final MediaMetadataExtractor metadataExtractor;
     private final ActivityLogService activityLogService;
 
+    public static String getMediaTypeSubfolder(MediaType mediaType) {
+        if (mediaType == MediaType.VIDEO) return "videos";
+        if (mediaType == MediaType.AUDIO) return "audio";
+        return "photos";
+    }
+
+    public static MediaType detectMediaTypeFromMimeOrName(String mimeType, String originalFilename) {
+        String lowerMime = mimeType != null ? mimeType.toLowerCase(Locale.ROOT) : "";
+        String lowerName = originalFilename != null ? originalFilename.toLowerCase(Locale.ROOT) : "";
+        if (lowerMime.startsWith("video/") || lowerName.matches(".*\\.(mp4|webm|mov|avi|mkv)$")) {
+            return MediaType.VIDEO;
+        }
+        if (lowerMime.startsWith("audio/") || lowerMime.contains("ogg") || lowerMime.contains("mp3")
+                || lowerMime.contains("wav") || lowerMime.contains("flac") || lowerMime.contains("aac")
+                || lowerMime.contains("m4a") || lowerName.matches(".*\\.(mp3|wav|ogg|flac|aac|m4a)$")) {
+            return MediaType.AUDIO;
+        }
+        return MediaType.IMAGE;
+    }
+
+    private String stripMediaTypeSubfolder(String dirPath) {
+        if (dirPath == null) return "";
+        if (dirPath.endsWith("/photos")) return dirPath.substring(0, dirPath.length() - 7);
+        if (dirPath.endsWith("/videos")) return dirPath.substring(0, dirPath.length() - 7);
+        if (dirPath.endsWith("/audio")) return dirPath.substring(0, dirPath.length() - 6);
+        return dirPath;
+    }
+
+    private String ensureMediaTypeSubfolder(String baseDirPath, MediaType mediaType) {
+        String stripped = stripMediaTypeSubfolder(baseDirPath);
+        return stripped + "/" + getMediaTypeSubfolder(mediaType);
+    }
+
+    public String resolveGraveBaseDirectoryPath(Grave g) {
+        if (g == null) {
+            return "graves/unassigned/unassigned_grave";
+        }
+        String cemeterySlug = (g.getCemetery() != null && g.getCemetery().getName() != null)
+                ? storageService.toSnakeCase(g.getCemetery().getName())
+                : "unassigned";
+        String graveSlug = resolveEffectiveGraveFolderSlug(g);
+        return "graves/" + cemeterySlug + "/" + graveSlug;
+    }
+
+    private String resolveEffectiveGraveFolderSlug(Grave g) {
+        if (g == null) return "unassigned_grave";
+        if (g.getFolderSlug() != null && !g.getFolderSlug().isBlank()) {
+            return storageService.toSnakeCase(g.getFolderSlug());
+        }
+        List<Burial> burials = burialRepository.findByGrave(g);
+        if (!burials.isEmpty()) {
+            List<String> slugs = burials.stream()
+                    .map(Burial::getPerson)
+                    .filter(Objects::nonNull)
+                    .sorted(Comparator.comparing(Person::getId))
+                    .limit(3)
+                    .map(this::buildPersonSlug)
+                    .filter(s -> !s.isBlank())
+                    .toList();
+            if (!slugs.isEmpty()) {
+                return String.join("_and_", slugs) + "_grave";
+            }
+        }
+        if (g.getSection() != null || g.getGraveNumber() != null) {
+            String coords = ((g.getSection() != null ? "sec_" + g.getSection() : "") + "_"
+                    + (g.getGraveNumber() != null ? "no_" + g.getGraveNumber() : "")).trim();
+            String cleanCoords = storageService.toSnakeCase(coords);
+            if (!cleanCoords.isBlank() && !"unnamed".equals(cleanCoords)) {
+                return "grave_" + cleanCoords;
+            }
+        }
+        return "unassigned_grave";
+    }
+
+    @Transactional
+    public void syncGraveMediaPathsOnGraveChange(Grave grave) {
+        if (grave == null || grave.getId() == null) return;
+        String baseGraveDir = resolveGraveBaseDirectoryPath(grave);
+        List<MediaItem> graveMedia = mediaItemRepository.findByGravesIdOrderByIdAsc(grave.getId());
+        Set<String> oldParentDirs = new HashSet<>();
+
+        for (MediaItem item : graveMedia) {
+            if (item.getPrimaryContext() != MediaPrimaryContext.GRAVE) continue;
+            Long firstGraveId = item.getGraves().stream().map(Grave::getId).min(Long::compareTo).orElse(null);
+            if (!Objects.equals(firstGraveId, grave.getId())) continue;
+
+            String oldBaseDir = stripMediaTypeSubfolder(extractDirectoryPath(item.getRelativePath()));
+            if (!oldBaseDir.equals(baseGraveDir)) {
+                oldParentDirs.add(oldBaseDir);
+            }
+            String targetDir = ensureMediaTypeSubfolder(baseGraveDir, item.getMediaType());
+            relocateSingleMediaItemToDirectory(item, targetDir, item.getFileName());
+            mediaItemRepository.saveAndFlush(item);
+        }
+
+        for (String oldDir : oldParentDirs) {
+            storageService.deleteDirectoryRecursively(oldDir);
+        }
+    }
+
+    @Transactional
+    public void mergeGraveMediaIntoTargetGrave(Grave sourceGrave, Grave targetGrave) {
+        if (sourceGrave == null || targetGrave == null || sourceGrave.getId() == null) return;
+        String oldSourceBaseDir = resolveGraveBaseDirectoryPath(sourceGrave);
+        List<MediaItem> sourceMedia = mediaItemRepository.findByGravesIdOrderByIdAsc(sourceGrave.getId());
+        for (MediaItem item : sourceMedia) {
+            item.getGraves().removeIf(g -> g.getId().equals(sourceGrave.getId()));
+            item.getGraves().add(targetGrave);
+            if (targetGrave.getPrimaryMedia() == null && item.getMediaType() == MediaType.IMAGE) {
+                targetGrave.setPrimaryMedia(item);
+            }
+            mediaItemRepository.saveAndFlush(item);
+        }
+        if (sourceGrave.getPrimaryMedia() != null) {
+            sourceGrave.setPrimaryMedia(null);
+            graveRepository.saveAndFlush(sourceGrave);
+        }
+        graveRepository.saveAndFlush(targetGrave);
+        syncGraveMediaPathsOnGraveChange(targetGrave);
+        storageService.deleteDirectoryRecursively(oldSourceBaseDir);
+    }
+
+    // ============================================================
+    // GALLERY / COLLECTIONS
+    // ============================================================
+
     @Transactional
     public MediaGalleryPageDto getGalleryPage(
             String search,
@@ -403,7 +529,8 @@ public class MediaService {
             Integer personsCount
     ) {
         String ext = storageService.extractExtension(originalFilename, mimeType);
-        String dir = resolveDirectoryForContext(
+        MediaType detectedType = detectMediaTypeFromMimeOrName(mimeType, originalFilename);
+        String baseDir = resolveBaseDirectoryForContext(
                 primaryContext, graveId, personId, eventId, collectionId, customYear,
                 portraitMedia, unknownMedia, personsCount
         );
@@ -411,8 +538,9 @@ public class MediaService {
             String cleanFolderSlug = preserveMandatoryDatePrefixForFolder(
                     primaryContext, eventId, collectionId, customYear, customFolderName
             );
-            dir = replaceLastDirectorySegment(dir, cleanFolderSlug);
+            baseDir = replaceLastDirectorySegment(baseDir, cleanFolderSlug);
         }
+        String dir = ensureMediaTypeSubfolder(baseDir, detectedType);
         String baseName = (customFileName != null && !customFileName.isBlank())
                 ? customFileName
                 : buildDefaultBaseName(primaryContext, graveId, personId, eventId, collectionId, customYear);
@@ -641,6 +769,20 @@ public class MediaService {
             }
         }
 
+        Grave linkedGrave = null;
+        if (graveId != null) {
+            linkedGrave = graveRepository.findById(graveId)
+                    .orElseThrow(() -> new IllegalArgumentException("Grave not found: " + graveId));
+            if (customFolderName != null && !customFolderName.isBlank() && primaryContext == MediaPrimaryContext.GRAVE) {
+                String normalizedGraveFolder = storageService.toSnakeCase(customFolderName);
+                if (!normalizedGraveFolder.equals(linkedGrave.getFolderSlug())) {
+                    linkedGrave.setFolderSlug(normalizedGraveFolder);
+                    linkedGrave = graveRepository.saveAndFlush(linkedGrave);
+                    syncGraveMediaPathsOnGraveChange(linkedGrave);
+                }
+            }
+        }
+
         Long primaryCollectionId = resolvedCollections.isEmpty() ? null : resolvedCollections.getFirst().getId();
         boolean isPortrait = Boolean.TRUE.equals(portraitMedia) || primaryContext == MediaPrimaryContext.PERSON;
         boolean isUnknown = Boolean.TRUE.equals(unknownMedia);
@@ -696,10 +838,7 @@ public class MediaService {
             }
         }
 
-        Grave linkedGrave = null;
-        if (graveId != null) {
-            linkedGrave = graveRepository.findById(graveId)
-                    .orElseThrow(() -> new IllegalArgumentException("Grave not found: " + graveId));
+        if (linkedGrave != null) {
             item.getGraves().add(linkedGrave);
         }
         if (linkedEvent != null) {
@@ -889,11 +1028,21 @@ public class MediaService {
                 targetEvent = eventRepository.saveAndFlush(targetEvent);
                 syncEventMediaPathsOnEventChange(targetEvent);
                 item = mediaItemRepository.findById(mediaId).orElseThrow();
+            } else if (!item.getGraves().isEmpty() && item.getPrimaryContext() == MediaPrimaryContext.GRAVE) {
+                Grave targetGrave = item.getGraves().stream()
+                        .min(Comparator.comparing(Grave::getId))
+                        .orElse(null);
+                if (targetGrave != null) {
+                    targetGrave.setFolderSlug(newFolderSlug);
+                    targetGrave = graveRepository.saveAndFlush(targetGrave);
+                    syncGraveMediaPathsOnGraveChange(targetGrave);
+                    item = mediaItemRepository.findById(mediaId).orElseThrow();
+                }
             } else if (item.getPrimaryCollection() != null && item.getEvents().isEmpty() && item.getGraves().isEmpty()) {
                 updateCollectionSlugAndRelocateAll(item.getPrimaryCollection(), newFolderSlug);
                 item = mediaItemRepository.findById(mediaId).orElseThrow();
             } else {
-                String currentDir = extractDirectoryPath(item.getRelativePath());
+                String currentDir = stripMediaTypeSubfolder(extractDirectoryPath(item.getRelativePath()));
                 MediaCollection pCol = item.getPrimaryCollection();
                 String safeSlug = preserveMandatoryDatePrefixForFolder(
                         item.getPrimaryContext(), null,
@@ -1210,8 +1359,20 @@ public class MediaService {
                 items = mediaItemRepository.findAllById(req.getMediaIds()).stream()
                         .sorted(Comparator.comparing(MediaItem::getId))
                         .toList();
+            } else if (!first.getGraves().isEmpty() && first.getPrimaryContext() == MediaPrimaryContext.GRAVE) {
+                Grave targetGrave = first.getGraves().stream()
+                        .min(Comparator.comparing(Grave::getId))
+                        .orElse(null);
+                if (targetGrave != null) {
+                    targetGrave.setFolderSlug(newFolderSlug);
+                    targetGrave = graveRepository.saveAndFlush(targetGrave);
+                    syncGraveMediaPathsOnGraveChange(targetGrave);
+                    items = mediaItemRepository.findAllById(req.getMediaIds()).stream()
+                            .sorted(Comparator.comparing(MediaItem::getId))
+                            .toList();
+                }
             } else {
-                String currentDir = extractDirectoryPath(first.getRelativePath());
+                String currentDir = stripMediaTypeSubfolder(extractDirectoryPath(first.getRelativePath()));
                 MediaCollection pCol = first.getPrimaryCollection();
                 String safeSlug = preserveMandatoryDatePrefixForFolder(
                         first.getPrimaryContext(), null,
@@ -1260,7 +1421,8 @@ public class MediaService {
                         item.setIsUnknown(true);
                         bulkGroupPortrait = false;
                     }
-                    default -> {}
+                    default -> {
+                    }
                 }
             }
 
@@ -1524,7 +1686,8 @@ public class MediaService {
             }
 
             if (newTargetDir != null) {
-                relocateSingleMediaItemToDirectory(item, newTargetDir, item.getFileName());
+                String finalTargetDir = ensureMediaTypeSubfolder(newTargetDir, item.getMediaType());
+                relocateSingleMediaItemToDirectory(item, finalTargetDir, item.getFileName());
             }
         }
 
@@ -1604,16 +1767,18 @@ public class MediaService {
                         + "/events/" + resolveEffectiveEventFolderSlug(evt, null);
             }
 
+            String finalItemTargetDir = ensureMediaTypeSubfolder(effectiveTargetDir, item.getMediaType());
+
             String currentFileName = item.getFileName();
             String updatedFileName = updateLeadingDatePrefixInFileName(currentFileName, newDatePrefix);
 
-            String candidateRelPath = effectiveTargetDir + "/" + updatedFileName;
+            String candidateRelPath = finalItemTargetDir + "/" + updatedFileName;
             if (!candidateRelPath.equals(item.getRelativePath())) {
                 if (mediaItemRepository.existsByRelativePath(candidateRelPath)
                         || Files.exists(storageService.resolveMediaFilePath(candidateRelPath))) {
                     String ext = storageService.extractExtension(updatedFileName, item.getMimeType());
-                    updatedFileName = findAvailableFileName(effectiveTargetDir, updatedFileName, ext);
-                    candidateRelPath = effectiveTargetDir + "/" + updatedFileName;
+                    updatedFileName = findAvailableFileName(finalItemTargetDir, updatedFileName, ext);
+                    candidateRelPath = finalItemTargetDir + "/" + updatedFileName;
                 }
                 String movedPath = storageService.moveFileToRelativePath(item.getRelativePath(), candidateRelPath);
                 item.setRelativePath(movedPath);
@@ -1625,7 +1790,7 @@ public class MediaService {
                         ver.setFileName(updatedFileName);
                     } else {
                         String verUpdatedName = updateLeadingDatePrefixInFileName(ver.getFileName(), newDatePrefix);
-                        String verTargetRel = effectiveTargetDir + "/" + verUpdatedName;
+                        String verTargetRel = finalItemTargetDir + "/" + verUpdatedName;
                         if (!verTargetRel.equals(ver.getRelativePath())) {
                             String verMoved = storageService.moveFileToRelativePath(ver.getRelativePath(), verTargetRel);
                             ver.setRelativePath(verMoved);
@@ -2504,15 +2669,45 @@ public class MediaService {
             Boolean unknownMedia,
             Integer personsCount
     ) {
+        return resolveDirectoryForContext(
+                context, graveId, personId, eventId, collectionId,
+                customYear, portraitMedia, unknownMedia, personsCount, MediaType.IMAGE
+        );
+    }
+
+    private String resolveDirectoryForContext(
+            MediaPrimaryContext context,
+            Long graveId,
+            Long personId,
+            Long eventId,
+            Long collectionId,
+            Integer customYear,
+            Boolean portraitMedia,
+            Boolean unknownMedia,
+            Integer personsCount,
+            MediaType mediaType
+    ) {
+        String baseDir = resolveBaseDirectoryForContext(
+                context, graveId, personId, eventId, collectionId,
+                customYear, portraitMedia, unknownMedia, personsCount
+        );
+        return ensureMediaTypeSubfolder(baseDir, mediaType);
+    }
+
+    private String resolveBaseDirectoryForContext(
+            MediaPrimaryContext context,
+            Long graveId,
+            Long personId,
+            Long eventId,
+            Long collectionId,
+            Integer customYear,
+            Boolean portraitMedia,
+            Boolean unknownMedia,
+            Integer personsCount
+    ) {
         if (context == MediaPrimaryContext.GRAVE) {
-            String cemeterySlug = "unassigned";
-            if (graveId != null) {
-                Grave g = graveRepository.findById(graveId).orElse(null);
-                if (g != null && g.getCemetery() != null) {
-                    cemeterySlug = storageService.toSnakeCase(g.getCemetery().getName());
-                }
-            }
-            return "graves/" + cemeterySlug;
+            Grave g = graveId != null ? graveRepository.findById(graveId).orElse(null) : null;
+            return resolveGraveBaseDirectoryPath(g);
         }
 
         MediaCollection col = collectionId != null
@@ -2530,9 +2725,12 @@ public class MediaService {
                 Integer evtYear = extractYearFromEvent(evt);
                 if (evtYear == null) {
                     if (col == null) {
-                        throw new IllegalArgumentException("Wybierz istniejącą kolekcję dla wydarzenia bez ustalonej daty.");
+                        throw new IllegalArgumentException(
+                                "Wybierz istniejącą kolekcję dla wydarzenia bez ustalonej daty."
+                        );
                     }
-                    return resolveCollectionDirectoryPath(col) + "/events/" + resolveEffectiveEventFolderSlug(evt, null);
+                    return resolveCollectionDirectoryPath(col) + "/events/"
+                            + resolveEffectiveEventFolderSlug(evt, null);
                 }
                 return resolveEventDirectoryPath(evt, null);
             }
@@ -2552,9 +2750,11 @@ public class MediaService {
         if (isPortrait) {
             if (customYear != null && customYear >= 1000 && customYear <= 2999) {
                 int decade = (customYear / 10) * 10;
-                return String.format("dated/%ds/%d/misc_%d", decade, customYear, customYear);
+                return String.format("dated/%ds/%d/misc_%d/%s", decade, customYear, customYear, portraitSubfolder);
             }
-            throw new IllegalArgumentException("Wybierz istniejącą kolekcję dla portretu bez ustalonej daty.");
+            throw new IllegalArgumentException(
+                    "Wybierz istniejącą kolekcję dla portretu bez ustalonej daty."
+            );
         }
 
         if (customYear != null && customYear >= 1000 && customYear <= 2999) {
@@ -2569,7 +2769,9 @@ public class MediaService {
             return "collections/places";
         }
 
-        throw new IllegalArgumentException("Wybierz istniejącą kolekcję dla plików bez ustalonej daty.");
+        throw new IllegalArgumentException(
+                "Wybierz istniejącą kolekcję dla plików bez ustalonej daty."
+        );
     }
 
     private String buildDefaultBaseName(
@@ -3181,7 +3383,8 @@ public class MediaService {
         List<MediaItem> eventMedia = mediaItemRepository.findByEventsIdOrderByIdAsc(evt.getId());
         for (MediaItem m : eventMedia) {
             applyOrderedCollectionsToMediaItem(m, targetCols);
-            relocateSingleMediaItemToDirectory(m, targetDir, m.getFileName());
+            String finalDir = ensureMediaTypeSubfolder(targetDir, m.getMediaType());
+            relocateSingleMediaItemToDirectory(m, finalDir, m.getFileName());
             mediaItemRepository.saveAndFlush(m);
         }
     }
@@ -3208,6 +3411,7 @@ public class MediaService {
             item.setPrimaryContext(MediaPrimaryContext.COLLECTION);
         }
 
+        expectedDir = ensureMediaTypeSubfolder(expectedDir, item.getMediaType());
         String currentDir = extractDirectoryPath(item.getRelativePath());
         if (!currentDir.equals(expectedDir)) {
             relocateSingleMediaItemToDirectory(item, expectedDir, item.getFileName());
@@ -3245,7 +3449,8 @@ public class MediaService {
                 .filter(m -> extractDirectoryPath(m.getRelativePath()).equals(currentDir))
                 .toList();
         for (MediaItem item : items) {
-            relocateSingleMediaItemToDirectory(item, targetDir, item.getFileName());
+            String finalTarget = ensureMediaTypeSubfolder(targetDir, item.getMediaType());
+            relocateSingleMediaItemToDirectory(item, finalTarget, item.getFileName());
             mediaItemRepository.save(item);
         }
     }

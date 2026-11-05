@@ -133,6 +133,19 @@ const optTrim = (val: string | null | undefined): string | undefined => {
 const numToStr = (val: number | null | undefined): string =>
   val !== undefined && val !== null ? String(val) : '';
 
+const formatTransferSize = (bytes: number): string => {
+  if (bytes >= 1024 * 1024 * 1024) {
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  }
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  if (bytes >= 1024) {
+    return `${String(Math.round(bytes / 1024))} KB`;
+  }
+  return `${String(bytes)} B`;
+};
+
 const detectFileMediaType = (file: File): MediaType => {
   const t = file.type.toLowerCase();
   if (t.startsWith('video/')) return 'VIDEO';
@@ -227,6 +240,14 @@ export default function MediaGallerySection({
   const [directoryPreview, setDirectoryPreview] = useState<string>('');
   const [setAsPrimary, setSetAsPrimary] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [uploadProgressInfo, setUploadProgressInfo] = useState<{
+    currentFileIndex: number;
+    totalFiles: number;
+    fileName: string;
+    loadedBytes: number;
+    totalBytes: number;
+    percent: number;
+  } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const [showBulkDetails, setShowBulkDetails] = useState<boolean>(false);
@@ -880,8 +901,19 @@ export default function MediaGallerySection({
       personId !== undefined ? [personId] : (defaultPersonIds ?? []);
 
     try {
-      for (const st of stagedRows) {
+      for (let i = 0; i < stagedRows.length; i++) {
+        const st = stagedRows[i];
         if (!st.file) continue;
+        const currentFile = st.file;
+
+        setUploadProgressInfo({
+          currentFileIndex: i + 1,
+          totalFiles: stagedRows.length,
+          fileName: currentFile.name,
+          loadedBytes: 0,
+          totalBytes: currentFile.size,
+          percent: 0,
+        });
 
         const rowCols =
           st.collectionIds.length > 0 ? st.collectionIds : selectedCollectionIds;
@@ -894,7 +926,7 @@ export default function MediaGallerySection({
         const isSinglePrimary = stagedRows.length === 1 && setAsPrimary;
 
         const created = await mediaApi.uploadMedia({
-          file: st.file,
+          file: currentFile,
           primaryContext: effCtx,
           customFolderName: optTrim(customFolderName),
           customFileName: st.customFileName,
@@ -939,12 +971,24 @@ export default function MediaGallerySection({
             : undefined,
           selectedMetadataSourceTag: optTrim(st.selectedMetadataTag),
           clientLastModifiedMs:
-            st.file.lastModified > 0 ? st.file.lastModified : undefined,
+            currentFile.lastModified > 0 ? currentFile.lastModified : undefined,
           personIds: targetPersonIds,
           portraitMedia: isPort,
           unknownMedia: isUnk,
           setAsPersonAvatar: context === 'PERSON' && isSinglePrimary,
           setAsGravePrimary: context === 'GRAVE' && isSinglePrimary,
+          onUploadProgress: (loaded, total) => {
+            const safeTotal = total > 0 ? total : 1;
+            const pct = Math.min(100, Math.round((loaded / safeTotal) * 100));
+            setUploadProgressInfo({
+              currentFileIndex: i + 1,
+              totalFiles: stagedRows.length,
+              fileName: currentFile.name,
+              loadedBytes: loaded,
+              totalBytes: total,
+              percent: pct,
+            });
+          },
         });
 
         if (
@@ -980,6 +1024,7 @@ export default function MediaGallerySection({
       setErrorMessage('Nie udało się wgrać plików.');
     } finally {
       setIsSubmitting(false);
+      setUploadProgressInfo(null);
     }
   };
 
@@ -3660,6 +3705,28 @@ export default function MediaGallerySection({
                         : 'Ustaw jako główny portret (awatar) tej osoby'}
                     </span>
                   </label>
+                </div>
+              )}
+
+              {isSubmitting && uploadProgressInfo && (
+                <div className={styles.uploadProgressBox} data-testid="upload-progress-bar">
+                  <div className={styles.uploadProgressHeader}>
+                    <span>
+                      📤 Wgrywanie pliku {String(uploadProgressInfo.currentFileIndex)} z{' '}
+                      {String(uploadProgressInfo.totalFiles)}: {uploadProgressInfo.fileName}
+                    </span>
+                    <span>
+                      {String(uploadProgressInfo.percent)}% (
+                      {formatTransferSize(uploadProgressInfo.loadedBytes)} /{' '}
+                      {formatTransferSize(uploadProgressInfo.totalBytes)})
+                    </span>
+                  </div>
+                  <div className={styles.uploadProgressTrack}>
+                    <div
+                      className={styles.uploadProgressFill}
+                      style={{ width: `${String(uploadProgressInfo.percent)}%` }}
+                    />
+                  </div>
                 </div>
               )}
 

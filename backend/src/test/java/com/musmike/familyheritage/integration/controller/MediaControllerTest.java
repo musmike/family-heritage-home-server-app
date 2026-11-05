@@ -57,13 +57,13 @@ class MediaControllerTest extends AbstractIntegrationTest {
                 .initialPersonId(jan.getId())
                 .build(), true);
 
-        // 1. Preview suggested snake_case filename and directory
+        // 1. Preview suggested snake_case filename and directory (with grave slug + photos subfolder)
         mockMvc.perform(get("/media/preview-filename")
                         .param("primaryContext", "GRAVE")
                         .param("graveId", String.valueOf(grave.getGraveId()))
                         .param("originalFilename", "IMG_001.JPG"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.directoryPath").value("graves/cmentarz_parafialny_w_kocku"))
+                .andExpect(jsonPath("$.directoryPath").value("graves/cmentarz_parafialny_w_kocku/jan_lukasiewicz_grave/photos"))
                 .andExpect(jsonPath("$.suggestedFileName").value("jan_lukasiewicz_grave_01.jpg"));
 
         // 2. Upload photo to grave and set as primary grave photo + person avatar
@@ -82,7 +82,7 @@ class MediaControllerTest extends AbstractIntegrationTest {
                         .header("X-XSRF-TOKEN", CSRF))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.fileName").value("jan_lukasiewicz_grave_01.jpg"))
-                .andExpect(jsonPath("$.relativePath").value("graves/cmentarz_parafialny_w_kocku/jan_lukasiewicz_grave_01.jpg"))
+                .andExpect(jsonPath("$.relativePath").value("graves/cmentarz_parafialny_w_kocku/jan_lukasiewicz_grave/photos/jan_lukasiewicz_grave_01.jpg"))
                 .andReturn();
 
         MediaItemDto uploaded = objectMapper.readValue(uploadRes.getResponse().getContentAsString(), MediaItemDto.class);
@@ -101,7 +101,7 @@ class MediaControllerTest extends AbstractIntegrationTest {
                         .content(objectMapper.writeValueAsString(renameReq)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.fileName").value("grob_rodziny_lukasiewiczow_kock.jpg"))
-                .andExpect(jsonPath("$.relativePath").value("graves/cmentarz_parafialny_w_kocku/grob_rodziny_lukasiewiczow_kock.jpg"));
+                .andExpect(jsonPath("$.relativePath").value("graves/cmentarz_parafialny_w_kocku/jan_lukasiewicz_grave/photos/grob_rodziny_lukasiewiczow_kock.jpg"));
 
         // 4. Serve file bytes
         mockMvc.perform(get("/media/{id}/file", uploaded.getId()))
@@ -114,7 +114,7 @@ class MediaControllerTest extends AbstractIntegrationTest {
                 .andExpect(status().isNoContent());
 
         assertThat(Files.exists(storageService.resolveMediaFilePath(
-                "graves/cmentarz_parafialny_w_kocku/grob_rodziny_lukasiewiczow_kock.jpg"
+                "graves/cmentarz_parafialny_w_kocku/jan_lukasiewicz_grave/photos/grob_rodziny_lukasiewiczow_kock.jpg"
         ))).isFalse();
     }
 
@@ -150,7 +150,7 @@ class MediaControllerTest extends AbstractIntegrationTest {
                         .header("X-XSRF-TOKEN", CSRF))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.relativePath").value(
-                        "dated/1990s/1995/1995_07_10_wakacje_nad_morzem/1995_07_10_wakacje_nad_morzem_01.jpg"
+                        "dated/1990s/1995/1995_07_10_wakacje_nad_morzem/photos/1995_07_10_wakacje_nad_morzem_01.jpg"
                 ))
                 .andExpect(jsonPath("$.metadataYear").value(1995))
                 .andExpect(jsonPath("$.metadataMonth").value(7))
@@ -190,7 +190,7 @@ class MediaControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/media/by-event/{id}", evt.getEventId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.directMedia[0].relativePath").value(
-                        "dated/1990s/1996/1996_08_20_wakacje_nad_morzem/1996_08_20_wakacje_nad_morzem_01.jpg"
+                        "dated/1990s/1996/1996_08_20_wakacje_nad_morzem/photos/1996_08_20_wakacje_nad_morzem_01.jpg"
                 ));
 
         // Link this existing vacation photo to a Grave as well!
@@ -254,7 +254,7 @@ class MediaControllerTest extends AbstractIntegrationTest {
                         .cookie(new Cookie("XSRF-TOKEN", CSRF))
                         .header("X-XSRF-TOKEN", CSRF))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.relativePath").value("collections/zbior_po_babci_katarzynie/zbior_po_babci_katarzynie_01.jpg"));
+                .andExpect(jsonPath("$.relativePath").value("collections/zbior_po_babci_katarzynie/photos/zbior_po_babci_katarzynie_01.jpg"));
 
         mockMvc.perform(get("/media/gallery")
                         .param("personIds", jan.getId() + "," + anna.getId())
@@ -343,14 +343,14 @@ class MediaControllerTest extends AbstractIntegrationTest {
                 .startDay(15)
                 .build());
 
-        // 1. Custom folder name must keep untouchable event date prefix 1998_08_15_
+        // 1. Custom folder name must keep untouchable event date prefix 1998_08_15_ (with photos subfolder)
         mockMvc.perform(get("/media/preview-filename")
                         .param("primaryContext", "EVENT")
                         .param("eventId", String.valueOf(evt.getEventId()))
                         .param("customFolderName", "nasz_wlasny_folder")
                         .param("originalFilename", "bieszczady.jpg"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.directoryPath").value("dated/1990s/1998/1998_08_15_nasz_wlasny_folder"));
+                .andExpect(jsonPath("$.directoryPath").value("dated/1990s/1998/1998_08_15_nasz_wlasny_folder/photos"));
 
         MockMultipartFile photo = new MockMultipartFile(
                 "file", "bieszczady.jpg", "image/jpeg", new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF}
@@ -394,6 +394,6 @@ class MediaControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/media/{id}", mediaId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.collectionId").value(colId))
-                .andExpect(jsonPath("$.relativePath", startsWith("collections/archiwum_domowe/")));
+                .andExpect(jsonPath("$.relativePath", startsWith("collections/archiwum_domowe/photos/")));
     }
 }

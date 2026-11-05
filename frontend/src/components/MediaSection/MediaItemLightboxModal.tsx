@@ -179,6 +179,11 @@ export default function MediaItemLightboxModal({
   const [versionTypeInput, setVersionTypeInput] = useState<string>('RESTORED');
   const [versionLabelInput, setVersionLabelInput] = useState<string>('');
   const [versionSetAsMain, setVersionSetAsMain] = useState<boolean>(true);
+  const [versionUploadProgress, setVersionUploadProgress] = useState<{
+      loadedBytes: number;
+      totalBytes: number;
+      percent: number;
+  } | null>(null);
 
   const [isEditingItem, setIsEditingItem] = useState<boolean>(false);
   const [editFileName, setEditFileName] = useState<string>('');
@@ -549,6 +554,11 @@ export default function MediaItemLightboxModal({
   const handleUploadVersionSubmit = async () => {
     if (!versionFile) return;
     setIsSubmitting(true);
+    setVersionUploadProgress({
+      loadedBytes: 0,
+      totalBytes: versionFile.size,
+      percent: 0,
+    });
     try {
       const updated = await mediaApi.uploadMediaVersion({
         mediaId: activeItem.id,
@@ -556,6 +566,14 @@ export default function MediaItemLightboxModal({
         versionType: versionTypeInput,
         versionLabel: versionLabelInput.trim() || undefined,
         setAsMain: versionTypeInput !== 'REVERSE' && versionSetAsMain,
+        onUploadProgress: (loaded, total) => {
+          const safeTotal = total > 0 ? total : 1;
+          setVersionUploadProgress({
+            loadedBytes: loaded,
+            totalBytes: total,
+            percent: Math.min(100, Math.round((loaded / safeTotal) * 100)),
+          });
+        },
       });
       setLiveUpdatedItem(updated);
       setShowVersionUpload(false);
@@ -567,6 +585,7 @@ export default function MediaItemLightboxModal({
       setErrorMessage('Nie udało się wgrać nowej wersji pliku.');
     } finally {
       setIsSubmitting(false);
+      setVersionUploadProgress(null);
     }
   };
 
@@ -1947,6 +1966,21 @@ export default function MediaItemLightboxModal({
               >
                 ✓ Wgraj wersję
               </button>
+
+              {isSubmitting && versionUploadProgress && (
+                <div className={styles.uploadProgressBox}>
+                  <div className={styles.uploadProgressHeader}>
+                    <span>📤 Wgrywanie wersji: {versionFile?.name ?? ''}</span>
+                    <span>{String(versionUploadProgress.percent)}%</span>
+                  </div>
+                  <div className={styles.uploadProgressTrack}>
+                    <div
+                      className={styles.uploadProgressFill}
+                      style={{ width: `${String(versionUploadProgress.percent)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

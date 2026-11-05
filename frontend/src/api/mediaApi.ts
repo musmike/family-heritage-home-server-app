@@ -164,6 +164,7 @@ export const mediaApi = {
     personIds?: number[];
     setAsPersonAvatar?: boolean;
     setAsGravePrimary?: boolean;
+    onUploadProgress?: (loadedBytes: number, totalBytes: number) => void;
   }): Promise<MediaItemDto> => {
     const formData = new FormData();
     formData.append('file', params.file);
@@ -273,6 +274,12 @@ export const mediaApi = {
 
     const response = await api.post<MediaItemDto>('/media/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: progressEvent => {
+        if (params.onUploadProgress) {
+          const total = progressEvent.total ?? params.file.size;
+          params.onUploadProgress(progressEvent.loaded, total > 0 ? total : params.file.size);
+        }
+      },
     });
     return response.data;
   },
@@ -400,6 +407,7 @@ export const mediaApi = {
     versionType: string;
     versionLabel?: string;
     setAsMain?: boolean;
+    onUploadProgress?: (loadedBytes: number, totalBytes: number) => void;
   }): Promise<MediaItemDto> => {
     const formData = new FormData();
     formData.append('file', params.file);
@@ -413,7 +421,15 @@ export const mediaApi = {
     const response = await api.post<MediaItemDto>(
       `/media/${String(params.mediaId)}/versions`,
       formData,
-      { headers: { 'Content-Type': 'multipart/form-data' } }
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: progressEvent => {
+          if (params.onUploadProgress) {
+            const total = progressEvent.total ?? params.file.size;
+            params.onUploadProgress(progressEvent.loaded, total > 0 ? total : params.file.size);
+          }
+        },
+      }
     );
     return response.data;
   },

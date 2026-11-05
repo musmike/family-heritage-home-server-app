@@ -60,7 +60,7 @@ public class MediaController {
         return ResponseEntity.status(HttpStatus.CREATED).body(mediaService.createCollection(request));
     }
 
-    @PutMapping("/collections/{collectionId}")
+    @PutMapping("/collections/{collectionId:\\d+}")
     public ResponseEntity<MediaCollectionDto> updateCollection(
             @PathVariable Long collectionId,
             @RequestBody SaveMediaCollectionRequestDto request
@@ -69,7 +69,7 @@ public class MediaController {
         return ResponseEntity.ok(mediaService.updateCollection(collectionId, request));
     }
 
-    @DeleteMapping("/collections/{collectionId}")
+    @DeleteMapping("/collections/{collectionId:\\d+}")
     public ResponseEntity<Void> deleteCollection(@PathVariable Long collectionId) {
         ensureAdmin();
         mediaService.deleteCollection(collectionId);
@@ -100,7 +100,7 @@ public class MediaController {
         ));
     }
 
-    @PostMapping(value = "/upload", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PostMapping("/upload")
     public ResponseEntity<MediaItemDto> uploadMedia(
             @RequestParam("file") MultipartFile file,
             @RequestParam("primaryContext") MediaPrimaryContext primaryContext,
@@ -156,7 +156,7 @@ public class MediaController {
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
-    @PostMapping(value = "/upload-batch", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PostMapping("/upload-batch")
     public ResponseEntity<List<MediaItemDto>> uploadBatchMedia(
             @RequestParam("files") List<MultipartFile> files,
             @RequestParam("primaryContext") MediaPrimaryContext primaryContext,
@@ -192,12 +192,12 @@ public class MediaController {
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
-    @GetMapping("/{mediaId}")
+    @GetMapping("/{mediaId:\\d+}")
     public ResponseEntity<MediaItemDto> getMediaById(@PathVariable Long mediaId) {
         return ResponseEntity.ok(mediaService.getMediaById(mediaId, isCurrentUserAdmin()));
     }
 
-    @PutMapping("/{mediaId}")
+    @PutMapping("/{mediaId:\\d+}")
     public ResponseEntity<MediaItemDto> updateMedia(
             @PathVariable Long mediaId,
             @RequestBody UpdateMediaItemRequestDto request
@@ -206,7 +206,7 @@ public class MediaController {
         return ResponseEntity.ok(mediaService.updateMedia(mediaId, request));
     }
 
-    @PostMapping(value = "/{mediaId}/versions", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PostMapping("/{mediaId:\\d+}/versions")
     public ResponseEntity<MediaItemDto> uploadMediaVersion(
             @PathVariable Long mediaId,
             @RequestParam("file") MultipartFile file,
@@ -220,7 +220,7 @@ public class MediaController {
         );
     }
 
-    @PutMapping("/{mediaId}/versions/{versionId}/set-main")
+    @PutMapping("/{mediaId:\\d+}/versions/{versionId:\\d+}/set-main")
     public ResponseEntity<MediaItemDto> setMainMediaVersion(
             @PathVariable Long mediaId,
             @PathVariable Long versionId
@@ -229,7 +229,7 @@ public class MediaController {
         return ResponseEntity.ok(mediaService.setMainMediaVersion(mediaId, versionId));
     }
 
-    @DeleteMapping("/{mediaId}/versions/{versionId}")
+    @DeleteMapping("/{mediaId:\\d+}/versions/{versionId:\\d+}")
     public ResponseEntity<MediaItemDto> deleteMediaVersion(
             @PathVariable Long mediaId,
             @PathVariable Long versionId
@@ -238,7 +238,7 @@ public class MediaController {
         return ResponseEntity.ok(mediaService.deleteMediaVersion(mediaId, versionId));
     }
 
-    @GetMapping("/{mediaId}/versions/{versionId}/file")
+    @GetMapping("/{mediaId:\\d+}/versions/{versionId:\\d+}/file")
     public ResponseEntity<Resource> serveVersionFile(
             @PathVariable Long mediaId,
             @PathVariable Long versionId
@@ -263,7 +263,7 @@ public class MediaController {
         return ResponseEntity.ok(mediaService.linkExistingMedia(request));
     }
 
-    @DeleteMapping("/{mediaId}/unlink")
+    @DeleteMapping("/{mediaId:\\d+}/unlink")
     public ResponseEntity<Void> unlinkMediaFromContext(
             @PathVariable Long mediaId,
             @RequestParam(name = "graveId", required = false) Long graveId,
@@ -279,6 +279,20 @@ public class MediaController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/bulk-unlink")
+    public ResponseEntity<Void> bulkUnlinkMedia(@RequestBody BulkUnlinkMediaRequestDto request) {
+        ensureAdmin();
+        mediaService.bulkUnlinkMedia(request);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/{mediaId:\\d+}")
+    public ResponseEntity<Void> deleteMedia(@PathVariable Long mediaId) {
+        ensureAdmin();
+        mediaService.deleteMedia(mediaId);
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/bulk-delete")
     public ResponseEntity<Void> bulkDeleteMedia(@RequestBody List<Long> mediaIds) {
         ensureAdmin();
@@ -286,29 +300,22 @@ public class MediaController {
         return ResponseEntity.noContent().build();
     }
 
-    @DeleteMapping("/{mediaId}")
-    public ResponseEntity<Void> deleteMedia(@PathVariable Long mediaId) {
-        ensureAdmin();
-        mediaService.deleteMedia(mediaId);
-        return ResponseEntity.noContent().build();
-    }
-
-    @GetMapping("/by-grave/{graveId}")
+    @GetMapping("/by-grave/{graveId:\\d+}")
     public ResponseEntity<List<MediaItemDto>> getMediaByGrave(@PathVariable Long graveId) {
         return ResponseEntity.ok(mediaService.getMediaByGrave(graveId, isCurrentUserAdmin()));
     }
 
-    @GetMapping("/by-person/{personId}")
+    @GetMapping("/by-person/{personId:\\d+}")
     public ResponseEntity<List<MediaItemDto>> getMediaByPerson(@PathVariable Long personId) {
         return ResponseEntity.ok(mediaService.getMediaByPerson(personId, isCurrentUserAdmin()));
     }
 
-    @GetMapping("/by-event/{eventId}")
+    @GetMapping("/by-event/{eventId:\\d+}")
     public ResponseEntity<EventMediaOverviewDto> getMediaByEvent(@PathVariable Long eventId) {
         return ResponseEntity.ok(mediaService.getMediaByEventWithSubEvents(eventId, isCurrentUserAdmin()));
     }
 
-    @GetMapping("/{mediaId}/file")
+    @GetMapping("/{mediaId:\\d+}/file")
     public ResponseEntity<Resource> serveFile(@PathVariable Long mediaId) {
         Resource resource = mediaService.getMediaFileResource(mediaId);
         String mimeType = mediaService.getMimeType(mediaId);
@@ -318,7 +325,7 @@ public class MediaController {
                 .body(resource);
     }
 
-    @GetMapping("/{mediaId}/thumbnail")
+    @GetMapping("/{mediaId:\\d+}/thumbnail")
     public ResponseEntity<Resource> serveThumbnail(@PathVariable Long mediaId) {
         Resource resource = mediaService.getThumbnailResource(mediaId);
         String mime = mediaService.getMimeType(mediaId);

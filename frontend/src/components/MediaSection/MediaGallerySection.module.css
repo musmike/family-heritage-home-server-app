@@ -795,3 +795,33 @@
     height: 130px;
   }
 }
+
+@keyframes slideInFromRight {
+  from {
+    opacity: 0.35;
+    transform: translateX(65px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInFromLeft {
+  from {
+    opacity: 0.35;
+    transform: translateX(-65px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.slideAnimNext {
+  animation: slideInFromRight 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.slideAnimPrev {
+  animation: slideInFromLeft 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}

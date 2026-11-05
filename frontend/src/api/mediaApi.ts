@@ -1,5 +1,6 @@
 import api from './axiosInstance';
 import type {
+  BulkUnlinkMediaRequestDto,
   BulkUpdateMediaRequestDto,
   EventMediaOverviewDto,
   LinkExistingMediaRequestDto,
@@ -463,6 +464,10 @@ export const mediaApi = {
     }
   ): Promise<void> => {
     await api.delete(`/media/${String(mediaId)}/unlink`, { params });
+  },
+
+  bulkUnlinkMedia: async (payload: BulkUnlinkMediaRequestDto): Promise<void> => {
+    await api.post('/media/bulk-unlink', payload);
   },
 
   bulkDeleteMedia: async (mediaIds: number[]): Promise<void> => {

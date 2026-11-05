@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useId, type ReactNode } from 'react';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { biographyApi } from '../../api/biographyApi';
 import { mediaApi } from '../../api/mediaApi';
@@ -304,7 +304,6 @@ export default function WikiBiographySection({
   isAdmin,
   onBiographyUpdated,
 }: WikiBiographySectionProps) {
-  const uploadInputId = useId();
   const [editMode, setEditMode] = useState<'FULL' | number | null>(null);
   const [draftText, setDraftText] = useState<string>('');
   const [showPreview, setShowPreview] = useState<boolean>(true);
@@ -317,14 +316,13 @@ export default function WikiBiographySection({
   const [personSearchResults, setPersonSearchResults] = useState<PersonListItemDto[]>([]);
   const [customLinkLabel, setCustomLinkLabel] = useState<string>('');
 
-  // Embedded Media Picker (Upload New or Pick from Gallery) state
+  // Embedded Media Picker (from Gallery only) state
   const [showMediaPicker, setShowMediaPicker] = useState<boolean>(false);
   const [mediaCaptionInput, setMediaCaptionInput] = useState<string>('');
-  const [mediaUploadFile, setMediaUploadFile] = useState<File | null>(null);
   const [mediaAlign, setMediaAlign] = useState<'right' | 'left' | 'center'>('right');
   const [lightboxItem, setLightboxItem] = useState<MediaItemDto | null>(null);
 
-  // Full Gallery Browser Modal state (Point 12)
+  // Full Gallery Browser Modal state
   const [showGalleryBrowserModal, setShowGalleryBrowserModal] = useState<boolean>(false);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -494,7 +492,6 @@ export default function WikiBiographySection({
     setShowMediaPicker(nextState);
     if (nextState) {
       setMediaCaptionInput('');
-      setMediaUploadFile(null);
     }
   };
 
@@ -514,23 +511,6 @@ export default function WikiBiographySection({
     }
     setShowMediaPicker(false);
     setMediaCaptionInput('');
-    setMediaUploadFile(null);
-  };
-
-  const handleUploadAndInsertMedia = async () => {
-    if (!mediaUploadFile) return;
-    try {
-      const created = await mediaApi.uploadMedia({
-        file: mediaUploadFile,
-        primaryContext: 'PERSON',
-        title: mediaCaptionInput.trim() || undefined,
-        personIds: [personId],
-        clientLastModifiedMs: mediaUploadFile.lastModified || undefined,
-      });
-      insertMediaMarkdownBlock(created);
-    } catch {
-      setErrorMessage('Nie udało się wgrać pliku do życiorysu.');
-    }
   };
 
   const handleSave = async () => {
@@ -808,10 +788,9 @@ export default function WikiBiographySection({
         </div>
       )}
 
-      {/* Point 12: Embedded Media Picker with Full Gallery Browser Modal */}
+      {/* Point 4: Embedded Media Picker from Gallery only */}
       {showMediaPicker && (
         <div className={styles.linkPickerBox} data-testid="wiki-media-picker">
-          {/* Media Alignment Picker (Wikipedia style) */}
           <div
             style={{
               display: 'flex',
@@ -902,18 +881,6 @@ export default function WikiBiographySection({
               }}
               className={styles.textInput}
             />
-          </div>
-
-          <div
-            className={styles.linkPickerRow}
-            style={{
-              padding: '0.6rem',
-              backgroundColor: '#f8fafc',
-              border: '1px solid #cbd5e1',
-              borderRadius: '6px',
-              justifyContent: 'space-between',
-            }}
-          >
             <button
               type="button"
               data-testid="open-wiki-gallery-browser-button"
@@ -922,40 +889,8 @@ export default function WikiBiographySection({
               }}
               className={styles.btnPrimary}
             >
-              🖼️ Otwórz przeglądarkę galerii (wszystkie widoki i filtry)
+              🖼️ Wybierz zdjęcie lub film z galerii
             </button>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-              <label
-                htmlFor={uploadInputId}
-                className={styles.btnSecondary}
-                style={{ cursor: 'pointer' }}
-              >
-                📂 Lub wybierz nowy plik z dysku
-              </label>
-              <input
-                id={uploadInputId}
-                type="file"
-                accept="image/*,video/*"
-                onChange={e => {
-                  setMediaUploadFile(e.target.files?.[0] ?? null);
-                }}
-                style={{ display: 'none' }}
-              />
-              <span style={{ fontSize: '0.82rem', color: '#475569' }}>
-                {mediaUploadFile ? mediaUploadFile.name : 'Nie wybrano nowego pliku'}
-              </span>
-              <button
-                type="button"
-                disabled={!mediaUploadFile}
-                onClick={() => {
-                  void handleUploadAndInsertMedia();
-                }}
-                className={styles.btnSecondary}
-              >
-                Wgraj i wstaw
-              </button>
-            </div>
           </div>
         </div>
       )}
@@ -1151,7 +1086,7 @@ export default function WikiBiographySection({
         </div>
       )}
 
-      {/* Fullscreen Lightbox with Details & Options for Embedded Media (Point 28) */}
+      {/* Fullscreen Lightbox with Details & Options for Embedded Media */}
       {lightboxItem && (
         <MediaItemLightboxModal
           items={[lightboxItem]}
@@ -1176,7 +1111,7 @@ export default function WikiBiographySection({
         />
       )}
 
-      {/* Point 12: Full Gallery Browser Modal for inserting media into biography */}
+      {/* Full Gallery Browser Modal for inserting media into biography */}
       <GalleryBrowserModal
         isOpen={showGalleryBrowserModal}
         mode="single"

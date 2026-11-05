@@ -147,6 +147,7 @@ export default function GalleryPage() {
   const [pageData, setPageData] = useState<MediaGalleryPageDto | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isColDescExpanded, setIsColDescExpanded] = useState<boolean>(false);
 
   // 5 Main Views: 'ALL' | 'TIMELINE' | 'PERSON' | 'GRAVE' | 'COLLECTION'
   const [viewMode, setViewMode] = useState<string>('ALL');
@@ -251,6 +252,7 @@ export default function GalleryPage() {
     setSelectedCollectionId(null);
     setSelectedCollectionSubfolder(null);
     setSelectedCollectionEventType(null);
+    setIsColDescExpanded(false);
   };
 
   const fetchGallery = async () => {
@@ -282,6 +284,261 @@ export default function GalleryPage() {
   const allItems = pageData?.content ?? [];
   const allCollections = pageData?.collections ?? [];
 
+  const countTotalInAnyCollectionTree = (colId: number): MediaItemDto[] => {
+    const direct = allItems.filter(i => itemBelongsToCollection(i, colId));
+    const children = allCollections.filter(c => c.parentCollectionId === colId);
+    const childMedia = children.flatMap(ch => countTotalInAnyCollectionTree(ch.id));
+    const uniqueMap = new Map<number, MediaItemDto>();
+    for (const m of [...direct, ...childMedia]) {
+      uniqueMap.set(m.id, m);
+    }
+    return Array.from(uniqueMap.values());
+  };
+
+  // Shared internal folder breakdown for both Archival Collections and Dated Albums
+  const buildCollectionInternalView = (
+    targetColId: number,
+    baseBreadcrumb: string[]
+  ): DrillDownViewData => {
+    const childCols = allCollections.filter(c => c.parentCollectionId === targetColId);
+    const directColMedia = allItems.filter(i => itemBelongsToCollection(i, targetColId));
+
+    const singlePortraits = directColMedia.filter(
+      i =>
+        (i.portrait === true || i.primaryContext === 'PERSON') &&
+        !isGroupPortraitItem(i)
+    );
+    const groupPortraits = directColMedia.filter(
+      i =>
+        (i.portrait === true || i.primaryContext === 'PERSON') &&
+        isGroupPortraitItem(i)
+    );
+    const unknownMedia = directColMedia.filter(i => i.unknownMedia === true);
+    const eventMediaInCol = directColMedia.filter(
+      i =>
+        !i.portrait &&
+        i.primaryContext !== 'PERSON' &&
+        !i.unknownMedia &&
+        i.eventIds &&
+        i.eventIds.length > 0
+    );
+    const looseMedia = directColMedia.filter(
+      i =>
+        !i.portrait &&
+        i.primaryContext !== 'PERSON' &&
+        !i.unknownMedia &&
+        (!i.eventIds || i.eventIds.length === 0)
+    );
+
+    interface ColUndatedEventBucket {
+      eventId: number;
+      eventLabel: string;
+      typeLabel: string;
+      list: MediaItemDto[];
+    }
+    const colEventsMap = new Map<number, ColUndatedEventBucket>();
+    for (const em of eventMediaInCol) {
+      const rIds =
+        em.rootEventIds && em.rootEventIds.length > 0 ? em.rootEventIds : em.eventIds;
+      const rLabels =
+        em.rootEventLabels && em.rootEventLabels.length > 0
+          ? em.rootEventLabels
+          : em.eventLabels;
+      const rTypeLabels = em.rootEventTypeLabels;
+      const eId = rIds?.at(0);
+      const eLbl = rLabels?.at(0) ?? 'Wydarzenie';
+      const tLbl = rTypeLabels?.at(0) ?? 'Inne wydarzenia';
+      if (eId !== undefined) {
+        const existing = colEventsMap.get(eId);
+        if (existing) {
+          existing.list.push(em);
+        } else {
+          colEventsMap.set(eId, {
+            eventId: eId,
+            eventLabel: eLbl,
+            typeLabel: tLbl,
+            list: [em],
+          });
+        }
+      }
+    }
+
+    if (selectedCollectionSubfolder === null) {
+      const subTiles: FolderTileItem[] = [];
+      for (const ch of childCols) {
+        const chMedia = countTotalInAnyCollectionTree(ch.id);
+        subTiles.push({
+          key: `SUBCOL_${String(ch.id)}`,
+          title: `📂 Podkolekcja: ${ch.name}`,
+          subtitle: ch.description ?? 'Podkolekcja',
+          count: chMedia.length,
+          previewItems: getTopPreviewItems(chMedia),
+          previewMediaId: ch.previewMediaId ?? getFirstMediaId(chMedia),
+          collectionId: ch.id,
+          onClick: () => {
+            if (viewMode === 'TIMELINE') {
+              setSelectedYearBucketKey(`DCOL_${String(ch.id)}`);
+            } else {
+              setSelectedCollectionId(ch.id);
+            }
+            setSelectedCollectionSubfolder(null);
+            setSelectedCollectionEventType(null);
+            setIsColDescExpanded(false);
+          },
+        });
+      }
+      if (eventMediaInCol.length > 0) {
+        subTiles.push({
+          key: 'SUB_UNDATED_EVENTS',
+          title: '📅 Wydarzenia bez daty',
+          subtitle: `Liczba wydarzeń: ${String(colEventsMap.size)}`,
+          count: eventMediaInCol.length,
+          previewItems: getTopPreviewItems(eventMediaInCol),
+          previewMediaId: getFirstMediaId(eventMediaInCol),
+          onClick: () => {
+            setSelectedCollectionSubfolder('UNDATED_EVENTS');
+            setSelectedCollectionEventType(null);
+          },
+        });
+      }
+      if (singlePortraits.length > 0) {
+        subTiles.push({
+          key: 'SUB_SINGLE_PORTRAITS',
+          title: '👤 Portrety jednoosobowe',
+          subtitle: 'Zdjęcia portretowe pojedynczych osób',
+          count: singlePortraits.length,
+          previewItems: getTopPreviewItems(singlePortraits),
+          previewMediaId: getFirstMediaId(singlePortraits),
+          onClick: () => {
+            setSelectedCollectionSubfolder('SINGLE_PORTRAIT');
+          },
+        });
+      }
+      if (groupPortraits.length > 0) {
+        subTiles.push({
+          key: 'SUB_GROUP_PORTRAITS',
+          title: '👥 Portrety grupowe',
+          subtitle: 'Zdjęcia portretowe wielu osób',
+          count: groupPortraits.length,
+          previewItems: getTopPreviewItems(groupPortraits),
+          previewMediaId: getFirstMediaId(groupPortraits),
+          onClick: () => {
+            setSelectedCollectionSubfolder('GROUP_PORTRAIT');
+          },
+        });
+      }
+      if (unknownMedia.length > 0) {
+        subTiles.push({
+          key: 'SUB_UNKNOWN',
+          title: '❓ Nieznane (do identyfikacji)',
+          subtitle: 'Zdjęcia i nagrania do identyfikacji',
+          count: unknownMedia.length,
+          previewItems: getTopPreviewItems(unknownMedia),
+          previewMediaId: getFirstMediaId(unknownMedia),
+          onClick: () => {
+            setSelectedCollectionSubfolder('UNKNOWN');
+          },
+        });
+      }
+      return {
+        tiles: subTiles,
+        mediaItems: looseMedia,
+        activeCollectionId: targetColId,
+        breadcrumb: baseBreadcrumb,
+      };
+    }
+
+    if (selectedCollectionSubfolder === 'UNDATED_EVENTS') {
+      const byTypeMap = new Map<string, ColUndatedEventBucket[]>();
+      for (const evtBucket of colEventsMap.values()) {
+        const list = byTypeMap.get(evtBucket.typeLabel) ?? [];
+        list.push(evtBucket);
+        byTypeMap.set(evtBucket.typeLabel, list);
+      }
+
+      if (selectedCollectionEventType === null) {
+        const typeTiles: FolderTileItem[] = Array.from(byTypeMap.entries())
+          .sort((a, b) => a[0].localeCompare(b[0], 'pl'))
+          .map(([tLabel, evtBuckets]) => {
+            const allMediaForType = evtBuckets.flatMap(b => b.list);
+            return {
+              key: `UTYPE_${tLabel}`,
+              title: `🏷️ ${tLabel}`,
+              subtitle: `Wydarzenia tego typu: ${String(evtBuckets.length)}`,
+              count: allMediaForType.length,
+              previewItems: getTopPreviewItems(allMediaForType),
+              previewMediaId: getFirstMediaId(allMediaForType),
+              onClick: () => {
+                setSelectedCollectionEventType(tLabel);
+              },
+            };
+          });
+        return {
+          tiles: typeTiles,
+          mediaItems: [],
+          activeCollectionId: targetColId,
+          breadcrumb: [...baseBreadcrumb, 'Wydarzenia bez daty'],
+        };
+      }
+
+      const eventsInChosenType = byTypeMap.get(selectedCollectionEventType) ?? [];
+      const eventTiles: FolderTileItem[] = eventsInChosenType.map(eb => ({
+        key: `COLEVT_${String(eb.eventId)}`,
+        title: `📅 ${eb.eventLabel}`,
+        subtitle: eb.typeLabel,
+        count: eb.list.length,
+        previewItems: getTopPreviewItems(eb.list),
+        previewMediaId: getFirstMediaId(eb.list),
+        eventId: eb.eventId,
+        onClick: () => {
+          setSelectedCollectionSubfolder(`EVT_${String(eb.eventId)}`);
+        },
+      }));
+      return {
+        tiles: eventTiles,
+        mediaItems: [],
+        activeCollectionId: targetColId,
+        breadcrumb: [
+          ...baseBreadcrumb,
+          'Wydarzenia bez daty',
+          selectedCollectionEventType,
+        ],
+      };
+    }
+
+    if (selectedCollectionSubfolder.startsWith('EVT_')) {
+      const eId = Number(selectedCollectionSubfolder.replace('EVT_', ''));
+      const chosenEvt = colEventsMap.get(eId);
+      const { direct, subBuckets } = splitDirectAndSubEventMedia(chosenEvt?.list ?? []);
+      return {
+        tiles: [],
+        mediaItems: direct,
+        subEventBuckets: subBuckets,
+        activeEventId: eId,
+        activeCollectionId: targetColId,
+        breadcrumb: [
+          ...baseBreadcrumb,
+          'Wydarzenia bez daty',
+          chosenEvt?.typeLabel ?? 'Typ wydarzenia',
+          chosenEvt?.eventLabel ?? 'Wydarzenie',
+        ],
+      };
+    }
+
+    const subMap: Record<string, { label: string; list: MediaItemDto[] } | undefined> = {
+      SINGLE_PORTRAIT: { label: 'Portrety jednoosobowe', list: singlePortraits },
+      GROUP_PORTRAIT: { label: 'Portrety grupowe', list: groupPortraits },
+      UNKNOWN: { label: 'Nieznane (do identyfikacji)', list: unknownMedia },
+    };
+    const chosenSub = subMap[selectedCollectionSubfolder];
+    return {
+      tiles: [],
+      mediaItems: chosenSub?.list ?? [],
+      activeCollectionId: targetColId,
+      breadcrumb: [...baseBreadcrumb, chosenSub?.label ?? 'Kategoria'],
+    };
+  };
+
   const uploadDateRibbons = useMemo<UploadDateRibbonBucket[]>(() => {
     if (viewMode !== 'ALL') return [];
     const map = new Map<string, UploadDateRibbonBucket>();
@@ -312,7 +569,7 @@ export default function GalleryPage() {
   };
 
   // ============================================================================
-  // VIEW 2: DATA WYKONANIA
+  // VIEW 2: DATA WYKONANIA (with Dated Album internal structure!)
   // ============================================================================
   const timelineViewContent = useMemo<DrillDownViewData>(() => {
     if (viewMode !== 'TIMELINE') {
@@ -337,6 +594,14 @@ export default function GalleryPage() {
         const list = decMap.get(dec) ?? [];
         list.push(item);
         decMap.set(dec, list);
+      }
+      for (const col of allCollections) {
+        if (col.datedCollection && col.startYear) {
+          const dec = Math.floor(col.startYear / 10) * 10;
+          if (!decMap.has(dec)) {
+            decMap.set(dec, []);
+          }
+        }
       }
       const tiles: FolderTileItem[] = Array.from(decMap.entries())
         .sort((a, b) => b[0] - a[0])
@@ -435,6 +700,17 @@ export default function GalleryPage() {
         list.push(item);
         yrMap.set(effYear, list);
       }
+      for (const col of allCollections) {
+        if (
+          col.datedCollection &&
+          col.startYear &&
+          Math.floor(col.startYear / 10) * 10 === selectedDecade
+        ) {
+          if (!yrMap.has(col.startYear)) {
+            yrMap.set(col.startYear, []);
+          }
+        }
+      }
       const tiles: FolderTileItem[] = Array.from(yrMap.entries())
         .sort((a, b) => b[0] - a[0])
         .map(([yr, list]) => ({
@@ -456,6 +732,18 @@ export default function GalleryPage() {
           `Lata ${String(selectedDecade)}–${String(selectedDecade + 9)}`,
         ],
       };
+    }
+
+    // If user clicked into a Dated Album (or sub-collection of a Dated Album)
+    if (selectedYearBucketKey?.startsWith('DCOL_')) {
+      const dColId = Number(selectedYearBucketKey.replace('DCOL_', ''));
+      const dColObj = allCollections.find(c => c.id === dColId);
+      return buildCollectionInternalView(dColId, [
+        'Data wykonania',
+        `Lata ${String(selectedDecade)}–${String(selectedDecade + 9)}`,
+        `Rok ${String(selectedYear)}`,
+        dColObj?.name ?? 'Album datowany',
+      ]);
     }
 
     const inYear = inDecade.filter(d => d.effYear === selectedYear).map(d => d.item);
@@ -515,16 +803,15 @@ export default function GalleryPage() {
     }
 
     for (const col of allCollections) {
-      if (col.datedCollection && col.startYear === selectedYear) {
+      if (col.datedCollection && col.startYear === selectedYear && !col.parentCollectionId) {
         const bKey = `DCOL_${String(col.id)}`;
-        if (!buckets.has(bKey)) {
-          buckets.set(bKey, {
-            title: col.name,
-            subtitle: col.dateText ? `📂 Album datowany (${col.dateText})` : '📂 Album datowany',
-            list: [],
-            collectionId: col.id,
-          });
-        }
+        const treeItems = countTotalInAnyCollectionTree(col.id);
+        buckets.set(bKey, {
+          title: col.name,
+          subtitle: col.dateText ? `📂 Album datowany (${col.dateText})` : '📂 Album datowany',
+          list: treeItems,
+          collectionId: col.id,
+        });
       }
     }
 
@@ -548,6 +835,9 @@ export default function GalleryPage() {
         eventId: data.eventId,
         onClick: () => {
           setSelectedYearBucketKey(bKey);
+          setSelectedCollectionSubfolder(null);
+          setSelectedCollectionEventType(null);
+          setIsColDescExpanded(false);
         },
       }));
       return {
@@ -576,7 +866,16 @@ export default function GalleryPage() {
         chosenBucket?.title ?? 'Wybrana grupa',
       ],
     };
-  }, [allItems, allCollections, viewMode, selectedDecade, selectedYear, selectedYearBucketKey]);
+  }, [
+    allItems,
+    allCollections,
+    viewMode,
+    selectedDecade,
+    selectedYear,
+    selectedYearBucketKey,
+    selectedCollectionSubfolder,
+    selectedCollectionEventType,
+  ]);
 
   // ============================================================================
   // VIEW 3: OSOBY
@@ -839,29 +1138,18 @@ export default function GalleryPage() {
   }, [allItems, viewMode, selectedCemeteryName, selectedGraveId]);
 
   // ============================================================================
-  // VIEW 5: KOLEKCJE (Points 13, 20, 21, 35)
-  // Collection -> "📅 Wydarzenia bez daty" -> Event Type tiles -> Event tiles -> Media
+  // VIEW 5: KOLEKCJE
   // ============================================================================
   const collectionViewContent = useMemo<DrillDownViewData>(() => {
     if (viewMode !== 'COLLECTION') {
       return { tiles: [], mediaItems: [], breadcrumb: [] };
     }
     const archivalCollections = allCollections.filter(c => !c.datedCollection);
-    const countTotalInCollectionTree = (colId: number): MediaItemDto[] => {
-      const direct = allItems.filter(i => itemBelongsToCollection(i, colId));
-      const children = archivalCollections.filter(c => c.parentCollectionId === colId);
-      const childMedia = children.flatMap(ch => countTotalInCollectionTree(ch.id));
-      const uniqueMap = new Map<number, MediaItemDto>();
-      for (const m of [...direct, ...childMedia]) {
-        uniqueMap.set(m.id, m);
-      }
-      return Array.from(uniqueMap.values());
-    };
 
     if (selectedCollectionId === null) {
       const rootCols = archivalCollections.filter(c => !c.parentCollectionId);
       const tiles: FolderTileItem[] = rootCols.map(col => {
-        const treeMedia = countTotalInCollectionTree(col.id);
+        const treeMedia = countTotalInAnyCollectionTree(col.id);
         return {
           key: `COL_${String(col.id)}`,
           title: `📦 ${col.name}`,
@@ -872,259 +1160,18 @@ export default function GalleryPage() {
           collectionId: col.id,
           onClick: () => {
             setSelectedCollectionId(col.id);
+            setIsColDescExpanded(false);
           },
         };
       });
       return { tiles, mediaItems: [], breadcrumb: ['Kolekcje'] };
     }
 
-    const currentCol = archivalCollections.find(c => c.id === selectedCollectionId);
-    const childCols = archivalCollections.filter(
-      c => c.parentCollectionId === selectedCollectionId
-    );
-    const directColMedia = allItems.filter(i =>
-      itemBelongsToCollection(i, selectedCollectionId)
-    );
-
-    const singlePortraits = directColMedia.filter(
-      i =>
-        (i.portrait === true || i.primaryContext === 'PERSON') &&
-        !isGroupPortraitItem(i)
-    );
-    const groupPortraits = directColMedia.filter(
-      i =>
-        (i.portrait === true || i.primaryContext === 'PERSON') &&
-        isGroupPortraitItem(i)
-    );
-    const unknownMedia = directColMedia.filter(i => i.unknownMedia === true);
-    const eventMediaInCol = directColMedia.filter(
-      i =>
-        !i.portrait &&
-        i.primaryContext !== 'PERSON' &&
-        !i.unknownMedia &&
-        i.eventIds &&
-        i.eventIds.length > 0
-    );
-    const looseMedia = directColMedia.filter(
-      i =>
-        !i.portrait &&
-        i.primaryContext !== 'PERSON' &&
-        !i.unknownMedia &&
-        (!i.eventIds || i.eventIds.length === 0)
-    );
-
-    interface ColUndatedEventBucket {
-      eventId: number;
-      eventLabel: string;
-      typeLabel: string;
-      list: MediaItemDto[];
-    }
-    const colEventsMap = new Map<number, ColUndatedEventBucket>();
-    for (const em of eventMediaInCol) {
-      const rIds =
-        em.rootEventIds && em.rootEventIds.length > 0 ? em.rootEventIds : em.eventIds;
-      const rLabels =
-        em.rootEventLabels && em.rootEventLabels.length > 0
-          ? em.rootEventLabels
-          : em.eventLabels;
-      const rTypeLabels = em.rootEventTypeLabels;
-      const eId = rIds?.at(0);
-      const eLbl = rLabels?.at(0) ?? 'Wydarzenie';
-      const tLbl = rTypeLabels?.at(0) ?? 'Inne wydarzenia';
-      if (eId !== undefined) {
-        const existing = colEventsMap.get(eId);
-        if (existing) {
-          existing.list.push(em);
-        } else {
-          colEventsMap.set(eId, {
-            eventId: eId,
-            eventLabel: eLbl,
-            typeLabel: tLbl,
-            list: [em],
-          });
-        }
-      }
-    }
-
-    if (selectedCollectionSubfolder === null) {
-      const subTiles: FolderTileItem[] = [];
-      for (const ch of childCols) {
-        const chMedia = countTotalInCollectionTree(ch.id);
-        subTiles.push({
-          key: `SUBCOL_${String(ch.id)}`,
-          title: `📂 Podkolekcja: ${ch.name}`,
-          subtitle: ch.description ?? 'Podkolekcja archiwalna',
-          count: chMedia.length,
-          previewItems: getTopPreviewItems(chMedia),
-          previewMediaId: ch.previewMediaId ?? getFirstMediaId(chMedia),
-          collectionId: ch.id,
-          onClick: () => {
-            setSelectedCollectionId(ch.id);
-          },
-        });
-      }
-      // Point 13 & 20: Single folder tile "📅 Wydarzenia bez daty" inside Collection
-      if (eventMediaInCol.length > 0) {
-        subTiles.push({
-          key: 'SUB_UNDATED_EVENTS',
-          title: '📅 Wydarzenia bez daty',
-          subtitle: `Liczba wydarzeń: ${String(colEventsMap.size)}`,
-          count: eventMediaInCol.length,
-          previewItems: getTopPreviewItems(eventMediaInCol),
-          previewMediaId: getFirstMediaId(eventMediaInCol),
-          onClick: () => {
-            setSelectedCollectionSubfolder('UNDATED_EVENTS');
-            setSelectedCollectionEventType(null);
-          },
-        });
-      }
-      if (singlePortraits.length > 0) {
-        subTiles.push({
-          key: 'SUB_SINGLE_PORTRAITS',
-          title: '👤 Portrety jednoosobowe',
-          subtitle: 'Zdjęcia portretowe pojedynczych osób',
-          count: singlePortraits.length,
-          previewItems: getTopPreviewItems(singlePortraits),
-          previewMediaId: getFirstMediaId(singlePortraits),
-          onClick: () => {
-            setSelectedCollectionSubfolder('SINGLE_PORTRAIT');
-          },
-        });
-      }
-      if (groupPortraits.length > 0) {
-        subTiles.push({
-          key: 'SUB_GROUP_PORTRAITS',
-          title: '👥 Portrety grupowe',
-          subtitle: 'Zdjęcia portretowe wielu osób',
-          count: groupPortraits.length,
-          previewItems: getTopPreviewItems(groupPortraits),
-          previewMediaId: getFirstMediaId(groupPortraits),
-          onClick: () => {
-            setSelectedCollectionSubfolder('GROUP_PORTRAIT');
-          },
-        });
-      }
-      if (unknownMedia.length > 0) {
-        subTiles.push({
-          key: 'SUB_UNKNOWN',
-          title: '❓ Nieznane (do identyfikacji)',
-          subtitle: 'Zdjęcia i nagrania do identyfikacji',
-          count: unknownMedia.length,
-          previewItems: getTopPreviewItems(unknownMedia),
-          previewMediaId: getFirstMediaId(unknownMedia),
-          onClick: () => {
-            setSelectedCollectionSubfolder('UNKNOWN');
-          },
-        });
-      }
-      return {
-        tiles: subTiles,
-        mediaItems: looseMedia,
-        activeCollectionId: selectedCollectionId,
-        breadcrumb: ['Kolekcje', currentCol?.name ?? 'Kolekcja'],
-      };
-    }
-
-    // Point 20: Inside "Wydarzenia bez daty" -> Step 1: Group by Event Type, Step 2: Events of that type
-    if (selectedCollectionSubfolder === 'UNDATED_EVENTS') {
-      const byTypeMap = new Map<string, ColUndatedEventBucket[]>();
-      for (const evtBucket of colEventsMap.values()) {
-        const list = byTypeMap.get(evtBucket.typeLabel) ?? [];
-        list.push(evtBucket);
-        byTypeMap.set(evtBucket.typeLabel, list);
-      }
-
-      if (selectedCollectionEventType === null) {
-        const typeTiles: FolderTileItem[] = Array.from(byTypeMap.entries())
-          .sort((a, b) => a[0].localeCompare(b[0], 'pl'))
-          .map(([tLabel, evtBuckets]) => {
-            const allMediaForType = evtBuckets.flatMap(b => b.list);
-            return {
-              key: `UTYPE_${tLabel}`,
-              title: `🏷️ ${tLabel}`,
-              subtitle: `Wydarzenia tego typu: ${String(evtBuckets.length)}`,
-              count: allMediaForType.length,
-              previewItems: getTopPreviewItems(allMediaForType),
-              previewMediaId: getFirstMediaId(allMediaForType),
-              onClick: () => {
-                setSelectedCollectionEventType(tLabel);
-              },
-            };
-          });
-        return {
-          tiles: typeTiles,
-          mediaItems: [],
-          activeCollectionId: selectedCollectionId,
-          breadcrumb: [
-            'Kolekcje',
-            currentCol?.name ?? 'Kolekcja',
-            'Wydarzenia bez daty',
-          ],
-        };
-      }
-
-      const eventsInChosenType = byTypeMap.get(selectedCollectionEventType) ?? [];
-      const eventTiles: FolderTileItem[] = eventsInChosenType.map(eb => ({
-        key: `COLEVT_${String(eb.eventId)}`,
-        title: `📅 ${eb.eventLabel}`,
-        subtitle: eb.typeLabel,
-        count: eb.list.length,
-        previewItems: getTopPreviewItems(eb.list),
-        previewMediaId: getFirstMediaId(eb.list),
-        eventId: eb.eventId,
-        onClick: () => {
-          setSelectedCollectionSubfolder(`EVT_${String(eb.eventId)}`);
-        },
-      }));
-      return {
-        tiles: eventTiles,
-        mediaItems: [],
-        activeCollectionId: selectedCollectionId,
-        breadcrumb: [
-          'Kolekcje',
-          currentCol?.name ?? 'Kolekcja',
-          'Wydarzenia bez daty',
-          selectedCollectionEventType,
-        ],
-      };
-    }
-
-    if (selectedCollectionSubfolder.startsWith('EVT_')) {
-      const eId = Number(selectedCollectionSubfolder.replace('EVT_', ''));
-      const chosenEvt = colEventsMap.get(eId);
-      const { direct, subBuckets } = splitDirectAndSubEventMedia(chosenEvt?.list ?? []);
-      return {
-        tiles: [],
-        mediaItems: direct,
-        subEventBuckets: subBuckets,
-        activeEventId: eId,
-        activeCollectionId: selectedCollectionId,
-        breadcrumb: [
-          'Kolekcje',
-          currentCol?.name ?? 'Kolekcja',
-          'Wydarzenia bez daty',
-          chosenEvt?.typeLabel ?? 'Typ wydarzenia',
-          chosenEvt?.eventLabel ?? 'Wydarzenie',
-        ],
-      };
-    }
-
-    const subMap: Record<string, { label: string; list: MediaItemDto[] } | undefined> = {
-      SINGLE_PORTRAIT: { label: 'Portrety jednoosobowe', list: singlePortraits },
-      GROUP_PORTRAIT: { label: 'Portrety grupowe', list: groupPortraits },
-      UNKNOWN: { label: 'Nieznane (do identyfikacji)', list: unknownMedia },
-    };
-    const chosenSub = subMap[selectedCollectionSubfolder];
-    return {
-      tiles: [],
-      mediaItems: chosenSub?.list ?? [],
-      activeCollectionId: selectedCollectionId,
-      breadcrumb: [
-        'Kolekcje',
-        currentCol?.name ?? 'Kolekcja',
-        chosenSub?.label ?? 'Kategoria',
-      ],
-    };
+    const currentCol = allCollections.find(c => c.id === selectedCollectionId);
+    return buildCollectionInternalView(selectedCollectionId, [
+      'Kolekcje',
+      currentCol?.name ?? 'Kolekcja',
+    ]);
   }, [
     allItems,
     allCollections,
@@ -1136,9 +1183,31 @@ export default function GalleryPage() {
 
   const handleStepBackDrillDown = () => {
     if (viewMode === 'TIMELINE') {
-      if (selectedYearBucketKey !== null) setSelectedYearBucketKey(null);
-      else if (selectedYear !== null) setSelectedYear(null);
-      else setSelectedDecade(null);
+      if (selectedCollectionSubfolder?.startsWith('EVT_')) {
+        setSelectedCollectionSubfolder('UNDATED_EVENTS');
+      } else if (
+        selectedCollectionSubfolder === 'UNDATED_EVENTS' &&
+        selectedCollectionEventType !== null
+      ) {
+        setSelectedCollectionEventType(null);
+      } else if (selectedCollectionSubfolder !== null) {
+        setSelectedCollectionSubfolder(null);
+        setSelectedCollectionEventType(null);
+      } else if (selectedYearBucketKey?.startsWith('DCOL_')) {
+        const dColId = Number(selectedYearBucketKey.replace('DCOL_', ''));
+        const dColObj = allCollections.find(c => c.id === dColId);
+        if (dColObj?.parentCollectionId) {
+          setSelectedYearBucketKey(`DCOL_${String(dColObj.parentCollectionId)}`);
+        } else {
+          setSelectedYearBucketKey(null);
+        }
+      } else if (selectedYearBucketKey !== null) {
+        setSelectedYearBucketKey(null);
+      } else if (selectedYear !== null) {
+        setSelectedYear(null);
+      } else {
+        setSelectedDecade(null);
+      }
     } else if (viewMode === 'PERSON') {
       if (selectedPersonCategory !== null) setSelectedPersonCategory(null);
       else setSelectedPersonKey(null);
@@ -1328,11 +1397,7 @@ export default function GalleryPage() {
         name: colName.trim(),
         customSlug: colSlug.trim() || null,
         description: colDesc.trim() || null,
-        parentCollectionId: colIsDated
-          ? null
-          : colParentId !== ''
-            ? Number(colParentId)
-            : null,
+        parentCollectionId: colParentId !== '' ? Number(colParentId) : null,
         datedCollection: colIsDated,
         isStartBetweenRange: colIsDated ? colIsStartBetween : false,
         startQualifier: colIsDated ? colStartQual : null,
@@ -1708,7 +1773,6 @@ export default function GalleryPage() {
     </button>
   );
 
-  // Point 15: No Edit/Delete buttons underneath folder tiles on the grid
   const renderFolderTilesGrid = (tiles: FolderTileItem[]) => (
     <div className={styles.folderTilesGrid} data-testid="gallery-grouped-sections">
       {tiles.map(tile => {
@@ -1805,6 +1869,9 @@ export default function GalleryPage() {
     const activeColObj = content.activeCollectionId
       ? allCollections.find(c => c.id === content.activeCollectionId)
       : undefined;
+    const isLongColDesc =
+      (activeColObj?.description?.length ?? 0) > 220 ||
+      (activeColObj?.description?.split('\n').length ?? 0) > 3;
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.15rem' }}>
@@ -1876,6 +1943,46 @@ export default function GalleryPage() {
             </div>
           </div>
         )}
+
+        {/* Point 8: Display Collection / Dated Album Description & Date Info in UI */}
+        {activeColObj &&
+          selectedCollectionSubfolder === null &&
+          Boolean(activeColObj.description ?? activeColObj.dateText) && (
+            <div
+              className={styles.collectionDescriptionBanner}
+              data-testid="collection-description-banner"
+            >
+              {activeColObj.dateText && (
+                <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#1d4ed8' }}>
+                  📅 Data albumu: {activeColObj.dateText}
+                </div>
+              )}
+              {activeColObj.description && (
+                <>
+                  <div
+                    className={
+                      isLongColDesc && !isColDescExpanded
+                        ? styles.descriptionClamped
+                        : undefined
+                    }
+                  >
+                    {activeColObj.description}
+                  </div>
+                  {isLongColDesc && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsColDescExpanded(prev => !prev);
+                      }}
+                      className={styles.expandTextBtn}
+                    >
+                      {isColDescExpanded ? 'Zwiń opis ▴' : 'Rozwiń pełny opis ▾'}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
         {content.tiles.length > 0 && renderFolderTilesGrid(content.tiles)}
 
@@ -2048,34 +2155,33 @@ export default function GalleryPage() {
                       className={styles.textInput}
                     />
                   </div>
-                  {!colIsDated && (
-                    <div className={styles.filterField} style={{ flex: '1 1 200px' }}>
-                      <label htmlFor="col-parent-select" className={styles.filterLabel}>
-                        Kolekcja nadrzędna (opcjonalnie)
-                      </label>
-                      <select
-                        id="col-parent-select"
-                        value={colParentId}
-                        onChange={e => {
-                          setColParentId(e.target.value);
-                        }}
-                        className={styles.selectInput}
-                      >
-                        <option value="">— Brak (kolekcja główna) —</option>
-                        {allCollections
-                          .filter(
-                            c =>
-                              !c.datedCollection &&
-                              (editingCollectionId === null || c.id !== editingCollectionId)
-                          )
-                          .map(c => (
-                            <option key={c.id} value={String(c.id)}>
-                              {c.name}
-                            </option>
-                          ))}
-                      </select>
-                    </div>
-                  )}
+                  {/* Sub-collections can be assigned to both Archival Collections and Dated Albums */}
+                  <div className={styles.filterField} style={{ flex: '1 1 220px' }}>
+                    <label htmlFor="col-parent-select" className={styles.filterLabel}>
+                      Kolekcja lub album nadrzędny (opcjonalnie)
+                    </label>
+                    <select
+                      id="col-parent-select"
+                      value={colParentId}
+                      onChange={e => {
+                        setColParentId(e.target.value);
+                      }}
+                      className={styles.selectInput}
+                    >
+                      <option value="">— Brak (kolekcja / album główny) —</option>
+                      {allCollections
+                        .filter(
+                          c => editingCollectionId === null || c.id !== editingCollectionId
+                        )
+                        .map(c => (
+                          <option key={c.id} value={String(c.id)}>
+                            {c.datedCollection
+                              ? `📅 [Album ${String(c.startYear ?? '')}] ${c.name}`
+                              : `📦 ${c.name}`}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
                   <div className={styles.filterField} style={{ flex: '1 1 200px' }}>
                     <label htmlFor="col-slug-input" className={styles.filterLabel}>
                       Nazwa folderu na dysku (snake_case, opcjonalnie)

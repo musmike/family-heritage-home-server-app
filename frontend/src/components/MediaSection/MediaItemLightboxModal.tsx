@@ -153,7 +153,6 @@ export default function MediaItemLightboxModal({
       ? items[activeIndex]
       : null;
 
-  // Point 9: Live updated item override so version/reverse changes reflect in 0ms
   const [liveUpdatedItem, setLiveUpdatedItem] = useState<MediaItemDto | null>(null);
   const activeItem =
     liveUpdatedItem !== null && liveUpdatedItem.id === rawActiveItem?.id
@@ -166,18 +165,21 @@ export default function MediaItemLightboxModal({
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   const [pinchStartDist, setPinchStartDist] = useState<number | null>(null);
   const [swipeTouchStart, setSwipeTouchStart] = useState<{ x: number; y: number } | null>(null);
+
+  // Carousel animation state (-1 prev, 0 idle, 1 next)
+  const [swipeOffsetX, setSwipeOffsetX] = useState<number>(0);
+  const [carouselAnimTarget, setCarouselAnimTarget] = useState<-1 | 0 | 1>(0);
+
   const [showDetailsDrawer, setShowDetailsDrawer] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  // Version upload state
   const [showVersionUpload, setShowVersionUpload] = useState<boolean>(false);
   const [versionFile, setVersionFile] = useState<File | null>(null);
   const [versionTypeInput, setVersionTypeInput] = useState<string>('RESTORED');
   const [versionLabelInput, setVersionLabelInput] = useState<string>('');
   const [versionSetAsMain, setVersionSetAsMain] = useState<boolean>(true);
 
-  // Single item edit state
   const [isEditingItem, setIsEditingItem] = useState<boolean>(false);
   const [editFileName, setEditFileName] = useState<string>('');
   const [editFolderName, setEditFolderName] = useState<string>('');
@@ -211,7 +213,6 @@ export default function MediaItemLightboxModal({
   const [editRangeEndMinute, setEditRangeEndMinute] = useState<string>('');
   const [editRangeEndSecond, setEditRangeEndSecond] = useState<string>('');
 
-  // Person links in edit form
   const [editPersonLinks, setEditPersonLinks] = useState<
     (SaveMediaPersonLinkRequestDto & { displayLabel: string })[]
   >([]);
@@ -227,6 +228,16 @@ export default function MediaItemLightboxModal({
   const [showUnlinkConfirm, setShowUnlinkConfirm] = useState<boolean>(false);
   const [availableCollections, setAvailableCollections] = useState<MediaCollectionDto[]>([]);
   const [unlinkTargetCollectionId, setUnlinkTargetCollectionId] = useState<string>('');
+
+  const triggerSlideNavigation = (direction: -1 | 1) => {
+    if (items.length <= 1 || activeIndex === null || carouselAnimTarget !== 0) return;
+    setCarouselAnimTarget(direction);
+    setSwipeOffsetX(0);
+    window.setTimeout(() => {
+      setCarouselAnimTarget(0);
+      onNavigateIndex((activeIndex + direction + items.length) % items.length);
+    }, 260);
+  };
 
   const syncSingleEditFields = (item: MediaItemDto) => {
     const pLabels = getMediaPersonLabels(item.mediaType);
@@ -309,6 +320,8 @@ export default function MediaItemLightboxModal({
     setShowCropper(false);
     setShowVersionUpload(false);
     setErrorMessage(null);
+    setSwipeOffsetX(0);
+    setCarouselAnimTarget(0);
     syncSingleEditFields(rawActiveItem);
   }, [rawActiveItem?.id]);
 
@@ -318,16 +331,16 @@ export default function MediaItemLightboxModal({
       if (e.key === 'Escape') {
         onClose();
       } else if (e.key === 'ArrowLeft' && items.length > 1) {
-        onNavigateIndex((activeIndex - 1 + items.length) % items.length);
+        triggerSlideNavigation(-1);
       } else if (e.key === 'ArrowRight' && items.length > 1) {
-        onNavigateIndex((activeIndex + 1) % items.length);
+        triggerSlideNavigation(1);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [activeIndex, items.length, onClose, onNavigateIndex]);
+  }, [activeIndex, items.length, onClose, onNavigateIndex, carouselAnimTarget]);
 
   if (!activeItem || activeIndex === null) return null;
 
@@ -590,10 +603,7 @@ export default function MediaItemLightboxModal({
     selectedVersionId !== null
       ? (activeVersions.find(v => v.id === selectedVersionId) ?? null)
       : null;
-  const activeStageUrl = activeSelectedVersion
-    ? mediaApi.getVersionFileUrl(activeItem.id, activeSelectedVersion.id)
-    : mediaApi.getFileUrl(activeItem.id);
-
+      
   const versionOptions = getVersionTypeOptions(activeItem.mediaType);
   const startWeekday = getPolishWeekdayLabel(editYear, editMonth, editDay);
   const endWeekday = getPolishWeekdayLabel(editRangeEndYear, editRangeEndMonth, editRangeEndDay);
@@ -602,6 +612,78 @@ export default function MediaItemLightboxModal({
     if (role === 'DEPICTED') return personLabels.depictedBadge;
     if (role === 'RELATED') return personLabels.relatedBadge;
     return personLabels.authorBadge;
+  };
+
+  const prevItem =
+    items.length > 1 ? items[(activeIndex - 1 + items.length) % items.length] : null;
+  const nextItem =
+    items.length > 1 ? items[(activeIndex + 1) % items.length] : null;
+
+  const renderSlideMediaContent = (slideItem: MediaItemDto, isCenterActive: boolean) => {
+    const url =
+      isCenterActive && activeSelectedVersion
+        ? mediaApi.getVersionFileUrl(slideItem.id, activeSelectedVersion.id)
+        : mediaApi.getFileUrl(slideItem.id);
+
+    if (
+      slideItem.mediaType === 'VIDEO' &&
+      !(isCenterActive && activeSelectedVersion?.reverseSide)
+    ) {
+      return (
+        <video
+          src={isCenterActive ? url : `${url}#t=0.5`}
+          controls={isCenterActive}
+          muted={!isCenterActive}
+          preload="metadata"
+          style={{ maxWidth: '94vw', maxHeight: '78vh', objectFit: 'contain' }}
+        />
+      );
+    }
+    if (slideItem.mediaType === 'AUDIO') {
+      return (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '1.25rem',
+            padding: '2rem',
+            background: 'rgba(15, 23, 42, 0.85)',
+            borderRadius: '16px',
+            maxWidth: '90vw',
+            width: '460px',
+          }}
+        >
+          <span style={{ fontSize: '4.5rem', color: '#818cf8' }}>🎵</span>
+          <div
+            style={{
+              fontSize: '1.2rem',
+              fontWeight: 700,
+              color: '#ffffff',
+              textAlign: 'center',
+            }}
+          >
+            {slideItem.title ?? slideItem.fileName}
+          </div>
+          {isCenterActive && (
+            <audio src={url} controls style={{ width: '100%', borderRadius: '30px' }} />
+          )}
+        </div>
+      );
+    }
+    return (
+      <img
+        src={url}
+        alt={slideItem.title ?? ''}
+        draggable={false}
+        style={{
+          maxWidth: '94vw',
+          maxHeight: showDetailsDrawer ? '44vh' : '80vh',
+          objectFit: 'contain',
+        }}
+      />
+    );
   };
 
   return (
@@ -691,7 +773,6 @@ export default function MediaItemLightboxModal({
               </button>
             </>
           )}
-          {/* Point 6: "Szczegóły i opcje" only for Admin, "Szczegóły" for non-admins */}
           <button
             type="button"
             data-testid="toggle-media-details-drawer"
@@ -708,7 +789,6 @@ export default function MediaItemLightboxModal({
         </div>
       </div>
 
-      {/* Point 16: Viewer Stage with Smartphone Swipe Left/Right support when zoom === 1 */}
       <div
         className={styles.viewerStage}
         onClick={e => {
@@ -771,6 +851,12 @@ export default function MediaItemLightboxModal({
               x: e.touches[0].clientX - dragStart.x,
               y: e.touches[0].clientY - dragStart.y,
             });
+          } else if (e.touches.length === 1 && swipeTouchStart && zoom === 1) {
+            const dx = e.touches[0].clientX - swipeTouchStart.x;
+            const dy = e.touches[0].clientY - swipeTouchStart.y;
+            if (Math.abs(dx) > Math.abs(dy)) {
+              setSwipeOffsetX(dx);
+            }
           }
         }}
         onTouchEnd={e => {
@@ -782,14 +868,15 @@ export default function MediaItemLightboxModal({
           ) {
             const dx = e.changedTouches[0].clientX - swipeTouchStart.x;
             const dy = e.changedTouches[0].clientY - swipeTouchStart.y;
-            if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+            if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy)) {
               if (dx < 0) {
-                onNavigateIndex((activeIndex + 1) % items.length);
+                triggerSlideNavigation(1);
               } else {
-                onNavigateIndex((activeIndex - 1 + items.length) % items.length);
+                triggerSlideNavigation(-1);
               }
             }
           }
+          setSwipeOffsetX(0);
           setSwipeTouchStart(null);
           setPinchStartDist(null);
           setDragStart(null);
@@ -800,7 +887,7 @@ export default function MediaItemLightboxModal({
             type="button"
             aria-label="Poprzednie zdjęcie lub film"
             onClick={() => {
-              onNavigateIndex((activeIndex - 1 + items.length) % items.length);
+              triggerSlideNavigation(-1);
             }}
             className={`${styles.navArrowBtn} ${styles.navArrowLeft}`}
           >
@@ -808,68 +895,93 @@ export default function MediaItemLightboxModal({
           </button>
         )}
 
-        <div
-          style={{
-            transform: `translate(${String(pan.x)}px, ${String(pan.y)}px) scale(${String(zoom)})`,
-            transition: dragStart ? 'none' : 'transform 0.1s ease-out',
-            cursor: zoom > 1 ? 'grab' : 'default',
-            maxWidth: '94vw',
-            maxHeight: showDetailsDrawer ? '44vh' : '82vh',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          {activeItem.mediaType === 'VIDEO' && !activeSelectedVersion?.reverseSide ? (
-            <video
-              src={activeStageUrl}
-              controls
-              style={{ maxWidth: '94vw', maxHeight: '78vh', objectFit: 'contain' }}
-            />
-          ) : activeItem.mediaType === 'AUDIO' ? (
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '1.25rem',
-                padding: '2rem',
-                background: 'rgba(15, 23, 42, 0.85)',
-                borderRadius: '16px',
-                maxWidth: '90vw',
-                width: '460px',
-              }}
-            >
-              <span style={{ fontSize: '4.5rem', color: '#818cf8' }}>🎵</span>
+        {items.length > 1 && zoom === 1 ? (
+          <div
+            style={{
+              position: 'relative',
+              width: '100%',
+              height: '100%',
+              transform:
+                carouselAnimTarget === 1
+                  ? 'translate3d(-100%, 0, 0)'
+                  : carouselAnimTarget === -1
+                    ? 'translate3d(100%, 0, 0)'
+                    : `translate3d(${String(swipeOffsetX)}px, 0, 0)`,
+              transition:
+                carouselAnimTarget !== 0
+                  ? 'transform 0.26s cubic-bezier(0.22, 1, 0.36, 1)'
+                  : swipeOffsetX !== 0
+                    ? 'none'
+                    : 'transform 0.2s ease-out',
+            }}
+          >
+            {prevItem && (
               <div
                 style={{
-                  fontSize: '1.2rem',
-                  fontWeight: 700,
-                  color: '#ffffff',
-                  textAlign: 'center',
+                  position: 'absolute',
+                  inset: 0,
+                  transform: 'translateX(-100%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  pointerEvents: 'none',
                 }}
               >
-                {activeItem.title ?? activeItem.fileName}
+                {renderSlideMediaContent(prevItem, false)}
               </div>
-              <audio src={activeStageUrl} controls style={{ width: '100%', borderRadius: '30px' }} />
+            )}
+
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              {renderSlideMediaContent(activeItem, true)}
             </div>
-          ) : (
-            <img
-              src={activeStageUrl}
-              alt={activeItem.title ?? ''}
-              draggable={false}
-              style={{ maxWidth: '94vw', maxHeight: '80vh', objectFit: 'contain' }}
-            />
-          )}
-        </div>
+
+            {nextItem && (
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  transform: 'translateX(100%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  pointerEvents: 'none',
+                }}
+              >
+                {renderSlideMediaContent(nextItem, false)}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div
+            style={{
+              transform: `translate(${String(pan.x)}px, ${String(pan.y)}px) scale(${String(zoom)})`,
+              transition: dragStart ? 'none' : 'transform 0.1s ease-out',
+              cursor: zoom > 1 ? 'grab' : 'default',
+              maxWidth: '94vw',
+              maxHeight: showDetailsDrawer ? '44vh' : '82vh',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            {renderSlideMediaContent(activeItem, true)}
+          </div>
+        )}
 
         {items.length > 1 && (
           <button
             type="button"
             aria-label="Następne zdjęcie lub film"
             onClick={() => {
-              onNavigateIndex((activeIndex + 1) % items.length);
+              triggerSlideNavigation(1);
             }}
             className={`${styles.navArrowBtn} ${styles.navArrowRight}`}
           >
@@ -969,7 +1081,6 @@ export default function MediaItemLightboxModal({
                 </div>
               </div>
 
-              {/* Multi-Collections & Portrait / Unknown Category Selector */}
               <div
                 style={{
                   backgroundColor: '#f8fafc',
@@ -1137,7 +1248,6 @@ export default function MediaItemLightboxModal({
                 />
               </div>
 
-              {/* Date & Time Mode */}
               <div className={styles.formGrid}>
                 <div className={styles.formField}>
                   <label htmlFor="edit-media-date-mode" className={styles.label}>
@@ -1323,7 +1433,7 @@ export default function MediaItemLightboxModal({
                             setEditTimeQual(e.target.value);
                           }}
                           className={styles.input}
-                          style={{ width: '125px', height: '34px' }}
+                          style={{ width: 'auto', minWidth: '165px', height: '34px' }}
                         >
                           {QUALIFIER_OPTIONS.map(q => (
                             <option key={q.value} value={q.value}>
@@ -1463,7 +1573,7 @@ export default function MediaItemLightboxModal({
                                 setEditRangeEndTimeQual(e.target.value);
                               }}
                               className={styles.input}
-                              style={{ width: '125px', height: '34px' }}
+                              style={{ width: 'auto', minWidth: '165px', height: '34px' }}
                             >
                               {QUALIFIER_OPTIONS.map(q => (
                                 <option key={q.value} value={q.value}>
@@ -1516,7 +1626,6 @@ export default function MediaItemLightboxModal({
                 </div>
               )}
 
-              {/* Point 11: Media-Type-Aware Person Links Builder */}
               <div
                 style={{
                   backgroundColor: '#f8fafc',
@@ -1740,7 +1849,6 @@ export default function MediaItemLightboxModal({
             </div>
           )}
 
-          {/* Version Upload Form */}
           {isAdmin && showVersionUpload && (
             <div
               style={{
@@ -1844,7 +1952,6 @@ export default function MediaItemLightboxModal({
             </div>
           )}
 
-          {/* Interactive Avatar Cropper */}
           {isAdmin &&
             showCropper &&
             personId !== undefined &&
@@ -1952,7 +2059,6 @@ export default function MediaItemLightboxModal({
                       🔗 Odepnij z tego miejsca
                     </button>
                   )}
-                  {/* Point 10: "Usuń całkowicie" */}
                   <button
                     type="button"
                     onClick={() => {
@@ -1991,7 +2097,6 @@ export default function MediaItemLightboxModal({
         </div>
       )}
 
-      {/* Small Confirmation Modal: Unlink Media from Context */}
       {isAdmin && showUnlinkConfirm && (
         <div
           className={styles.modalBackdrop}
@@ -2077,7 +2182,6 @@ export default function MediaItemLightboxModal({
         </div>
       )}
 
-      {/* Small Confirmation Modal: Delete File */}
       {isAdmin && showDeleteFileConfirm && (
         <div
           className={styles.modalBackdrop}
@@ -2125,7 +2229,6 @@ export default function MediaItemLightboxModal({
         </div>
       )}
 
-      {/* Small Confirmation Modal: Delete Media Version */}
       {isAdmin && versionIdToDelete !== null && (
         <div
           className={styles.modalBackdrop}

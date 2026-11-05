@@ -52,7 +52,6 @@ class MediaControllerTest extends AbstractIntegrationTest {
         var cem = burialService.createCemetery(SaveCemeteryRequestDto.builder()
                 .name("Cmentarz Parafialny w Kocku")
                 .build());
-
         var grave = burialService.createGrave(SaveGraveRequestDto.builder()
                 .cemeteryId(cem.getCemeteryId())
                 .initialPersonId(jan.getId())
@@ -64,7 +63,7 @@ class MediaControllerTest extends AbstractIntegrationTest {
                         .param("graveId", String.valueOf(grave.getGraveId()))
                         .param("originalFilename", "IMG_001.JPG"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.directoryPath").value("collections/graves/cmentarz_parafialny_w_kocku"))
+                .andExpect(jsonPath("$.directoryPath").value("graves/cmentarz_parafialny_w_kocku"))
                 .andExpect(jsonPath("$.suggestedFileName").value("jan_lukasiewicz_grave_01.jpg"));
 
         // 2. Upload photo to grave and set as primary grave photo + person avatar
@@ -83,13 +82,10 @@ class MediaControllerTest extends AbstractIntegrationTest {
                         .header("X-XSRF-TOKEN", CSRF))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.fileName").value("jan_lukasiewicz_grave_01.jpg"))
-                .andExpect(jsonPath("$.relativePath").value("collections/graves/cmentarz_parafialny_w_kocku/jan_lukasiewicz_grave_01.jpg"))
+                .andExpect(jsonPath("$.relativePath").value("graves/cmentarz_parafialny_w_kocku/jan_lukasiewicz_grave_01.jpg"))
                 .andReturn();
 
-        MediaItemDto uploaded = objectMapper.readValue(
-                uploadRes.getResponse().getContentAsString(), MediaItemDto.class
-        );
-
+        MediaItemDto uploaded = objectMapper.readValue(uploadRes.getResponse().getContentAsString(), MediaItemDto.class);
         assertThat(Files.exists(storageService.resolveMediaFilePath(uploaded.getRelativePath()))).isTrue();
 
         // 3. Rename file on disk via PUT /media/{id}
@@ -105,7 +101,7 @@ class MediaControllerTest extends AbstractIntegrationTest {
                         .content(objectMapper.writeValueAsString(renameReq)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.fileName").value("grob_rodziny_lukasiewiczow_kock.jpg"))
-                .andExpect(jsonPath("$.relativePath").value("collections/graves/cmentarz_parafialny_w_kocku/grob_rodziny_lukasiewiczow_kock.jpg"));
+                .andExpect(jsonPath("$.relativePath").value("graves/cmentarz_parafialny_w_kocku/grob_rodziny_lukasiewiczow_kock.jpg"));
 
         // 4. Serve file bytes
         mockMvc.perform(get("/media/{id}/file", uploaded.getId()))
@@ -118,7 +114,7 @@ class MediaControllerTest extends AbstractIntegrationTest {
                 .andExpect(status().isNoContent());
 
         assertThat(Files.exists(storageService.resolveMediaFilePath(
-                "collections/graves/cmentarz_parafialny_w_kocku/grob_rodziny_lukasiewiczow_kock.jpg"
+                "graves/cmentarz_parafialny_w_kocku/grob_rodziny_lukasiewiczow_kock.jpg"
         ))).isFalse();
     }
 

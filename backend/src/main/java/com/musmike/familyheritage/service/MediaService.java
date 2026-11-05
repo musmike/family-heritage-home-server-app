@@ -639,16 +639,6 @@ public class MediaService {
                     syncEventMediaPathsOnEventChange(linkedEvent);
                 }
             }
-            if (extractYearFromEvent(linkedEvent) == null) {
-                List<MediaCollection> existingEvtCols = findExistingCollectionsForUndatedEvent(linkedEvent);
-                if (resolvedCollections.isEmpty() && !existingEvtCols.isEmpty()) {
-                    resolvedCollections = existingEvtCols;
-                } else if (!resolvedCollections.isEmpty()) {
-                    syncUndatedEventCollections(linkedEvent, resolvedCollections);
-                }
-            } else {
-                resolvedCollections = List.of();
-            }
         }
 
         Long primaryCollectionId = resolvedCollections.isEmpty() ? null : resolvedCollections.getFirst().getId();
@@ -884,11 +874,6 @@ public class MediaService {
                     : List.of(req.getCollectionId());
             List<MediaCollection> resolvedCols = resolveOrderedCollections(requestedColIds);
             applyOrderedCollectionsToMediaItem(item, resolvedCols);
-
-            Event primaryEvt = resolvePrimaryEventForMedia(item, req.getContextEventId());
-            if (!resolvedCols.isEmpty() && primaryEvt != null && extractYearFromEvent(primaryEvt) == null) {
-                syncUndatedEventCollections(primaryEvt, resolvedCols);
-            }
         }
 
         if (req.getCustomFolderName() != null && !req.getCustomFolderName().isBlank()) {
@@ -1231,16 +1216,6 @@ public class MediaService {
             }
         }
 
-        if (!targetCollections.isEmpty() && req.getContextEventId() != null) {
-            Event ctxEvt = eventRepository.findById(req.getContextEventId()).orElse(null);
-            if (ctxEvt != null && extractYearFromEvent(ctxEvt) == null) {
-                syncUndatedEventCollections(ctxEvt, targetCollections);
-                items = mediaItemRepository.findAllById(req.getMediaIds()).stream()
-                        .sorted(Comparator.comparing(MediaItem::getId))
-                        .toList();
-            }
-        }
-
         String cleanStem = (req.getBaseFileNameStem() != null && !req.getBaseFileNameStem().isBlank())
                 ? storageService.toSnakeCase(req.getBaseFileNameStem()).replaceFirst("_\\d{1,3}$", "")
                 : null;
@@ -1546,6 +1521,31 @@ public class MediaService {
         mediaItemRepository.saveAndFlush(item);
         graveRepository.flush();
         personRepository.flush();
+    }
+
+    @Transactional
+    public void bulkUnlinkMedia(BulkUnlinkMediaRequestDto req) {
+        if (req == null || req.getMediaIds() == null || req.getMediaIds().isEmpty()) {
+            return;
+        }
+        List<Long> targetColIds = new ArrayList<>();
+        if (req.getTargetCollectionIds() != null && !req.getTargetCollectionIds().isEmpty()) {
+            targetColIds.addAll(req.getTargetCollectionIds());
+        } else if (req.getTargetCollectionId() != null) {
+            targetColIds.add(req.getTargetCollectionId());
+        }
+        for (Long mediaId : req.getMediaIds()) {
+            if (mediaId != null && mediaItemRepository.existsById(mediaId)) {
+                unlinkMediaFromContext(
+                        mediaId,
+                        req.getGraveId(),
+                        req.getPersonId(),
+                        req.getEventId(),
+                        req.getCollectionId(),
+                        targetColIds
+                );
+            }
+        }
     }
 
     @Transactional
@@ -2502,7 +2502,7 @@ public class MediaService {
                     cemeterySlug = storageService.toSnakeCase(g.getCemetery().getName());
                 }
             }
-            return "collections/graves/" + cemeterySlug;
+            return "graves/" + cemeterySlug;
         }
 
         MediaCollection col = collectionId != null

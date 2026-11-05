@@ -111,6 +111,9 @@ export default function EventsPage() {
 
   const [expandedDecades, setExpandedDecades] = useState<Record<string, boolean | undefined>>({});
   const [expandedYears, setExpandedYears] = useState<Record<number, boolean | undefined>>({});
+  const [expandedUndatedTypes, setExpandedUndatedTypes] = useState<
+    Record<string, boolean | undefined>
+  >({});
 
   const [search, setSearch] = useState<string>('');
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
@@ -285,6 +288,20 @@ export default function EventsPage() {
       .slice(0, 12);
   }, [flatParentCandidateEvents, formParentEventIds, parentSearchQuery]);
 
+  const undatedByTypeGroups = useMemo(() => {
+    if (!timelineData) return [];
+    const map = new Map<string, TimelineEventDto[]>();
+    for (const evt of timelineData.undatedEvents) {
+      const tLabel = evt.typeLabel || 'Inne wydarzenia';
+      const list = map.get(tLabel) ?? [];
+      list.push(evt);
+      map.set(tLabel, list);
+    }
+    return Array.from(map.entries())
+      .sort((a, b) => a[0].localeCompare(b[0], 'pl'))
+      .map(([typeLabel, events]) => ({ typeLabel, events }));
+  }, [timelineData]);
+
   const handleDraftYearFromChange = (rawVal: number) => {
     if (Number.isNaN(rawVal)) return;
     const clamped = Math.min(Math.max(rawVal, minBound), draftYearTo);
@@ -320,24 +337,37 @@ export default function EventsPage() {
     }));
   };
 
+  const toggleUndatedType = (typeLabel: string) => {
+    setExpandedUndatedTypes(prev => ({
+      ...prev,
+      [typeLabel]: !prev[typeLabel],
+    }));
+  };
+
   const handleExpandAll = () => {
     if (!timelineData) return;
     const decMap: Record<string, boolean> = {};
     const yrMap: Record<number, boolean> = {};
+    const undTypeMap: Record<string, boolean> = {};
     for (const d of timelineData.decades) {
       decMap[String(d.decadeStart)] = true;
       for (const y of d.years) {
         yrMap[y.year] = true;
       }
     }
+    for (const grp of undatedByTypeGroups) {
+      undTypeMap[grp.typeLabel] = true;
+    }
     decMap.UNDATED = true;
     setExpandedDecades(decMap);
     setExpandedYears(yrMap);
+    setExpandedUndatedTypes(undTypeMap);
   };
 
   const handleCollapseAll = () => {
     setExpandedDecades({});
     setExpandedYears({});
+    setExpandedUndatedTypes({});
   };
 
   const toggleEventType = (code: string) => {
@@ -530,7 +560,6 @@ export default function EventsPage() {
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-        {/* Row 1: Date Qualifier + Calendar Picker (with weekday) + Year + Month + Day */}
         <div className={styles.dateRowGrid}>
           <div className={styles.formField}>
             <label htmlFor={`${params.idPrefix}-dqual`} className={styles.filterLabel}>
@@ -629,7 +658,6 @@ export default function EventsPage() {
           </div>
         </div>
 
-        {/* Row 2: Time Qualifier + Hour : Minute : Second */}
         <div className={styles.timeRowGrid}>
           <div className={styles.formField}>
             <label htmlFor={`${params.idPrefix}-tqual`} className={styles.filterLabel}>
@@ -819,7 +847,6 @@ export default function EventsPage() {
         </div>
       )}
 
-      {/* Admin Create Event Modal */}
       {isAdmin && showCreateForm && (
         <div
           className={styles.modalBackdrop}
@@ -860,7 +887,6 @@ export default function EventsPage() {
                 }}
                 style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}
               >
-                {/* 1. Modern Multi-Type Selector */}
                 <div className={styles.selectorPanel}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
                     <span className={styles.filterLabel}>
@@ -938,7 +964,6 @@ export default function EventsPage() {
                   </div>
                 </div>
 
-                {/* 2. Title & Location */}
                 <div className={styles.detailsGrid}>
                   <div className={styles.formField}>
                     <label htmlFor="new-evt-title" className={styles.filterLabel}>
@@ -978,7 +1003,6 @@ export default function EventsPage() {
                   </div>
                 </div>
 
-                {/* 3. Start Date & Time Section (Point 7: Date + Calendar row, separate Time row) */}
                 <div className={styles.dateSectionBox}>
                   <div className={styles.dateSectionHeader}>
                     <span className={styles.filterLabel}>
@@ -1061,7 +1085,6 @@ export default function EventsPage() {
                   </div>
                 </div>
 
-                {/* 4. End Date & Time Section */}
                 {formHasEndDate && (
                   <div className={styles.dateSectionBox} data-testid="end-date-section-box">
                     <div className={styles.dateSectionHeader}>
@@ -1129,7 +1152,6 @@ export default function EventsPage() {
                   </div>
                 )}
 
-                {/* 5. Multiple Parent Events Search & Picker */}
                 <div className={styles.selectorPanel}>
                   <span className={styles.filterLabel}>
                     Wydarzenia nadrzędne (opcjonalnie – pierwsze dodane wydarzenie nadrzędne określa folder macierzysty dla zdjęć):
@@ -1245,7 +1267,6 @@ export default function EventsPage() {
                   )}
                 </div>
 
-                {/* 6. Markdown Description */}
                 <div className={styles.formField}>
                   <label htmlFor="new-evt-desc" className={styles.filterLabel}>
                     Opis wydarzenia (obsługuje formatowanie Markdown: ## sekcje, ### podsekcje, **pogrubienie**, *kursywę*, - listy, &gt; cytaty)
@@ -1261,7 +1282,6 @@ export default function EventsPage() {
                   />
                 </div>
 
-                {/* 7. Participants Builder */}
                 <div className={styles.selectorPanel}>
                   <span className={styles.filterLabel}>
                     Uczestnicy wydarzenia (wybrano: {String(formParticipants.length)}):
@@ -1419,7 +1439,6 @@ export default function EventsPage() {
         </div>
       )}
 
-      {/* Filters Bar (Point 14: Aligned to top by filter titles, Year Range on the far right) */}
       <section className={styles.filterCard}>
         <div className={styles.filterTopRow}>
           <div className={styles.filterField}>
@@ -1579,7 +1598,6 @@ export default function EventsPage() {
           )}
         </div>
 
-        {/* Active Filter Type Pills visible even when selector is collapsed */}
         {selectedTypes.length > 0 && !isTypesDropdownOpen && (
           <div className={styles.selectedPillsRow}>
             <span className={styles.filterLabel} style={{ marginRight: '0.25rem' }}>
@@ -1615,7 +1633,6 @@ export default function EventsPage() {
           </div>
         )}
 
-        {/* Point 2: Modern Pill Selector for Filtering Event Types */}
         {isTypesDropdownOpen && (
           <div className={styles.selectorPanel} data-testid="events-types-popover">
             <div className={styles.popoverHeaderActions}>
@@ -1777,9 +1794,12 @@ export default function EventsPage() {
             );
           })}
 
-          {/* Point 21: Undated Events always shown at the very bottom */}
+          {/* Point 3: Undated Events grouped by Event Type */}
           {timelineData.undatedEvents.length > 0 && (
-            <div className={styles.decadeAccordion} data-testid="undated-events-section">
+            <div
+              className={styles.decadeAccordion}
+              data-testid="undated-events-section"
+            >
               <button
                 type="button"
                 data-testid="undated-events-toggle"
@@ -1802,8 +1822,39 @@ export default function EventsPage() {
               </button>
 
               {expandedDecades.UNDATED && (
-                <div className={styles.yearEventsGrid}>
-                  {timelineData.undatedEvents.map(evt => renderEventWithSubEvents(evt))}
+                <div className={styles.decadeBody}>
+                  {undatedByTypeGroups.map(group => {
+                    const isTypeOpen = expandedUndatedTypes[group.typeLabel] === true;
+                    return (
+                      <div key={group.typeLabel} className={styles.yearAccordion}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            toggleUndatedType(group.typeLabel);
+                          }}
+                          className={styles.yearHeaderBtn}
+                        >
+                          <div className={styles.decadeHeaderLeft}>
+                            <span className={styles.chevron}>
+                              {isTypeOpen ? '▼' : '▶'}
+                            </span>
+                            <span className={styles.yearTitle}>
+                              {group.typeLabel}
+                            </span>
+                          </div>
+                          <span className={styles.yearCountBadge}>
+                            Wydarzenia: {group.events.length}
+                          </span>
+                        </button>
+
+                        {isTypeOpen && (
+                          <div className={styles.yearEventsGrid}>
+                            {group.events.map(evt => renderEventWithSubEvents(evt))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

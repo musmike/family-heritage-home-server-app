@@ -755,45 +755,6 @@ export default function PersonBiographyPage() {
         mode="single"
         title={`📷 Wybierz z galerii portret główny dla osoby: ${fullName}`}
         isSubmitting={isSubmittingPortrait}
-        headerBanner={
-          bio.avatarMediaId ? (
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '0.75rem 1rem',
-                backgroundColor: '#fef2f2',
-                border: '1px solid #fecaca',
-                borderRadius: '8px',
-                gap: '1rem',
-                flexWrap: 'wrap',
-              }}
-            >
-              <span style={{ fontSize: '0.84rem', color: '#991b1b', fontWeight: 500 }}>
-                Ta osoba ma obecnie ustawiony portret. Możesz go usunąć z profilu (plik pozostanie
-                nienaruszony w galerii).
-              </span>
-              <button
-                type="button"
-                disabled={isSubmittingPortrait}
-                onClick={() => {
-                  setShowConfirmRemoveAvatar(true);
-                }}
-                className={styles.btnSecondary}
-                style={{
-                  backgroundColor: '#dc2626',
-                  color: '#ffffff',
-                  borderColor: '#b91c1c',
-                  fontSize: '0.82rem',
-                  flexShrink: 0,
-                }}
-              >
-                🗑️ Usuń portret z profilu
-              </button>
-            </div>
-          ) : undefined
-        }
         onClose={() => {
           setShowPortraitModal(false);
         }}

@@ -59,6 +59,7 @@ interface FileDraftRow {
   selected: boolean;
   customFileName: string;
   categoryMode: CategoryModeOption;
+  collectionIds: number[];
   title: string;
   sourceText: string;
   inscriptionText: string;
@@ -184,7 +185,6 @@ export default function MediaGallerySection({
   const [typeFilter, setTypeFilter] = useState<SectionMediaTypeFilter>('ALL');
   const [sortMode, setSortMode] = useState<SectionSortMode>('DATE_ASC');
 
-  // Shared Bulk & Staging Controls
   const [stagedRows, setStagedRows] = useState<FileDraftRow[]>([]);
   const [bulkDraftRows, setBulkDraftRows] = useState<FileDraftRow[]>([]);
 
@@ -229,7 +229,6 @@ export default function MediaGallerySection({
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Bulk Details State
   const [showBulkDetails, setShowBulkDetails] = useState<boolean>(false);
   const [bulkTitle, setBulkTitle] = useState<string>('');
   const [bulkSourceText, setBulkSourceText] = useState<string>('');
@@ -246,7 +245,6 @@ export default function MediaGallerySection({
   const [bulkLinkTextInput, setBulkLinkTextInput] = useState<string>('');
   const [bulkLinkTextSex, setBulkLinkTextSex] = useState<PersonSex>('UNKNOWN');
 
-  // Per-Row Person Linking State
   const [activeRowSearchIdx, setActiveRowSearchIdx] = useState<number | null>(null);
   const [rowPersonQuery, setRowPersonQuery] = useState<string>('');
   const [rowPersonResults, setRowPersonResults] = useState<PersonListItemDto[]>([]);
@@ -256,13 +254,15 @@ export default function MediaGallerySection({
   const [rowTextPersonInput, setRowTextPersonInput] = useState<string>('');
   const [rowTextPersonSex, setRowTextPersonSex] = useState<PersonSex>('UNKNOWN');
 
-  // Preview Modal & Bulk Delete Confirm Modal (Points 1, 4, 6)
   const [previewModalItem, setPreviewModalItem] = useState<{
     url: string;
     mediaType: MediaType;
     title: string;
   } | null>(null);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState<boolean>(false);
+  const [showBulkUnlinkConfirm, setShowBulkUnlinkConfirm] = useState<boolean>(false);
+  const [bulkUnlinkTargetColId, setBulkUnlinkTargetColId] = useState<string>('');
+  const [rowColPickerId, setRowColPickerId] = useState<Record<number, string | undefined>>({});
 
   const [showLinkExistingModal, setShowLinkExistingModal] = useState<boolean>(false);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
@@ -366,7 +366,6 @@ export default function MediaGallerySection({
     void loadMedia();
   }, [graveId, personId, eventId]);
 
-  // Point 5 & Point 13: Never auto-pick cols[0]! Only prefill if inside a collection or if undated event already has collections
   useEffect(() => {
     if (!showUpload && !isBulkEditMode) return;
     const fetchCols = async () => {
@@ -381,19 +380,10 @@ export default function MediaGallerySection({
 
     if (collectionId) {
       setSelectedCollectionIds([collectionId]);
-    } else if (context === 'EVENT' && !defaultEventYear && effectiveItems.length > 0) {
-      const firstItem = effectiveItems[0];
-      const existingColIds =
-        firstItem.collectionIds && firstItem.collectionIds.length > 0
-          ? firstItem.collectionIds
-          : firstItem.collectionId
-            ? [firstItem.collectionId]
-            : [];
-      setSelectedCollectionIds(existingColIds);
     } else {
       setSelectedCollectionIds([]);
     }
-  }, [showUpload, isBulkEditMode, collectionId, context, defaultEventYear]);
+  }, [showUpload, isBulkEditMode, collectionId]);
 
   useEffect(() => {
     return () => {
@@ -457,11 +447,7 @@ export default function MediaGallerySection({
           minute: m.minute,
           second: m.second,
         }));
-        if (
-          metaOpts.length === 0 &&
-          item.metadataYear &&
-          item.metadataDateText
-        ) {
+        if (metaOpts.length === 0 && item.metadataYear && item.metadataDateText) {
           metaOpts.push({
             sourceTag: item.metadataDateSource ?? 'Metadane pliku',
             formattedText: item.metadataDateText,
@@ -491,6 +477,12 @@ export default function MediaGallerySection({
           selected: true,
           customFileName: item.fileName,
           categoryMode: catMode,
+          collectionIds:
+            item.collectionIds && item.collectionIds.length > 0
+              ? [...item.collectionIds]
+              : item.collectionId
+                ? [item.collectionId]
+                : [],
           title: item.title ?? '',
           sourceText: item.sourceText ?? '',
           inscriptionText: item.inscriptionText ?? '',
@@ -634,6 +626,7 @@ export default function MediaGallerySection({
         selected: true,
         customFileName: `${baseStem}_${suffix}.${ext}`,
         categoryMode: defaultCat,
+        collectionIds: [...selectedCollectionIds],
         title: bulkTitle.trim() || '',
         sourceText: bulkSourceText.trim() || '',
         inscriptionText: bulkInscriptionText.trim() || '',
@@ -664,9 +657,7 @@ export default function MediaGallerySection({
 
     setStagedRows(staged);
   };
-
-  // Real-time synchronization of checked rows for BOTH Upload and Bulk Edit (Point 1)
-  const syncBulkParamsToRows = (
+    const syncBulkParamsToRows = (
     targetSetter: React.Dispatch<React.SetStateAction<FileDraftRow[]>>,
     params: {
       mode: 'FILE_METADATA' | 'EVENT_OR_MANUAL' | 'UNDATED' | 'NO_CHANGE';
@@ -689,6 +680,7 @@ export default function MediaGallerySection({
       rEndMin?: string;
       rEndSec?: string;
       catMode?: 'NO_CHANGE' | CategoryModeOption;
+      colIds?: number[];
     }
   ) => {
     const rawStem = params.stem ?? bulkBaseName;
@@ -760,11 +752,14 @@ export default function MediaGallerySection({
           params.catMode && params.catMode !== 'NO_CHANGE'
             ? params.catMode
             : row.categoryMode;
+        const nextCols =
+          params.colIds !== undefined ? [...params.colIds] : row.collectionIds;
 
         return {
           ...row,
           customFileName: nextFileName,
           categoryMode: nextCat,
+          collectionIds: nextCols,
           isBetweenRange: nextIsBetween,
           dateQualifier: nextQual,
           year: nextY,
@@ -836,7 +831,11 @@ export default function MediaGallerySection({
     }
   };
 
-  const handleMoveColOrder = (idx: number, dir: -1 | 1) => {
+  const handleMoveColOrder = (
+    idx: number,
+    dir: -1 | 1,
+    rowSetter: React.Dispatch<React.SetStateAction<FileDraftRow[]>>
+  ) => {
     setSelectedCollectionIds(prev => {
       const target = idx + dir;
       if (target < 0 || target >= prev.length) return prev;
@@ -844,34 +843,32 @@ export default function MediaGallerySection({
       const tmp = copy[idx];
       copy[idx] = copy[target];
       copy[target] = tmp;
+      syncBulkParamsToRows(rowSetter, { mode: 'NO_CHANGE', colIds: copy });
       return copy;
     });
   };
 
-  // Point 5 & Point 23: Collection is only needed/shown when NOT a dated event and NOT a grave
-  const isDatedEventSection = context === 'EVENT' && Boolean(defaultEventYear);
-  const showCollectionSelectorInModal =
-    context !== 'GRAVE' && !isDatedEventSection;
   const requiresCollectionOnUpload =
-    !isDatedEventSection &&
     context !== 'GRAVE' &&
-    ( (context === 'EVENT' && !defaultEventYear) ||
-      stagedRows.some(r => r.year.trim() === '') ||
-      stagedRows.some(
-        r =>
+    !(context === 'EVENT' && Boolean(defaultEventYear)) &&
+    stagedRows.some(
+      r =>
+        r.collectionIds.length === 0 &&
+        selectedCollectionIds.length === 0 &&
+        (r.year.trim() === '' ||
+          (context === 'EVENT' && !defaultEventYear) ||
           r.categoryMode === 'PORTRAIT_SINGLE' ||
           r.categoryMode === 'PORTRAIT_GROUP' ||
-          r.categoryMode === 'UNKNOWN'
-      ));
+          r.categoryMode === 'UNKNOWN')
+    );
 
   const handleUploadSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (stagedRows.length === 0) return;
 
-    const effectiveColIds = isDatedEventSection ? [] : selectedCollectionIds;
-    if (requiresCollectionOnUpload && effectiveColIds.length === 0) {
+    if (requiresCollectionOnUpload) {
       setErrorMessage(
-        'Wybierz przynajmniej jedną kolekcję docelową dla plików bez daty, portretów lub wydarzenia bez daty.'
+        'Wybierz kolekcję docelową dla plików bez daty, portretów lub wydarzenia bez daty.'
       );
       return;
     }
@@ -883,179 +880,94 @@ export default function MediaGallerySection({
       personId !== undefined ? [personId] : (defaultPersonIds ?? []);
 
     try {
-      if (stagedRows.length === 1) {
-        const single = stagedRows[0];
-        if (!single.file) return;
+      for (const st of stagedRows) {
+        if (!st.file) continue;
+
+        const rowCols =
+          st.collectionIds.length > 0 ? st.collectionIds : selectedCollectionIds;
         const isPort =
-          single.categoryMode === 'PORTRAIT_SINGLE' ||
-          single.categoryMode === 'PORTRAIT_GROUP';
-        const isUnk = single.categoryMode === 'UNKNOWN';
+          st.categoryMode === 'PORTRAIT_SINGLE' ||
+          st.categoryMode === 'PORTRAIT_GROUP';
+        const isUnk = st.categoryMode === 'UNKNOWN';
         const effCtx: MediaPrimaryContext =
           isPort && context === 'COLLECTION' ? 'PERSON' : context;
+        const isSinglePrimary = stagedRows.length === 1 && setAsPrimary;
 
         const created = await mediaApi.uploadMedia({
-          file: single.file,
+          file: st.file,
           primaryContext: effCtx,
           customFolderName: optTrim(customFolderName),
-          customFileName: single.customFileName,
-          title: optTrim(single.title),
-          sourceText: optTrim(single.sourceText),
-          inscriptionText: optTrim(single.inscriptionText),
-          description: optTrim(single.description),
+          customFileName: st.customFileName,
+          title: optTrim(st.title),
+          sourceText: optTrim(st.sourceText),
+          inscriptionText: optTrim(st.inscriptionText),
+          description: optTrim(st.description),
           graveId,
           eventId,
-          collectionId: effectiveColIds.at(0),
-          collectionIds: effectiveColIds.length > 0 ? effectiveColIds : undefined,
-          isBetweenRange: single.isBetweenRange,
-          dateQualifier: single.dateQualifier,
-          customYear: parseOptInt(single.year) ?? undefined,
-          customMonth: parseOptInt(single.month) ?? undefined,
-          customDay: parseOptInt(single.day) ?? undefined,
-          timeQualifier: single.timeQualifier,
-          customHour: parseOptInt(single.hour) ?? undefined,
-          customMinute: parseOptInt(single.minute) ?? undefined,
-          customSecond: parseOptInt(single.second) ?? undefined,
-          rangeEndQualifier: single.isBetweenRange ? single.rangeEndQualifier : undefined,
-          rangeEndYear: single.isBetweenRange
-            ? (parseOptInt(single.rangeEndYear) ?? undefined)
+          collectionId: rowCols.at(0),
+          collectionIds: rowCols.length > 0 ? rowCols : undefined,
+          isBetweenRange: st.isBetweenRange,
+          dateQualifier: st.dateQualifier,
+          customYear: parseOptInt(st.year) ?? undefined,
+          customMonth: parseOptInt(st.month) ?? undefined,
+          customDay: parseOptInt(st.day) ?? undefined,
+          timeQualifier: st.timeQualifier,
+          customHour: parseOptInt(st.hour) ?? undefined,
+          customMinute: parseOptInt(st.minute) ?? undefined,
+          customSecond: parseOptInt(st.second) ?? undefined,
+          rangeEndQualifier: st.isBetweenRange ? st.rangeEndQualifier : undefined,
+          rangeEndYear: st.isBetweenRange
+            ? (parseOptInt(st.rangeEndYear) ?? undefined)
             : undefined,
-          rangeEndMonth: single.isBetweenRange
-            ? (parseOptInt(single.rangeEndMonth) ?? undefined)
+          rangeEndMonth: st.isBetweenRange
+            ? (parseOptInt(st.rangeEndMonth) ?? undefined)
             : undefined,
-          rangeEndDay: single.isBetweenRange
-            ? (parseOptInt(single.rangeEndDay) ?? undefined)
+          rangeEndDay: st.isBetweenRange
+            ? (parseOptInt(st.rangeEndDay) ?? undefined)
             : undefined,
-          rangeEndTimeQualifier: single.isBetweenRange
-            ? single.rangeEndTimeQualifier
+          rangeEndTimeQualifier: st.isBetweenRange
+            ? st.rangeEndTimeQualifier
             : undefined,
-          rangeEndHour: single.isBetweenRange
-            ? (parseOptInt(single.rangeEndHour) ?? undefined)
+          rangeEndHour: st.isBetweenRange
+            ? (parseOptInt(st.rangeEndHour) ?? undefined)
             : undefined,
-          rangeEndMinute: single.isBetweenRange
-            ? (parseOptInt(single.rangeEndMinute) ?? undefined)
+          rangeEndMinute: st.isBetweenRange
+            ? (parseOptInt(st.rangeEndMinute) ?? undefined)
             : undefined,
-          rangeEndSecond: single.isBetweenRange
-            ? (parseOptInt(single.rangeEndSecond) ?? undefined)
+          rangeEndSecond: st.isBetweenRange
+            ? (parseOptInt(st.rangeEndSecond) ?? undefined)
             : undefined,
-          selectedMetadataSourceTag: optTrim(single.selectedMetadataTag),
+          selectedMetadataSourceTag: optTrim(st.selectedMetadataTag),
           clientLastModifiedMs:
-            single.file.lastModified > 0 ? single.file.lastModified : undefined,
+            st.file.lastModified > 0 ? st.file.lastModified : undefined,
           personIds: targetPersonIds,
           portraitMedia: isPort,
           unknownMedia: isUnk,
-          setAsPersonAvatar: context === 'PERSON' && setAsPrimary,
-          setAsGravePrimary: context === 'GRAVE' && setAsPrimary,
+          setAsPersonAvatar: context === 'PERSON' && isSinglePrimary,
+          setAsGravePrimary: context === 'GRAVE' && isSinglePrimary,
         });
 
         if (
-          single.personLinks.length > 0 ||
-          single.categoryMode === 'PORTRAIT_GROUP'
+          st.personLinks.length > 0 ||
+          st.categoryMode === 'PORTRAIT_GROUP' ||
+          rowCols.length > 1
         ) {
           await mediaApi.updateMedia(created.id, {
-            title: optTrim(single.title) ?? created.title,
-            sourceText: optTrim(single.sourceText) ?? created.sourceText,
-            inscriptionText: optTrim(single.inscriptionText) ?? created.inscriptionText,
-            description: optTrim(single.description) ?? created.description,
+            title: optTrim(st.title) ?? created.title,
+            sourceText: optTrim(st.sourceText) ?? created.sourceText,
+            inscriptionText: optTrim(st.inscriptionText) ?? created.inscriptionText,
+            description: optTrim(st.description) ?? created.description,
             portrait: isPort,
-            groupPortrait: single.categoryMode === 'PORTRAIT_GROUP',
+            groupPortrait: st.categoryMode === 'PORTRAIT_GROUP',
             unknownMedia: isUnk,
-            personLinks: single.personLinks.map(l => ({
+            collectionIds: rowCols,
+            personLinks: st.personLinks.map(l => ({
               personId: l.personId,
               personText: l.personText,
               personSex: l.personSex,
               linkType: l.linkType,
             })),
           });
-        }
-      } else {
-        const firstCat = stagedRows[0].categoryMode;
-        const firstIsPort =
-          firstCat === 'PORTRAIT_SINGLE' || firstCat === 'PORTRAIT_GROUP';
-        const effCtx: MediaPrimaryContext =
-          firstIsPort && context === 'COLLECTION' ? 'PERSON' : context;
-
-        const createdBatch = await mediaApi.uploadBatchMedia({
-          files: stagedRows.map(s => s.file).filter((f): f is File => f !== undefined),
-          primaryContext: effCtx,
-          customFolderName: optTrim(customFolderName),
-          customFileNames: stagedRows.map(s => s.customFileName),
-          titles: stagedRows.map(s => s.title),
-          customYears: stagedRows.map(s => parseOptInt(s.year)),
-          customMonths: stagedRows.map(s => parseOptInt(s.month)),
-          customDays: stagedRows.map(s => parseOptInt(s.day)),
-          customHours: stagedRows.map(s => parseOptInt(s.hour)),
-          customMinutes: stagedRows.map(s => parseOptInt(s.minute)),
-          customSeconds: stagedRows.map(s => parseOptInt(s.second)),
-          selectedMetadataSourceTags: stagedRows.map(
-            s => optTrim(s.selectedMetadataTag) ?? null
-          ),
-          clientLastModifiedList: stagedRows.map(s =>
-            s.file && s.file.lastModified > 0 ? s.file.lastModified : null
-          ),
-          graveId,
-          eventId,
-          collectionId: effectiveColIds.at(0),
-          collectionIds: effectiveColIds.length > 0 ? effectiveColIds : undefined,
-          defaultYear:
-            dateSourceMode === 'EVENT_OR_MANUAL' ? parseOptInt(manualBulkYear) : null,
-          personIds: targetPersonIds,
-          portraitMedia: firstIsPort,
-          unknownMedia: firstCat === 'UNKNOWN',
-        });
-
-        for (let i = 0; i < createdBatch.length; i++) {
-          const st = stagedRows[i];
-          const createdItem = createdBatch[i];
-          const isPort =
-            st.categoryMode === 'PORTRAIT_SINGLE' ||
-            st.categoryMode === 'PORTRAIT_GROUP';
-          const isUnk = st.categoryMode === 'UNKNOWN';
-          const hasExtraDetails =
-            st.isBetweenRange ||
-            st.dateQualifier !== 'EXACT' ||
-            st.timeQualifier !== 'EXACT' ||
-            st.categoryMode !== firstCat ||
-            st.categoryMode === 'PORTRAIT_GROUP' ||
-            Boolean(optTrim(st.sourceText)) ||
-            Boolean(optTrim(st.inscriptionText)) ||
-            Boolean(optTrim(st.description)) ||
-            st.personLinks.length > 0;
-
-          if (hasExtraDetails) {
-            await mediaApi.updateMedia(createdItem.id, {
-              title: optTrim(st.title) ?? createdItem.title,
-              sourceText: optTrim(st.sourceText) ?? createdItem.sourceText,
-              inscriptionText: optTrim(st.inscriptionText) ?? createdItem.inscriptionText,
-              description: optTrim(st.description) ?? createdItem.description,
-              portrait: isPort,
-              groupPortrait: st.categoryMode === 'PORTRAIT_GROUP',
-              unknownMedia: isUnk,
-              dateSourceMode: 'MANUAL',
-              isBetweenRange: st.isBetweenRange,
-              dateQualifier: st.dateQualifier,
-              year: parseOptInt(st.year),
-              month: parseOptInt(st.month),
-              day: parseOptInt(st.day),
-              timeQualifier: st.timeQualifier,
-              hour: parseOptInt(st.hour),
-              minute: parseOptInt(st.minute),
-              second: parseOptInt(st.second),
-              rangeEndQualifier: st.isBetweenRange ? st.rangeEndQualifier : null,
-              rangeEndYear: st.isBetweenRange ? parseOptInt(st.rangeEndYear) : null,
-              rangeEndMonth: st.isBetweenRange ? parseOptInt(st.rangeEndMonth) : null,
-              rangeEndDay: st.isBetweenRange ? parseOptInt(st.rangeEndDay) : null,
-              rangeEndTimeQualifier: st.isBetweenRange ? st.rangeEndTimeQualifier : null,
-              rangeEndHour: st.isBetweenRange ? parseOptInt(st.rangeEndHour) : null,
-              rangeEndMinute: st.isBetweenRange ? parseOptInt(st.rangeEndMinute) : null,
-              rangeEndSecond: st.isBetweenRange ? parseOptInt(st.rangeEndSecond) : null,
-              personLinks: st.personLinks.map(l => ({
-                personId: l.personId,
-                personText: l.personText,
-                personSex: l.personSex,
-                linkType: l.linkType,
-              })),
-            });
-          }
         }
       }
 
@@ -1073,7 +985,9 @@ export default function MediaGallerySection({
 
   const handleApplyBulkEdit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const selectedDrafts = bulkDraftRows.filter(d => d.selected && d.existingId !== undefined);
+    const selectedDrafts = bulkDraftRows.filter(
+      d => d.selected && d.existingId !== undefined
+    );
     if (selectedDrafts.length === 0) return;
 
     setIsSubmitting(true);
@@ -1121,7 +1035,6 @@ export default function MediaGallerySection({
         rangeEndSecond: parseOptInt(manualBulkRangeEndSecond),
       });
 
-      // Persist per-row individual edits
       for (const d of selectedDrafts) {
         if (d.existingId === undefined) continue;
         const isPort =
@@ -1136,6 +1049,7 @@ export default function MediaGallerySection({
           portrait: isPort,
           groupPortrait: d.categoryMode === 'PORTRAIT_GROUP',
           unknownMedia: isUnk,
+          collectionIds: d.collectionIds,
           dateSourceMode:
             bulkEditDateMode === 'METADATA' || bulkEditDateMode === 'EVENT'
               ? null
@@ -1178,7 +1092,6 @@ export default function MediaGallerySection({
     }
   };
 
-  // Point 4: Bulk Delete Selected Media Items
   const handleConfirmBulkDelete = async () => {
     const idsToDelete = bulkDraftRows
       .filter(d => d.selected && d.existingId !== undefined)
@@ -1194,6 +1107,87 @@ export default function MediaGallerySection({
       onMediaChanged?.();
     } catch {
       setErrorMessage('Nie udało się usunąć zaznaczonych plików.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const doesBulkUnlinkRequireTargetCollection = (): boolean => {
+    const selectedIds = new Set(
+      bulkDraftRows
+        .filter(d => d.selected && d.existingId !== undefined)
+        .map(d => d.existingId)
+    );
+    for (const item of effectiveItems) {
+      if (!selectedIds.has(item.id)) continue;
+      const remEvents = (item.eventIds ?? []).filter(id => id !== eventId);
+      const remGraves = item.graveIds.filter(id => id !== graveId);
+      const remPersons = item.personIds.filter(id => id !== personId);
+      const curCols =
+        item.collectionIds && item.collectionIds.length > 0
+          ? item.collectionIds
+          : item.collectionId
+            ? [item.collectionId]
+            : [];
+      const remCols = curCols.filter(id => id !== collectionId);
+
+      const losingEvtFolder =
+        eventId !== undefined &&
+        remEvents.length === 0 &&
+        item.primaryContext === 'EVENT';
+      const losingGrvFolder =
+        graveId !== undefined &&
+        remGraves.length === 0 &&
+        item.primaryContext === 'GRAVE';
+      const losingAll =
+        remEvents.length === 0 &&
+        remGraves.length === 0 &&
+        remPersons.length === 0 &&
+        remCols.length === 0;
+
+      if (
+        losingAll ||
+        ((losingEvtFolder || losingGrvFolder) &&
+          remCols.length === 0 &&
+          remEvents.length === 0 &&
+          remGraves.length === 0)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const handleConfirmBulkUnlink = async () => {
+    const idsToUnlink = bulkDraftRows
+      .filter(d => d.selected && d.existingId !== undefined)
+      .map(d => d.existingId ?? 0);
+    if (idsToUnlink.length === 0) return;
+
+    const needsTargetCol = doesBulkUnlinkRequireTargetCollection();
+    if (needsTargetCol && bulkUnlinkTargetColId === '') {
+      setErrorMessage('Wybierz kolekcję docelową dla odpinanych plików.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    try {
+      await mediaApi.bulkUnlinkMedia({
+        mediaIds: idsToUnlink,
+        graveId: graveId ?? null,
+        personId: personId ?? null,
+        eventId: eventId ?? null,
+        collectionId: collectionId ?? null,
+        targetCollectionId:
+          bulkUnlinkTargetColId !== '' ? Number(bulkUnlinkTargetColId) : null,
+      });
+      setShowBulkUnlinkConfirm(false);
+      closeBulkEditModal();
+      await loadMedia();
+      onMediaChanged?.();
+    } catch {
+      setErrorMessage('Nie udało się odpiąć zaznaczonych plików.');
     } finally {
       setIsSubmitting(false);
     }
@@ -1219,8 +1213,7 @@ export default function MediaGallerySection({
       setIsSubmitting(false);
     }
   };
-
-  const renderDraftFileCard = (
+    const renderDraftFileCard = (
     st: FileDraftRow,
     idx: number,
     listSetter: React.Dispatch<React.SetStateAction<FileDraftRow[]>>,
@@ -1275,7 +1268,6 @@ export default function MediaGallerySection({
             <span className={styles.breakableCode}>📄 {st.displaySourceName}</span>
           </label>
 
-          {/* Point 3: Metadata Date formatted identically to Lightbox details */}
           {chosenMeta ? (
             <div className={styles.metadataBadge}>
               <span>📷 Data z metadanych —</span>
@@ -1419,7 +1411,7 @@ export default function MediaGallerySection({
                 />
               </div>
 
-              <div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                 <div
                   style={{
                     display: 'flex',
@@ -1458,7 +1450,7 @@ export default function MediaGallerySection({
                   </label>
                 </div>
 
-                {/* Point 1 & 2: Full Date Qualifier + Calendar + Y/M/D + Time Qualifier + HH:MM:SS */}
+                {/* Row 1: Date only (Qualifier + Calendar + YYYY + MM + DD) */}
                 <div className={styles.compactDateTimeInputs}>
                   <select
                     value={st.dateQualifier}
@@ -1471,7 +1463,7 @@ export default function MediaGallerySection({
                       );
                     }}
                     className={styles.input}
-                    style={{ width: '105px', height: '34px', fontSize: '0.76rem' }}
+                    style={{ width: '115px', height: '34px', fontSize: '0.76rem' }}
                   >
                     {QUALIFIER_OPTIONS.map(q => (
                       <option key={q.value} value={q.value}>
@@ -1504,7 +1496,7 @@ export default function MediaGallerySection({
                       }
                     }}
                     className={styles.input}
-                    style={{ width: '132px', height: '34px', fontSize: '0.76rem' }}
+                    style={{ width: '136px', height: '34px', fontSize: '0.76rem' }}
                   />
 
                   <input
@@ -1548,7 +1540,10 @@ export default function MediaGallerySection({
                     }}
                     className={styles.miniDateInput}
                   />
+                </div>
 
+                {/* Row 2: Time only (Time Qualifier + HH : MM : SS) */}
+                <div className={styles.compactDateTimeInputs}>
                   <select
                     aria-label="Kwalifikator czasu"
                     value={st.timeQualifier}
@@ -1561,7 +1556,7 @@ export default function MediaGallerySection({
                       );
                     }}
                     className={styles.input}
-                    style={{ width: '115px', height: '34px', fontSize: '0.75rem' }}
+                    style={{ width: 'auto', minWidth: '165px', height: '34px', fontSize: '0.76rem' }}
                   >
                     {QUALIFIER_OPTIONS.map(q => (
                       <option key={q.value} value={q.value}>
@@ -1620,180 +1615,198 @@ export default function MediaGallerySection({
 
                 {st.isBetweenRange && (
                   <div
-                    className={styles.compactDateTimeInputs}
-                    style={{ marginTop: '0.35rem' }}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.35rem',
+                      marginTop: '0.25rem',
+                      paddingTop: '0.4rem',
+                      borderTop: '1px dashed #cbd5e1',
+                    }}
                   >
                     <span className={styles.label}>
-                      … a {rowEndWeekday ? `(📅 ${rowEndWeekday})` : ''}:
+                      Druga granica („… a …”) {rowEndWeekday ? `(📅 ${rowEndWeekday})` : ''}:
                     </span>
-                    <select
-                      value={st.rangeEndQualifier}
-                      onChange={e => {
-                        const val = e.target.value;
-                        listSetter(prev =>
-                          prev.map((item, i) =>
-                            i === idx ? { ...item, rangeEndQualifier: val } : item
-                          )
-                        );
-                      }}
-                      className={styles.input}
-                      style={{ width: '105px', height: '34px', fontSize: '0.76rem' }}
-                    >
-                      {QUALIFIER_OPTIONS.map(q => (
-                        <option key={q.value} value={q.value}>
-                          {q.label}
-                        </option>
-                      ))}
-                    </select>
 
-                    <input
-                      type="date"
-                      value={toIsoDateInputValue(
-                        st.rangeEndYear,
-                        st.rangeEndMonth,
-                        st.rangeEndDay
-                      )}
-                      onChange={e => {
-                        if (e.target.value) {
-                          const p = e.target.value.split('-');
-                          if (p.length === 3) {
+                    {/* Range End Row 1: Date */}
+                    <div className={styles.compactDateTimeInputs}>
+                      <select
+                        value={st.rangeEndQualifier}
+                        onChange={e => {
+                          const val = e.target.value;
+                          listSetter(prev =>
+                            prev.map((item, i) =>
+                              i === idx ? { ...item, rangeEndQualifier: val } : item
+                            )
+                          );
+                        }}
+                        className={styles.input}
+                        style={{ width: '115px', height: '34px', fontSize: '0.76rem' }}
+                      >
+                        {QUALIFIER_OPTIONS.map(q => (
+                          <option key={q.value} value={q.value}>
+                            {q.label}
+                          </option>
+                        ))}
+                      </select>
+
+                      <input
+                        type="date"
+                        value={toIsoDateInputValue(
+                          st.rangeEndYear,
+                          st.rangeEndMonth,
+                          st.rangeEndDay
+                        )}
+                        onChange={e => {
+                          if (e.target.value) {
+                            const p = e.target.value.split('-');
+                            if (p.length === 3) {
+                              listSetter(prev =>
+                                prev.map((item, i) =>
+                                  i === idx
+                                    ? {
+                                        ...item,
+                                        rangeEndYear: String(Number(p[0])),
+                                        rangeEndMonth: String(Number(p[1])),
+                                        rangeEndDay: String(Number(p[2])),
+                                      }
+                                    : item
+                                )
+                              );
+                            }
+                          }
+                        }}
+                        className={styles.input}
+                        style={{ width: '136px', height: '34px', fontSize: '0.76rem' }}
+                      />
+
+                      <input
+                        type="number"
+                        placeholder={st.year || 'RRRR'}
+                        value={st.rangeEndYear}
+                        onChange={e => {
+                          const val = e.target.value;
+                          listSetter(prev =>
+                            prev.map((item, i) =>
+                              i === idx ? { ...item, rangeEndYear: val } : item
+                            )
+                          );
+                        }}
+                        className={`${styles.miniDateInput} ${styles.miniYearInput}`}
+                      />
+                      <input
+                        type="number"
+                        min={1}
+                        max={12}
+                        placeholder="MM"
+                        value={st.rangeEndMonth}
+                        onChange={e => {
+                          const val = e.target.value;
+                          listSetter(prev =>
+                            prev.map((item, i) =>
+                              i === idx ? { ...item, rangeEndMonth: val } : item
+                            )
+                          );
+                        }}
+                        className={styles.miniDateInput}
+                      />
+                      <input
+                        type="number"
+                        min={1}
+                        max={31}
+                        placeholder="DD"
+                        value={st.rangeEndDay}
+                        onChange={e => {
+                          const val = e.target.value;
+                          listSetter(prev =>
+                            prev.map((item, i) =>
+                              i === idx ? { ...item, rangeEndDay: val } : item
+                            )
+                          );
+                        }}
+                        className={styles.miniDateInput}
+                      />
+                    </div>
+
+                    {/* Range End Row 2: Time */}
+                    <div className={styles.compactDateTimeInputs}>
+                      <select
+                        value={st.rangeEndTimeQualifier}
+                        onChange={e => {
+                          const val = e.target.value;
+                          listSetter(prev =>
+                            prev.map((item, i) =>
+                              i === idx ? { ...item, rangeEndTimeQualifier: val } : item
+                            )
+                          );
+                        }}
+                        className={styles.input}
+                        style={{
+                          width: 'auto',
+                          minWidth: '165px',
+                          height: '34px',
+                          fontSize: '0.76rem',
+                        }}
+                      >
+                        {QUALIFIER_OPTIONS.map(q => (
+                          <option key={q.value} value={q.value}>
+                            Czas: {q.label}
+                          </option>
+                        ))}
+                      </select>
+
+                      <div className={styles.timeHmsGroup}>
+                        <input
+                          type="number"
+                          min={0}
+                          max={23}
+                          placeholder="GG"
+                          value={st.rangeEndHour}
+                          onChange={e => {
+                            const val = e.target.value;
                             listSetter(prev =>
                               prev.map((item, i) =>
-                                i === idx
-                                  ? {
-                                      ...item,
-                                      rangeEndYear: String(Number(p[0])),
-                                      rangeEndMonth: String(Number(p[1])),
-                                      rangeEndDay: String(Number(p[2])),
-                                    }
-                                  : item
+                                i === idx ? { ...item, rangeEndHour: val } : item
                               )
                             );
-                          }
-                        }
-                      }}
-                      className={styles.input}
-                      style={{ width: '132px', height: '34px', fontSize: '0.76rem' }}
-                    />
-
-                    <input
-                      type="number"
-                      placeholder={st.year || 'RRRR'}
-                      value={st.rangeEndYear}
-                      onChange={e => {
-                        const val = e.target.value;
-                        listSetter(prev =>
-                          prev.map((item, i) =>
-                            i === idx ? { ...item, rangeEndYear: val } : item
-                          )
-                        );
-                      }}
-                      className={`${styles.miniDateInput} ${styles.miniYearInput}`}
-                    />
-                    <input
-                      type="number"
-                      min={1}
-                      max={12}
-                      placeholder="MM"
-                      value={st.rangeEndMonth}
-                      onChange={e => {
-                        const val = e.target.value;
-                        listSetter(prev =>
-                          prev.map((item, i) =>
-                            i === idx ? { ...item, rangeEndMonth: val } : item
-                          )
-                        );
-                      }}
-                      className={styles.miniDateInput}
-                    />
-                    <input
-                      type="number"
-                      min={1}
-                      max={31}
-                      placeholder="DD"
-                      value={st.rangeEndDay}
-                      onChange={e => {
-                        const val = e.target.value;
-                        listSetter(prev =>
-                          prev.map((item, i) =>
-                            i === idx ? { ...item, rangeEndDay: val } : item
-                          )
-                        );
-                      }}
-                      className={styles.miniDateInput}
-                    />
-
-                    <select
-                      value={st.rangeEndTimeQualifier}
-                      onChange={e => {
-                        const val = e.target.value;
-                        listSetter(prev =>
-                          prev.map((item, i) =>
-                            i === idx ? { ...item, rangeEndTimeQualifier: val } : item
-                          )
-                        );
-                      }}
-                      className={styles.input}
-                      style={{ width: '115px', height: '34px', fontSize: '0.75rem' }}
-                    >
-                      {QUALIFIER_OPTIONS.map(q => (
-                        <option key={q.value} value={q.value}>
-                          Czas: {q.label}
-                        </option>
-                      ))}
-                    </select>
-
-                    <div className={styles.timeHmsGroup}>
-                      <input
-                        type="number"
-                        min={0}
-                        max={23}
-                        placeholder="GG"
-                        value={st.rangeEndHour}
-                        onChange={e => {
-                          const val = e.target.value;
-                          listSetter(prev =>
-                            prev.map((item, i) =>
-                              i === idx ? { ...item, rangeEndHour: val } : item
-                            )
-                          );
-                        }}
-                        className={styles.miniDateInput}
-                      />
-                      <span>:</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={59}
-                        placeholder="MM"
-                        value={st.rangeEndMinute}
-                        onChange={e => {
-                          const val = e.target.value;
-                          listSetter(prev =>
-                            prev.map((item, i) =>
-                              i === idx ? { ...item, rangeEndMinute: val } : item
-                            )
-                          );
-                        }}
-                        className={styles.miniDateInput}
-                      />
-                      <span>:</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={59}
-                        placeholder="SS"
-                        value={st.rangeEndSecond}
-                        onChange={e => {
-                          const val = e.target.value;
-                          listSetter(prev =>
-                            prev.map((item, i) =>
-                              i === idx ? { ...item, rangeEndSecond: val } : item
-                            )
-                          );
-                        }}
-                        className={styles.miniDateInput}
-                      />
+                          }}
+                          className={styles.miniDateInput}
+                        />
+                        <span>:</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={59}
+                          placeholder="MM"
+                          value={st.rangeEndMinute}
+                          onChange={e => {
+                            const v = e.target.value;
+                            listSetter(prev =>
+                              prev.map((item, i) =>
+                                i === idx ? { ...item, rangeEndMinute: v } : item
+                              )
+                            );
+                          }}
+                          className={styles.miniDateInput}
+                        />
+                        <span>:</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={59}
+                          placeholder="SS"
+                          value={st.rangeEndSecond}
+                          onChange={e => {
+                            const v = e.target.value;
+                            listSetter(prev =>
+                              prev.map((item, i) =>
+                                i === idx ? { ...item, rangeEndSecond: v } : item
+                              )
+                            );
+                          }}
+                          className={styles.miniDateInput}
+                        />
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1929,7 +1942,135 @@ export default function MediaGallerySection({
               />
             </div>
 
-            {/* Point 1 & 11: Person Linking inside Individual Row (Upload & Bulk Edit) */}
+            {availableCollections.length > 0 && (
+              <div
+                style={{
+                  backgroundColor: '#ffffff',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '8px',
+                  padding: '0.65rem 0.75rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.45rem',
+                }}
+              >
+                <span className={styles.label}>
+                  Przypisane kolekcje dla tego pliku (pierwsza określa folder na dysku):
+                </span>
+                <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>
+                  <select
+                    value={rowColPickerId[idx] ?? ''}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setRowColPickerId(prev => ({ ...prev, [idx]: val }));
+                      if (val !== '') {
+                        const cId = Number(val);
+                        listSetter(prev =>
+                          prev.map((item, i) =>
+                            i === idx && !item.collectionIds.includes(cId)
+                              ? { ...item, collectionIds: [...item.collectionIds, cId] }
+                              : item
+                          )
+                        );
+                        setRowColPickerId(prev => ({ ...prev, [idx]: '' }));
+                      }
+                    }}
+                    className={styles.input}
+                    style={{ maxWidth: '340px' }}
+                  >
+                    <option value="">— Dodaj ten plik do kolekcji / albumu —</option>
+                    {availableCollections
+                      .filter(c => !st.collectionIds.includes(c.id))
+                      .map(col => (
+                        <option key={col.id} value={String(col.id)}>
+                          {col.datedCollection
+                            ? `📅 [Album] ${col.name}`
+                            : `📦 [Kolekcja] ${col.name}`}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+
+                {st.collectionIds.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                    {st.collectionIds.map((cId, cIdx) => {
+                      const colObj = availableCollections.find(c => c.id === cId);
+                      return (
+                        <span
+                          key={cId}
+                          className={styles.selectedFilesBadge}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
+                        >
+                          <span>
+                            {cIdx === 0 ? '📁 [Główna] ' : '📦 '}
+                            {colObj?.name ?? 'Kolekcja'}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={cIdx === 0}
+                            onClick={() => {
+                              listSetter(prev =>
+                                prev.map((item, i) => {
+                                  if (i !== idx) return item;
+                                  const copy = [...item.collectionIds];
+                                  const tmp = copy[cIdx];
+                                  copy[cIdx] = copy[cIdx - 1];
+                                  copy[cIdx - 1] = tmp;
+                                  return { ...item, collectionIds: copy };
+                                })
+                              );
+                            }}
+                            style={{ border: 'none', background: 'none', cursor: 'pointer', fontWeight: 700 }}
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            disabled={cIdx === st.collectionIds.length - 1}
+                            onClick={() => {
+                              listSetter(prev =>
+                                prev.map((item, i) => {
+                                  if (i !== idx) return item;
+                                  const copy = [...item.collectionIds];
+                                  const tmp = copy[cIdx];
+                                  copy[cIdx] = copy[cIdx + 1];
+                                  copy[cIdx + 1] = tmp;
+                                  return { ...item, collectionIds: copy };
+                                })
+                              );
+                            }}
+                            style={{ border: 'none', background: 'none', cursor: 'pointer', fontWeight: 700 }}
+                          >
+                            ↓
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              listSetter(prev =>
+                                prev.map((item, i) =>
+                                  i === idx
+                                    ? {
+                                        ...item,
+                                        collectionIds: item.collectionIds.filter(
+                                          id => id !== cId
+                                        ),
+                                      }
+                                    : item
+                                )
+                              );
+                            }}
+                            className={styles.pillRemoveBtn}
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div
               style={{
                 backgroundColor: '#ffffff',
@@ -2196,8 +2337,7 @@ export default function MediaGallerySection({
       })}
     </div>
   );
-
-  const renderSharedBulkTopPanel = (
+    const renderSharedBulkTopPanel = (
     isBulkEdit: boolean,
     activeRows: FileDraftRow[],
     rowSetter: React.Dispatch<React.SetStateAction<FileDraftRow[]>>
@@ -2348,44 +2488,42 @@ export default function MediaGallerySection({
             />
           </div>
 
-          {(context === 'COLLECTION' || context === 'PERSON' || isBulkEdit) && (
-            <div className={styles.formField}>
-              <label htmlFor="bulk-category-select" className={styles.label}>
-                Kategoria plików w kolekcji (Portret / Nieznane)
-              </label>
-              <select
-                id="bulk-category-select"
-                value={bulkCategoryMode}
-                onChange={e => {
-                  const nextCat = e.target.value as 'NO_CHANGE' | CategoryModeOption;
-                  setBulkCategoryMode(nextCat);
-                  syncBulkParamsToRows(rowSetter, {
-                    mode: 'NO_CHANGE',
-                    catMode: nextCat,
-                  });
-                  if (!isBulkEdit) {
-                    void refreshDirectoryPreview(
-                      stagedRows.at(0)?.file,
-                      customFolderName,
-                      selectedCollectionIds.at(0),
-                      nextCat
-                    );
-                  }
-                }}
-                className={styles.input}
-              >
-                {isBulkEdit && <option value="NO_CHANGE">— Pozostaw kategorię bez zmian —</option>}
-                <option value="REGULAR">📄 Zwykły plik (główny folder kolekcji)</option>
-                <option value="PORTRAIT_SINGLE">
-                  👤 Portret pojedynczy (portraits/single)
-                </option>
-                <option value="PORTRAIT_GROUP">👥 Portret grupowy (portraits/group)</option>
-                <option value="UNKNOWN">
-                  ❓ Nieznane – do identyfikacji (podfolder unknown)
-                </option>
-              </select>
-            </div>
-          )}
+          <div className={styles.formField}>
+            <label htmlFor="bulk-category-select" className={styles.label}>
+              Kategoria plików w kolekcji (Portret / Nieznane)
+            </label>
+            <select
+              id="bulk-category-select"
+              value={bulkCategoryMode}
+              onChange={e => {
+                const nextCat = e.target.value as 'NO_CHANGE' | CategoryModeOption;
+                setBulkCategoryMode(nextCat);
+                syncBulkParamsToRows(rowSetter, {
+                  mode: 'NO_CHANGE',
+                  catMode: nextCat,
+                });
+                if (!isBulkEdit) {
+                  void refreshDirectoryPreview(
+                    stagedRows.at(0)?.file,
+                    customFolderName,
+                    selectedCollectionIds.at(0),
+                    nextCat
+                  );
+                }
+              }}
+              className={styles.input}
+            >
+              {isBulkEdit && <option value="NO_CHANGE">— Pozostaw kategorię bez zmian —</option>}
+              <option value="REGULAR">📄 Zwykły plik (główny folder kolekcji)</option>
+              <option value="PORTRAIT_SINGLE">
+                👤 Portret pojedynczy (portraits/single)
+              </option>
+              <option value="PORTRAIT_GROUP">👥 Portret grupowy (portraits/group)</option>
+              <option value="UNKNOWN">
+                ❓ Nieznane – do identyfikacji (podfolder unknown)
+              </option>
+            </select>
+          </div>
 
           {context !== 'GRAVE' && (
             <div className={styles.formField}>
@@ -2476,8 +2614,7 @@ export default function MediaGallerySection({
           )}
         </div>
 
-        {/* Multi-Collection Picker (Points 5, 13, 23, 33) */}
-        {showCollectionSelectorInModal && availableCollections.length > 0 && (
+        {availableCollections.length > 0 && (
           <div
             style={{
               backgroundColor: '#ffffff',
@@ -2510,6 +2647,10 @@ export default function MediaGallerySection({
                     if (!selectedCollectionIds.includes(cId)) {
                       const nextList = [...selectedCollectionIds, cId];
                       setSelectedCollectionIds(nextList);
+                      syncBulkParamsToRows(rowSetter, {
+                        mode: 'NO_CHANGE',
+                        colIds: nextList,
+                      });
                       if (!isBulkEdit) {
                         void refreshDirectoryPreview(
                           stagedRows.at(0)?.file,
@@ -2556,7 +2697,7 @@ export default function MediaGallerySection({
                         type="button"
                         disabled={cIdx === 0}
                         onClick={() => {
-                          handleMoveColOrder(cIdx, -1);
+                          handleMoveColOrder(cIdx, -1, rowSetter);
                         }}
                         style={{
                           border: 'none',
@@ -2571,7 +2712,7 @@ export default function MediaGallerySection({
                         type="button"
                         disabled={cIdx === selectedCollectionIds.length - 1}
                         onClick={() => {
-                          handleMoveColOrder(cIdx, 1);
+                          handleMoveColOrder(cIdx, 1, rowSetter);
                         }}
                         style={{
                           border: 'none',
@@ -2585,7 +2726,12 @@ export default function MediaGallerySection({
                       <button
                         type="button"
                         onClick={() => {
-                          setSelectedCollectionIds(prev => prev.filter(id => id !== cId));
+                          const nextList = selectedCollectionIds.filter(id => id !== cId);
+                          setSelectedCollectionIds(nextList);
+                          syncBulkParamsToRows(rowSetter, {
+                            mode: 'NO_CHANGE',
+                            colIds: nextList,
+                          });
                         }}
                         className={styles.pillRemoveBtn}
                       >
@@ -2599,7 +2745,6 @@ export default function MediaGallerySection({
           </div>
         )}
 
-        {/* Bulk Manual Date with Real-Time Sync */}
         {context !== 'GRAVE' && isManualDateActive && (
           <div
             style={{
@@ -3312,7 +3457,6 @@ export default function MediaGallerySection({
             )}
           </div>
 
-          {/* Point 18: Responsive Filter & Sort Toolbar */}
           {totalRawItemsCount > 0 && (
             <div className={styles.toolbarBar} data-testid="media-section-filter-sort-bar">
               <div className={styles.filterPillsGroup}>
@@ -3332,7 +3476,6 @@ export default function MediaGallerySection({
                   type="button"
                   data-testid="media-filter-image"
                   onClick={() => {
-                    setTypeFilter('IMAGE');
                     setTypeFilter('IMAGE');
                   }}
                   className={`${styles.filterPillBtn} ${
@@ -3367,7 +3510,6 @@ export default function MediaGallerySection({
                 </button>
               </div>
 
-              {/* Point 18: Sort select fits on mobile screen without overflowing */}
               <div className={styles.sortControlGroup}>
                 <label htmlFor="section-media-sort-select" className={styles.label}>
                   Sortuj:
@@ -3403,7 +3545,6 @@ export default function MediaGallerySection({
             </div>
           )}
 
-          {/* Direct Media Grid & Sub-Events Media Grids */}
           {displayedDirectItems.length === 0 && displayedSubGroups.length === 0 ? (
             <p className={styles.emptyText}>Brak przypisanych zdjęć i filmów.</p>
           ) : (
@@ -3437,9 +3578,6 @@ export default function MediaGallerySection({
         </>
       )}
 
-      {/* =====================================================================
-          LARGE MODAL 1: UPLOAD MEDIA
-          ===================================================================== */}
       {isAdmin && showUpload && (
         <div
           className={styles.modalBackdrop}
@@ -3553,9 +3691,6 @@ export default function MediaGallerySection({
         </div>
       )}
 
-      {/* =====================================================================
-          LARGE MODAL 2: BULK EDIT & BULK DELETE MEDIA
-          ===================================================================== */}
       {isAdmin && isBulkEditMode && effectiveItems.length > 0 && (
         <div
           className={styles.modalBackdrop}
@@ -3615,7 +3750,6 @@ export default function MediaGallerySection({
                   <span style={{ fontSize: '0.82rem', color: '#475569' }}>
                     Zaznaczono plików: <strong>{String(selectedBulkDraftCount)}</strong>
                   </span>
-                  {/* Point 4: Bulk Delete Selected Media Button */}
                   <button
                     type="button"
                     data-testid="bulk-delete-selected-media-button"
@@ -3627,6 +3761,22 @@ export default function MediaGallerySection({
                   >
                     🗑️ Usuń zaznaczone ({String(selectedBulkDraftCount)})
                   </button>
+                  {(graveId !== undefined ||
+                    personId !== undefined ||
+                    eventId !== undefined ||
+                    (collectionId !== undefined && collectionId !== null)) && (
+                    <button
+                      type="button"
+                      data-testid="bulk-unlink-selected-media-button"
+                      disabled={selectedBulkDraftCount === 0 || isSubmitting}
+                      onClick={() => {
+                        setShowBulkUnlinkConfirm(true);
+                      }}
+                      className={styles.btnSecondary}
+                    >
+                      🔗 Odepnij zaznaczone ({String(selectedBulkDraftCount)})
+                    </button>
+                  )}
                 </div>
 
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -3654,7 +3804,6 @@ export default function MediaGallerySection({
         </div>
       )}
 
-      {/* Small Confirmation Modal: Bulk Delete Selected Media (Point 4) */}
       {isAdmin && showBulkDeleteConfirm && (
         <div
           className={styles.modalBackdrop}
@@ -3702,7 +3851,91 @@ export default function MediaGallerySection({
         </div>
       )}
 
-      {/* MODAL 3: PREVIEW FOR STAGED / BULK-EDITED FILE */}
+      {isAdmin && showBulkUnlinkConfirm && (
+        <div
+          className={styles.modalBackdrop}
+          style={{ zIndex: 1550 }}
+          onClick={() => {
+            setShowBulkUnlinkConfirm(false);
+          }}
+        >
+          <div
+            className={styles.smallConfirmModal}
+            onClick={e => {
+              e.stopPropagation();
+            }}
+          >
+            <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#0f172a' }}>
+              🔗 Odpiąć zaznaczone pliki ({String(selectedBulkDraftCount)}) z tego miejsca?
+            </h3>
+            <p style={{ margin: 0, fontSize: '0.9rem', color: '#475569', lineHeight: 1.5 }}>
+              Czy na pewno chcesz odpiąć zaznaczone pliki multimedialne (
+              <strong>{String(selectedBulkDraftCount)}</strong>) z tej sekcji?
+            </p>
+            {doesBulkUnlinkRequireTargetCollection() && (
+              <div
+                style={{
+                  backgroundColor: '#f8fafc',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '8px',
+                  padding: '0.85rem',
+                  textAlign: 'left',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.45rem',
+                }}
+              >
+                <span className={styles.label}>
+                  Niektóre pliki tracą ostatnie powiązanie – wskaż kolekcję docelową, do której
+                  mają zostać przeniesione fizycznie na dysku *
+                </span>
+                <select
+                  value={bulkUnlinkTargetColId}
+                  onChange={e => {
+                    setBulkUnlinkTargetColId(e.target.value);
+                  }}
+                  className={styles.input}
+                >
+                  <option value="">— Wybierz kolekcję docelową —</option>
+                  {availableCollections.map(col => (
+                    <option key={col.id} value={String(col.id)}>
+                      {col.datedCollection
+                        ? `📅 [Album datowany] ${col.name}`
+                        : `📦 [Kolekcja] ${col.name}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '0.65rem' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowBulkUnlinkConfirm(false);
+                }}
+                className={styles.btnSecondary}
+              >
+                Anuluj
+              </button>
+              <button
+                type="button"
+                data-testid="confirm-bulk-unlink-media-button"
+                disabled={
+                  isSubmitting ||
+                  (doesBulkUnlinkRequireTargetCollection() && bulkUnlinkTargetColId === '')
+                }
+                onClick={() => {
+                  void handleConfirmBulkUnlink();
+                }}
+                className={styles.btnPrimary}
+              >
+                Tak, odepnij zaznaczone ({String(selectedBulkDraftCount)})
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {previewModalItem && (
         <div
           className={styles.fullscreenOverlay}
@@ -3772,7 +4005,6 @@ export default function MediaGallerySection({
         </div>
       )}
 
-      {/* MODAL 4: LINK EXISTING MEDIA FROM GALLERY */}
       <GalleryBrowserModal
         isOpen={showLinkExistingModal}
         mode="multiple"
@@ -3786,7 +4018,6 @@ export default function MediaGallerySection({
         }}
       />
 
-      {/* MODAL 5: FULLSCREEN LIGHTBOX */}
       <MediaItemLightboxModal
         items={allViewableItems}
         activeIndex={activeIndex}

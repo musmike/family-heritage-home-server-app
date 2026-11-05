@@ -3,7 +3,10 @@ package com.musmike.familyheritage.integration.controller;
 import tools.jackson.databind.ObjectMapper;
 import com.musmike.familyheritage.dto.*;
 import com.musmike.familyheritage.integration.AbstractIntegrationTest;
+import com.musmike.familyheritage.model.MediaItem;
 import com.musmike.familyheritage.model.Person;
+import com.musmike.familyheritage.model.enums.MediaPrimaryContext;
+import com.musmike.familyheritage.repository.MediaItemRepository;
 import com.musmike.familyheritage.repository.PersonRepository;
 import com.musmike.familyheritage.service.BurialService;
 import com.musmike.familyheritage.service.EventTimelineService;
@@ -36,6 +39,7 @@ class MediaControllerTest extends AbstractIntegrationTest {
     @Autowired private MockMvc mockMvc;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private PersonRepository personRepository;
+    @Autowired private MediaItemRepository mediaItemRepository;
     @Autowired private BurialService burialService;
     @Autowired private EventTimelineService eventTimelineService;
     @Autowired private MediaStorageService storageService;
@@ -395,5 +399,39 @@ class MediaControllerTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.collectionId").value(colId))
                 .andExpect(jsonPath("$.relativePath", startsWith("collections/archiwum_domowe/photos/")));
+    }
+
+    @Test
+    @Transactional
+    @WithMockUser(username = "admin", roles = {"ADMIN"})
+    void shouldHandleLargeFileOverThreeGigabytesWithoutOutOfMemoryError() throws Exception {
+        // Create a sparse file of 3.1 GB on disk (takes 0 ms and uses no real disk space)
+        String relativePath = "dated/2020s/2026/test_large_event/videos/large_video.mp4";
+        java.nio.file.Path fullPath = storageService.resolveMediaFilePath(relativePath);
+        java.nio.file.Files.createDirectories(fullPath.getParent());
+
+        long threePointOneGb = 3328599654L; // ~3.1 GB, exceeds Integer.MAX_VALUE
+        try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(fullPath.toFile(), "rw")) {
+            raf.setLength(threePointOneGb);
+            raf.seek(0);
+            // Write a valid MP4 header in the first few bytes
+            raf.write(new byte[]{0x00, 0x00, 0x00, 0x20, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm'});
+        }
+
+        MediaItem item = new MediaItem();
+        item.setMediaType(com.musmike.familyheritage.model.enums.MediaType.VIDEO);
+        item.setPrimaryContext(MediaPrimaryContext.EVENT);
+        item.setRelativePath(relativePath);
+        item.setFileName("large_video.mp4");
+        item.setMimeType("video/mp4");
+        item.setFileSize(threePointOneGb);
+        item = mediaItemRepository.saveAndFlush(item);
+
+        // Fetching DTO as ADMIN triggers toDto() which previously called Files.readAllBytes() and crashed with OOM
+        mockMvc.perform(get("/media/{id}", item.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(item.getId()))
+                .andExpect(jsonPath("$.fileSize").value(threePointOneGb))
+                .andExpect(jsonPath("$.fileName").value("large_video.mp4"));
     }
 }

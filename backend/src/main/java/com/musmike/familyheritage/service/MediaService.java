@@ -2042,10 +2042,9 @@ public class MediaService {
     }
 
     private void ensureMetadataExtractedFromDisk(MediaItem item, String preferredSourceTag) {
-        byte[] bytes = storageService.readFileBytesIfExists(item.getRelativePath());
+        byte[] bytes = storageService.readHeaderBytesIfExists(item.getRelativePath(), 262144);
         if (bytes != null) {
-            List<MediaMetadataExtractor.ExtractedMetadata> all =
-                    metadataExtractor.extractAllDates(bytes, item.getMimeType(), null);
+            List<MediaMetadataExtractor.ExtractedMetadata> all = metadataExtractor.extractAllDates(bytes, item.getMimeType(), null);
             MediaMetadataExtractor.ExtractedMetadata chosen = selectMetadataOption(all, preferredSourceTag);
             if (chosen != null && chosen.year() != null) {
                 item.setMetadataDateDescriptor(chosen.toDateDescriptor());
@@ -3192,7 +3191,8 @@ public class MediaService {
 
         List<MetadataDateOptionDto> availableMetaOptions = new ArrayList<>();
         if (isAdmin) {
-            byte[] diskBytes = storageService.readFileBytesIfExists(item.getRelativePath());
+            // Read at most 256 KB of file header - never load multi-gigabyte files into RAM
+            byte[] diskBytes = storageService.readHeaderBytesIfExists(item.getRelativePath(), 262144);
             if (diskBytes != null) {
                 for (MediaMetadataExtractor.ExtractedMetadata em : metadataExtractor.extractAllDates(diskBytes, item.getMimeType(), null)) {
                     availableMetaOptions.add(em.toOptionDto());

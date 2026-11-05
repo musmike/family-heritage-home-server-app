@@ -151,10 +151,14 @@ public class MediaStorageService {
         try {
             Path path = resolveMediaFilePath(relativePath);
             if (Files.exists(path)) {
+                long size = Files.size(path);
+                // Never attempt to read files larger than 50 MB into a single byte array
+                if (size > 50L * 1024 * 1024) {
+                    return null;
+                }
                 return Files.readAllBytes(path);
             }
-        } catch (IOException ignored) {
-        }
+        } catch (IOException ignored) {}
         return null;
     }
 
@@ -407,5 +411,17 @@ public class MediaStorageService {
         } catch (IOException e) {
             throw new IllegalStateException("Failed to stream media file to disk: " + relativePath, e);
         }
+    }
+
+    public byte[] readHeaderBytesIfExists(String relativePath, int maxBytes) {
+        try {
+            Path path = resolveMediaFilePath(relativePath);
+            if (Files.exists(path)) {
+                try (java.io.InputStream is = Files.newInputStream(path)) {
+                    return is.readNBytes(maxBytes);
+                }
+            }
+        } catch (IOException ignored) {}
+        return null;
     }
 }

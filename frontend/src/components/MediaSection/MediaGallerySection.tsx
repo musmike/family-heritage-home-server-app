@@ -1499,47 +1499,49 @@ export default function MediaGallerySection({
                     style={{ width: '136px', height: '34px', fontSize: '0.76rem' }}
                   />
 
-                  <input
-                    type="number"
-                    aria-label="Rok zdjęcia"
-                    placeholder="RRRR"
-                    value={st.year}
-                    onChange={e => {
-                      const val = e.target.value;
-                      listSetter(prev =>
-                        prev.map((item, i) => (i === idx ? { ...item, year: val } : item))
-                      );
-                    }}
-                    className={`${styles.miniDateInput} ${styles.miniYearInput}`}
-                  />
-                  <input
-                    type="number"
-                    min={1}
-                    max={12}
-                    placeholder="MM"
-                    value={st.month}
-                    onChange={e => {
-                      const val = e.target.value;
-                      listSetter(prev =>
-                        prev.map((item, i) => (i === idx ? { ...item, month: val } : item))
-                      );
-                    }}
-                    className={styles.miniDateInput}
-                  />
-                  <input
-                    type="number"
-                    min={1}
-                    max={31}
-                    placeholder="DD"
-                    value={st.day}
-                    onChange={e => {
-                      const val = e.target.value;
-                      listSetter(prev =>
-                        prev.map((item, i) => (i === idx ? { ...item, day: val } : item))
-                      );
-                    }}
-                    className={styles.miniDateInput}
-                  />
+                  <div className={styles.timeHmsGroup}>
+                    <input
+                      type="number"
+                      aria-label="Rok zdjęcia"
+                      placeholder="RRRR"
+                      value={st.year}
+                      onChange={e => {
+                        const val = e.target.value;
+                        listSetter(prev =>
+                          prev.map((item, i) => (i === idx ? { ...item, year: val } : item))
+                        );
+                      }}
+                      className={`${styles.miniDateInput} ${styles.miniYearInput}`}
+                    />
+                    <input
+                      type="number"
+                      min={1}
+                      max={12}
+                      placeholder="MM"
+                      value={st.month}
+                      onChange={e => {
+                        const val = e.target.value;
+                        listSetter(prev =>
+                          prev.map((item, i) => (i === idx ? { ...item, month: val } : item))
+                        );
+                      }}
+                      className={styles.miniDateInput}
+                    />
+                    <input
+                      type="number"
+                      min={1}
+                      max={31}
+                      placeholder="DD"
+                      value={st.day}
+                      onChange={e => {
+                        const val = e.target.value;
+                        listSetter(prev =>
+                          prev.map((item, i) => (i === idx ? { ...item, day: val } : item))
+                        );
+                      }}
+                      className={styles.miniDateInput}
+                    />
+                  </div>
                 </div>
 
                 {/* Row 2: Time only (Time Qualifier + HH : MM : SS) */}
@@ -1680,52 +1682,54 @@ export default function MediaGallerySection({
                         style={{ width: '136px', height: '34px', fontSize: '0.76rem' }}
                       />
 
-                      <input
-                        type="number"
-                        placeholder={st.year || 'RRRR'}
-                        value={st.rangeEndYear}
-                        onChange={e => {
-                          const val = e.target.value;
-                          listSetter(prev =>
-                            prev.map((item, i) =>
-                              i === idx ? { ...item, rangeEndYear: val } : item
-                            )
-                          );
-                        }}
-                        className={`${styles.miniDateInput} ${styles.miniYearInput}`}
-                      />
-                      <input
-                        type="number"
-                        min={1}
-                        max={12}
-                        placeholder="MM"
-                        value={st.rangeEndMonth}
-                        onChange={e => {
-                          const val = e.target.value;
-                          listSetter(prev =>
-                            prev.map((item, i) =>
-                              i === idx ? { ...item, rangeEndMonth: val } : item
-                            )
-                          );
-                        }}
-                        className={styles.miniDateInput}
-                      />
-                      <input
-                        type="number"
-                        min={1}
-                        max={31}
-                        placeholder="DD"
-                        value={st.rangeEndDay}
-                        onChange={e => {
-                          const val = e.target.value;
-                          listSetter(prev =>
-                            prev.map((item, i) =>
-                              i === idx ? { ...item, rangeEndDay: val } : item
-                            )
-                          );
-                        }}
-                        className={styles.miniDateInput}
-                      />
+                      <div className={styles.timeHmsGroup}>
+                        <input
+                          type="number"
+                          placeholder={st.year || 'RRRR'}
+                          value={st.rangeEndYear}
+                          onChange={e => {
+                            const val = e.target.value;
+                            listSetter(prev =>
+                              prev.map((item, i) =>
+                                i === idx ? { ...item, rangeEndYear: val } : item
+                              )
+                            );
+                          }}
+                          className={`${styles.miniDateInput} ${styles.miniYearInput}`}
+                        />
+                        <input
+                          type="number"
+                          min={1}
+                          max={12}
+                          placeholder="MM"
+                          value={st.rangeEndMonth}
+                          onChange={e => {
+                            const val = e.target.value;
+                            listSetter(prev =>
+                              prev.map((item, i) =>
+                                i === idx ? { ...item, rangeEndMonth: val } : item
+                              )
+                            );
+                          }}
+                          className={styles.miniDateInput}
+                        />
+                        <input
+                          type="number"
+                          min={1}
+                          max={31}
+                          placeholder="DD"
+                          value={st.rangeEndDay}
+                          onChange={e => {
+                            const val = e.target.value;
+                            listSetter(prev =>
+                              prev.map((item, i) =>
+                                i === idx ? { ...item, rangeEndDay: val } : item
+                              )
+                            );
+                          }}
+                          className={styles.miniDateInput}
+                        />
+                      </div>
                     </div>
 
                     {/* Range End Row 2: Time */}

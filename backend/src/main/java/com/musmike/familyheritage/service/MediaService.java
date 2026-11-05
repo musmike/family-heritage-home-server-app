@@ -611,7 +611,7 @@ public class MediaService {
             throw new IllegalArgumentException("Uploaded file cannot be empty.");
         }
 
-        byte[] fileBytes = file.getBytes();
+        byte[] headerBytes = readHeaderBytes(file, 262144);
         String mimeType = file.getContentType() != null ? file.getContentType() : "image/jpeg";
         String lowerMime = mimeType.toLowerCase(Locale.ROOT);
         MediaType mediaType;
@@ -668,7 +668,7 @@ public class MediaService {
         item.setSourceText(trimToNull(sourceText));
 
         List<MediaMetadataExtractor.ExtractedMetadata> allMeta =
-                metadataExtractor.extractAllDates(fileBytes, mimeType, clientLastModifiedMs);
+                metadataExtractor.extractAllDates(headerBytes, mimeType, clientLastModifiedMs);
         MediaMetadataExtractor.ExtractedMetadata chosenMeta =
                 selectMetadataOption(allMeta, selectedMetadataSourceTag);
         if (chosenMeta != null && chosenMeta.year() != null) {
@@ -712,12 +712,17 @@ public class MediaService {
 
         Long diskTimestampMs = resolveOriginalTimestampMs(clientLastModifiedMs, chosenMeta);
         boolean isGif = mimeType.toLowerCase(Locale.ROOT).contains("gif");
-        storageService.saveFileAndThumbnail(
-                item.getRelativePath(), item.getId(), fileBytes,
-                mediaType == MediaType.IMAGE && !isGif, diskTimestampMs
-        );
+        try (java.io.InputStream fileStream = file.getInputStream()) {
+            storageService.saveStreamAndThumbnail(
+                    item.getRelativePath(),
+                    item.getId(),
+                    fileStream,
+                    mediaType == MediaType.IMAGE && !isGif,
+                    diskTimestampMs
+            );
+        }
 
-        if (primaryPersonId != null && primaryPersonId > 0) {
+        if (primaryPersonId != null && primaryPersonId > 0 && mediaType != MediaType.AUDIO) {
             Person person = personRepository.findById(primaryPersonId).orElse(null);
             if (person != null && (setAsPersonAvatar || (primaryContext == MediaPrimaryContext.PERSON && person.getAvatarMedia() == null))) {
                 person.setAvatarMedia(item);
@@ -975,6 +980,9 @@ public class MediaService {
         item = mediaItemRepository.saveAndFlush(item);
 
         if (req.getSetAsAvatarForPersonId() != null) {
+            if (item.getMediaType() == MediaType.AUDIO) {
+                throw new IllegalArgumentException("Plik dźwiękowy (audio) nie może zostać ustawiony jako portret profilowy osoby.");
+            }
             MediaItem finalItem = item;
             personRepository.findById(req.getSetAsAvatarForPersonId()).ifPresent(p -> {
                 p.setAvatarMedia(finalItem);
@@ -1051,7 +1059,6 @@ public class MediaService {
         String verFileName = findAvailableFileName(dir, stem + "_" + vType.name().toLowerCase(Locale.ROOT), ext);
         String verRelPath = dir + "/" + verFileName;
 
-        byte[] fileBytes = file.getBytes();
         boolean makeMain = setAsMain && vType != MediaVersionType.REVERSE;
 
         MediaVersion newVer = new MediaVersion();
@@ -1077,8 +1084,11 @@ public class MediaService {
         item.getVersions().add(newVer);
         item = mediaItemRepository.saveAndFlush(item);
 
-        boolean generateMainThumb = makeMain && item.getMediaType() == MediaType.IMAGE && !mimeType.toLowerCase(Locale.ROOT).contains("gif");
-        storageService.saveFileAndThumbnail(verRelPath, item.getId(), fileBytes, generateMainThumb);
+        boolean generateMainThumb = makeMain && item.getMediaType() == MediaType.IMAGE
+                && !mimeType.toLowerCase(Locale.ROOT).contains("gif");
+        try (java.io.InputStream verStream = file.getInputStream()) {
+            storageService.saveStreamAndThumbnail(verRelPath, item.getId(), verStream, generateMainThumb, null);
+        }
 
         return toDto(item, true, loadUserCodeTranslations());
     }
@@ -3285,5 +3295,11 @@ public class MediaService {
             return null;
         }
         return val.trim();
+    }
+
+    private byte[] readHeaderBytes(MultipartFile file, int maxBytes) throws IOException {
+        try (java.io.InputStream is = file.getInputStream()) {
+            return is.readNBytes(maxBytes);
+        }
     }
 }

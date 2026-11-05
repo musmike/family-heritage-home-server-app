@@ -109,7 +109,7 @@ const renderSectionBody = (lines: string[], sectionKey: string): ReactNode[] => 
       continue;
     }
 
-    const mediaMatch = /^!\[([^\]]*)\]\((media|video):(\d+)\)$/.exec(trimmed);
+    const mediaMatch = /^!\[([^\]]*)\]\((media|video|audio):(\d+)\)$/.exec(trimmed);
     if (mediaMatch?.[2] && mediaMatch[3]) {
       const rawCaption = mediaMatch[1];
       const kind = mediaMatch[2];
@@ -257,7 +257,7 @@ const renderSectionBody = (lines: string[], sectionKey: string): ReactNode[] => 
       lines[i]?.trim() !== '' &&
       !lines[i]?.trim().startsWith('>') &&
       !/^[-*]\s+/.test(lines[i]?.trim() ?? '') &&
-      !/^!\[([^\]]*)\]\((media|video):(\d+)\)$/.test(lines[i]?.trim() ?? '') &&
+      !/^!\[([^\]]*)\]\((media|video|audio):(\d+)\)$/.test(lines[i]?.trim() ?? '') &&
       !/^:::(left|center|right|justify)$/i.test(lines[i]?.trim() ?? '') &&
       lines[i]?.trim() !== ':::' &&
       !HEADING_REGEX.test(lines[i]?.trim() ?? '')

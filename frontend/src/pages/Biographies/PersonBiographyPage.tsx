@@ -753,6 +753,7 @@ export default function PersonBiographyPage() {
       <GalleryBrowserModal
         isOpen={isAdmin && showPortraitModal}
         mode="single"
+        allowedMediaTypes={['IMAGE', 'VIDEO']}
         title={`📷 Wybierz z galerii portret główny dla osoby: ${fullName}`}
         isSubmitting={isSubmittingPortrait}
         onClose={() => {

@@ -256,9 +256,9 @@
 
 .stagedInputsGrid {
   display: grid;
-  grid-template-columns: minmax(200px, 1.4fr) minmax(250px, 2fr) auto;
+  grid-template-columns: minmax(175px, 1fr) minmax(340px, 2.4fr) auto;
   gap: 0.75rem;
-  align-items: end;
+  align-items: start;
 }
 
 .stagedDetailsPanel {

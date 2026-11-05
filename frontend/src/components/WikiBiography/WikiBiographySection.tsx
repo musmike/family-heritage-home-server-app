@@ -114,8 +114,10 @@ const renderSectionBody = (
       continue;
     }
 
-    // 0. Embedded Image or Video Figure: ![Caption](media:123) or ![right|Caption](media:123)
-    const mediaMatch = /^!\[([^\]]*)\]\((media|video):(\d+)\)$/.exec(trimmed);
+    // 0. Embedded Image, Video or Audio Figure:
+    // ![Caption](media:123) / ![Caption](video:123) / ![Caption](audio:123)
+    // with optional alignment prefix: ![right|Caption](media:123)
+    const mediaMatch = /^!\[([^\]]*)\]\((media|video|audio):(\d+)\)$/.exec(trimmed);
     if (mediaMatch?.[2] && mediaMatch[3]) {
       const rawCaption = mediaMatch[1];
       const kind = mediaMatch[2];
@@ -164,8 +166,31 @@ const renderSectionBody = (
             <video
               src={mediaApi.getFileUrl(mediaId)}
               controls
+              preload="metadata"
               className={styles.wikiMediaImg}
             />
+          ) : kind === 'audio' ? (
+            <div className={styles.wikiAudioBox}>
+              <div className={styles.wikiAudioHeader}>
+                <span>🎵 Nagranie audio</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onMediaClick?.(mediaId, kind, caption);
+                  }}
+                  className={styles.wikiEditSectionBtn}
+                  title="Pokaż szczegóły nagrania"
+                >
+                  ℹ️ Szczegóły
+                </button>
+              </div>
+              <audio
+                src={mediaApi.getFileUrl(mediaId)}
+                controls
+                preload="metadata"
+                className={styles.wikiAudioPlayer}
+              />
+            </div>
           ) : (
             <img
               src={mediaApi.getFileUrl(mediaId)}
@@ -270,7 +295,7 @@ const renderSectionBody = (
       lines[i]?.trim() !== '' &&
       !lines[i]?.trim().startsWith('>') &&
       !/^[-*]\s+/.test(lines[i]?.trim() ?? '') &&
-      !/^!\[([^\]]*)\]\((media|video):(\d+)\)$/.test(lines[i]?.trim() ?? '') &&
+      !/^!\[([^\]]*)\]\((media|video|audio):(\d+)\)$/.test(lines[i]?.trim() ?? '') &&
       !/^:::(left|center|right|justify)$/i.test(lines[i]?.trim() ?? '') &&
       lines[i]?.trim() !== ':::' &&
       !HEADING_REGEX.test(lines[i]?.trim() ?? '')
@@ -497,7 +522,12 @@ export default function WikiBiographySection({
 
   const insertMediaMarkdownBlock = (item: MediaItemDto) => {
     const caption = (mediaCaptionInput.trim() || item.title) ?? '';
-    const prefixKind = item.mediaType === 'VIDEO' ? 'video' : 'media';
+    const prefixKind =
+      item.mediaType === 'VIDEO'
+        ? 'video'
+        : item.mediaType === 'AUDIO'
+          ? 'audio'
+          : 'media';
     const captionWithAlign = caption ? `${mediaAlign}|${caption}` : `${mediaAlign}|`;
     const token = `\n![${captionWithAlign}](${prefixKind}:${String(item.id)})\n`;
 
@@ -680,7 +710,7 @@ export default function WikiBiographySection({
           onClick={handleOpenMediaPicker}
           className={`${styles.toolBtn} ${showMediaPicker ? styles.toolBtnActive : ''}`}
         >
-          🖼️ Wstaw zdjęcie lub film w tekście
+          🖼️ Wstaw multimedia (zdjęcie, film lub dźwięk)
         </button>
         <button
           type="button"
@@ -874,7 +904,7 @@ export default function WikiBiographySection({
           <div className={styles.linkPickerRow}>
             <input
               type="text"
-              placeholder="Podpis pod zdjęciem/filmem w ramce (np. Jan przed domem rodzinnym, 1965 r.)..."
+              placeholder="Podpis pod zdjęciem/filmem/nagraniem w ramce (np. Jan przed domem rodzinnym, 1965 r.)..."
               value={mediaCaptionInput}
               onChange={e => {
                 setMediaCaptionInput(e.target.value);
@@ -889,7 +919,7 @@ export default function WikiBiographySection({
               }}
               className={styles.btnPrimary}
             >
-              🖼️ Wybierz zdjęcie lub film z galerii
+              🖼️ Wybierz zdjęcie, film lub nagranie audio z galerii
             </button>
           </div>
         </div>
@@ -898,7 +928,7 @@ export default function WikiBiographySection({
       <textarea
         ref={textareaRef}
         data-testid="wiki-biography-textarea"
-        placeholder="Wpisz treść życiorysu... Użyj ## dla sekcji, ### dla podsekcji, **pogrubienia**, *kursywy*, - dla listy, > dla cytatu lub przycisku 🖼️ Wstaw zdjęcie lub film."
+        placeholder="Wpisz treść życiorysu... Użyj ## dla sekcji, ### dla podsekcji, **pogrubienia**, *kursywy*, - dla listy, > dla cytatu lub przycisku 🖼️ Wstaw multimedia."
         value={draftText}
         onChange={e => {
           setDraftText(e.target.value);
@@ -911,7 +941,8 @@ export default function WikiBiographySection({
         Wskazówka: <code>## Nagłówek sekcji</code> tworzy sekcję,{' '}
         <code>### Podsekcja</code> tworzy podsekcję, <code>&gt; Tekst</code> tworzy cytat w
         ramce, <code>[Tekst](person:ID)</code> tworzy link do osoby, a{' '}
-        <code>![Podpis](media:ID)</code> lub <code>![Podpis](video:ID)</code> osadza zdjęcie lub film w ramce z podpisem.
+        <code>![Podpis](media:ID)</code>, <code>![Podpis](video:ID)</code> lub{' '}
+        <code>![Podpis](audio:ID)</code> osadza zdjęcie, film lub nagranie audio w ramce z podpisem.
       </div>
 
       {showPreview && draftText.trim() !== '' && (
@@ -1115,7 +1146,7 @@ export default function WikiBiographySection({
       <GalleryBrowserModal
         isOpen={showGalleryBrowserModal}
         mode="single"
-        title="🖼️ Wybierz zdjęcie lub film z galerii do wstawienia w życiorysie"
+        title="🖼️ Wybierz zdjęcie, film lub nagranie audio z galerii do wstawienia w życiorysie"
         onClose={() => {
           setShowGalleryBrowserModal(false);
         }}

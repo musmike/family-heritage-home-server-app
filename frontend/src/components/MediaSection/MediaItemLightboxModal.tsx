@@ -603,7 +603,7 @@ export default function MediaItemLightboxModal({
     selectedVersionId !== null
       ? (activeVersions.find(v => v.id === selectedVersionId) ?? null)
       : null;
-      
+
   const versionOptions = getVersionTypeOptions(activeItem.mediaType);
   const startWeekday = getPolishWeekdayLabel(editYear, editMonth, editDay);
   const endWeekday = getPolishWeekdayLabel(editRangeEndYear, editRangeEndMonth, editRangeEndDay);
@@ -910,9 +910,7 @@ export default function MediaItemLightboxModal({
               transition:
                 carouselAnimTarget !== 0
                   ? 'transform 0.26s cubic-bezier(0.22, 1, 0.36, 1)'
-                  : swipeOffsetX !== 0
-                    ? 'none'
-                    : 'transform 0.2s ease-out',
+                  : 'none',
             }}
           >
             {prevItem && (

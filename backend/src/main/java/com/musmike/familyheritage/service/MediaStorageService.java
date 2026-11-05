@@ -370,4 +370,42 @@ public class MediaStorageService {
         }
         return dst;
     }
+
+    public void saveStreamAndThumbnail(
+            String relativePath,
+            Long mediaId,
+            java.io.InputStream inputStream,
+            boolean isImage,
+            Long originalFileTimestampMs
+    ) {
+        try {
+            Path targetPath = resolveMediaFilePath(relativePath);
+            Files.createDirectories(targetPath.getParent());
+
+            // Stream bytes directly to disk using 8 KB buffer (< 1 MB RAM even for multi-GB videos)
+            Files.copy(inputStream, targetPath, StandardCopyOption.REPLACE_EXISTING);
+
+            if (originalFileTimestampMs != null && originalFileTimestampMs > 0) {
+                try {
+                    FileTime ft = FileTime.fromMillis(originalFileTimestampMs);
+                    BasicFileAttributeView attrView =
+                            Files.getFileAttributeView(targetPath, BasicFileAttributeView.class);
+                    if (attrView != null) {
+                        attrView.setTimes(ft, ft, ft);
+                    } else {
+                        Files.setLastModifiedTime(targetPath, ft);
+                    }
+                } catch (IOException ignored) {
+                    // Ignore if underlying filesystem does not support setting all 3 timestamps
+                }
+            }
+
+            if (isImage) {
+                byte[] imageBytes = Files.readAllBytes(targetPath);
+                generateThumbnailIfPossible(mediaId, imageBytes);
+            }
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to stream media file to disk: " + relativePath, e);
+        }
+    }
 }

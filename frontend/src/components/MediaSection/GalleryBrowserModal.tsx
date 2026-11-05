@@ -16,6 +16,7 @@ interface GalleryBrowserModalProps {
   mode: 'multiple' | 'single';
   title?: string;
   excludeMediaIds?: number[];
+  allowedMediaTypes?: MediaType[];
   isSubmitting?: boolean;
   headerBanner?: React.ReactNode;
   onClose: () => void;
@@ -55,6 +56,7 @@ export default function GalleryBrowserModal({
   mode,
   title = '🔗 Wybierz istniejące zdjęcia, filmy lub nagrania z galerii',
   excludeMediaIds = EMPTY_IDS,
+  allowedMediaTypes,
   isSubmitting = false,
   headerBanner,
   onClose,
@@ -123,7 +125,13 @@ export default function GalleryBrowserModal({
           size: viewMode === 'ALL' ? 24 : 2000,
         });
         const excludedSet = new Set(excludeMediaIds);
-        setAllItems(res.content.filter(item => !excludedSet.has(item.id)));
+        setAllItems(
+          res.content.filter(
+            item =>
+              !excludedSet.has(item.id) &&
+              (!allowedMediaTypes || allowedMediaTypes.includes(item.mediaType))
+          )
+        );
         setAllCollections(res.collections);
         setTotalPages(res.totalPages);
       } catch {
@@ -133,7 +141,7 @@ export default function GalleryBrowserModal({
       }
     };
     void fetchItems();
-  }, [isOpen, search, mediaType, viewMode, selectedPersons, matchAllPersons, sortBy, page]);
+  }, [isOpen, search, mediaType, viewMode, selectedPersons, matchAllPersons, sortBy, page, allowedMediaTypes]);
 
   const handleSearchPersonFilter = async () => {
     if (personQuery.trim() === '') return;
@@ -1044,10 +1052,16 @@ export default function GalleryBrowserModal({
                   }}
                   className={styles.input}
                 >
-                  <option value="ALL">Wszystkie typy</option>
-                  <option value="IMAGE">Tylko zdjęcia</option>
-                  <option value="VIDEO">Tylko filmy</option>
-                  <option value="AUDIO">Tylko nagrania audio</option>
+                  <option value="ALL">Wszystkie dozwolone typy</option>
+                  {(!allowedMediaTypes || allowedMediaTypes.includes('IMAGE')) && (
+                    <option value="IMAGE">Tylko zdjęcia</option>
+                  )}
+                  {(!allowedMediaTypes || allowedMediaTypes.includes('VIDEO')) && (
+                    <option value="VIDEO">Tylko filmy</option>
+                  )}
+                  {(!allowedMediaTypes || allowedMediaTypes.includes('AUDIO')) && (
+                    <option value="AUDIO">Tylko nagrania audio</option>
+                  )}
                 </select>
               </div>
 

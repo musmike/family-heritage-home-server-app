@@ -1,0 +1,82 @@
+name: family-heritage-demo
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: family-heritage-db-demo
+    environment:
+      POSTGRES_DB: family_heritage_demo
+      POSTGRES_USER: heritage
+      POSTGRES_PASSWORD: heritage
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - demo_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U heritage -d family_heritage_demo"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+    container_name: family-heritage-backend-demo
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      SERVER_ADDRESS: 0.0.0.0
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/family_heritage_demo
+      SPRING_DATASOURCE_USERNAME: heritage
+      SPRING_DATASOURCE_PASSWORD: heritage
+      APP_MEDIA_ROOT_PATH: /data/media
+      APP_CORS_ALLOWED_ORIGINS: http://localhost:3100
+      SPRING_JPA_SHOW_SQL: "false"
+      LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY: INFO
+      LOGGING_LEVEL_WEB: INFO
+    ports:
+      - "127.0.0.1:8085:8080"
+    volumes:
+      - demo_media_data:/data/media
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/actuator/health | grep -q UP"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+    restart: unless-stopped
+
+  seed:
+    image: alpine:3.20
+    container_name: family-heritage-seed-demo
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      API_URL: http://backend:8080/api
+      SEED_USERNAME: musmike
+      SEED_PASSWORD: student
+    volumes:
+      - ./demo:/seed:ro
+    command: ["sh", "-c", "apk add --no-cache curl jq >/dev/null && sh /seed/seed-demo-data.sh"]
+    restart: "no"
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: family-heritage-frontend-demo
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      VITE_API_BASE_URL: http://localhost:8085/api
+    ports:
+      - "127.0.0.1:3100:80"
+    restart: unless-stopped
+
+volumes:
+  demo_db_data:
+  demo_media_data:

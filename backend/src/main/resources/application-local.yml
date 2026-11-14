@@ -3,9 +3,9 @@ spring:
     activate:
       on-profile: local
   datasource:
-    url: jdbc:postgresql://localhost:5433/family_heritage_dev
-    username: user_dev
-    password: dev123
+    url: jdbc:postgresql://localhost:5433/family_heritage_local
+    username: user_local
+    password: local123
 app:
   jwt:
     secret: LocalJWTSecretKeyForDevelopmentOnly1234567890

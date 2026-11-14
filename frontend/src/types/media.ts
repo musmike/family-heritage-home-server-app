@@ -31,6 +31,16 @@ export interface MediaPersonLinkDto {
   linkType: 'DEPICTED' | 'RELATED' | 'AUTHOR';
 }
 
+export interface BulkUnlinkMediaRequestDto {
+  mediaIds: number[];
+  graveId?: number | null;
+  personId?: number | null;
+  eventId?: number | null;
+  collectionId?: number | null;
+  targetCollectionId?: number | null;
+  targetCollectionIds?: number[];
+}
+
 export interface SaveMediaPersonLinkRequestDto {
   personId?: number | null;
   personText?: string | null;

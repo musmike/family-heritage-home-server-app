@@ -40,7 +40,7 @@ services:
     ports:
       - "127.0.0.1:8085:8080"
     volumes:
-      - demo_media_data:/data/media
+      - ./demo/media:/data/media
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/actuator/health | grep -q UP"]
       interval: 10s
@@ -79,4 +79,3 @@ services:
 
 volumes:
   demo_db_data:
-  demo_media_data:

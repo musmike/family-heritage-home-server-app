@@ -10,21 +10,31 @@ The project lets you import a family tree from any genealogy program, review how
 
 | Dashboard | Ancestor Tree |
 |:---:|:---:|
-| ![Dashboard](docs/screenshots/01-dashboard.png) | ![Family Tree](docs/screenshots/02-family-tree.png) |
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Ancestor Tree](docs/screenshots/family-tree.png) |
 
-| GEDCOM Import Wizard | Person Biography |
+| GEDCOM Import Wizard | Biographies List |
 |:---:|:---:|
-| ![GEDCOM Import](docs/screenshots/03-gedcom-import-review.png) | ![Biography](docs/screenshots/04-biography.png) |
+| ![GEDCOM Import](docs/screenshots/gedcom-import-review.png) | ![Biographies List](docs/screenshots/biographies-list.png) |
 
-| Events Timeline | Media Gallery |
+| Person Biography | Events Timeline |
 |:---:|:---:|
-| ![Events Timeline](docs/screenshots/05-events-timeline.png) | ![Gallery](docs/screenshots/06-gallery.png) |
+| ![Biography](docs/screenshots/biography.png) | ![Events Timeline](docs/screenshots/events-timeline.png) |
 
-| Cemeteries & Graves | Users & Roles |
+| Event Details | Event Editor |
 |:---:|:---:|
-| ![Graves](docs/screenshots/07-graves.png) | ![Users and Roles](docs/screenshots/08-users-roles.png) |
+| ![Event Details](docs/screenshots/event-details.png) | ![Event Editor](docs/screenshots/event-editor.png) |
 
----
+| Media Gallery | Media Viewer & File Versions |
+|:---:|:---:|
+| ![Gallery](docs/screenshots/gallery.png) | ![Media Viewer](docs/screenshots/media-viewer.png) |
+
+| Batch Media Upload | Cemeteries |
+|:---:|:---:|
+| ![Batch Upload](docs/screenshots/media-upload.png) | ![Cemeteries](docs/screenshots/cemeteries.png) |
+
+| Graves in a Cemetery | User Management |
+|:---:|:---:|
+| ![Graves](docs/screenshots/cemetery-graves.png) | ![User Management](docs/screenshots/user-management.png) |
 
 ## Features
 
@@ -149,6 +159,12 @@ The database is automatically seeded on startup. Sign in with one of the demo ac
 | `robert` | `student` | `PRIVILEGED_GUEST` | Read-only |
 | `john` | `student` | `GUEST` | Read-only |
 
+### Swagger UI
+
+API documentation (Swagger UI): [http://localhost:8085/api/swagger-ui.html](http://localhost:8085/api/swagger-ui.html) — log in with `POST /auth/login` first.
+
+- **Interactive API Documentation:** OpenAPI specification and Swagger UI generated from the controllers, available in the local/demo profile.
+
 ### Demo Data
 A fictional family (17 people, 6 families, 4 generations) from [`demo/demo-family.ged`](demo/demo-family.ged) is imported automatically through the same REST API the import wizard uses, and the youngest person is set as the root of the ancestor tree. If the tree is empty, check the seed job:
 ```bash
@@ -158,7 +174,7 @@ docker compose -f docker-compose.demo.yml logs seed
 
 ---
 
-## Running Unit Tests
+## Running Tests
 
 ### Backend Tests (JUnit 5 + Testcontainers)
 Requires JDK 25 and a running Docker daemon.

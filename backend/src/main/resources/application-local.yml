@@ -17,3 +17,8 @@ server:
   address: 127.0.0.1
   servlet:
     context-path: /api
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true

@@ -27,6 +27,7 @@ public class BurialService {
     private final EventTypeParticipantRoleRepository etprRepository;
     private final EventAttributeValueRepository eventAttrValueRepository;
     private final ActivityLogService activityLogService;
+    private final MediaService mediaService;
 
     @Transactional
     public BurialsOverviewDto getBurialsOverview(
@@ -190,6 +191,11 @@ public class BurialService {
         cem = cemeteryRepository.saveAndFlush(cem);
         locationRepository.deleteOrphanLocations();
 
+        // Sync media paths for all graves in this cemetery (name change may alter folders)
+        for (Grave g : graveRepository.findByCemetery(cem)) {
+            mediaService.syncGraveMediaPathsOnGraveChange(g);
+        }
+
         activityLogService.logActivity(
                 ActivityActionType.CEMETERY_UPDATED,
                 "Zaktualizowano cmentarz: " + cem.getName(),
@@ -218,6 +224,11 @@ public class BurialService {
         cemeteryRepository.flush();
         locationRepository.deleteOrphanLocations();
 
+        // After detaching cemetery, move media of affected graves under graves/unassigned/...
+        for (Grave g : graves) {
+            mediaService.syncGraveMediaPathsOnGraveChange(g);
+        }
+
         activityLogService.logActivity(
                 ActivityActionType.CEMETERY_DELETED,
                 "Usunięto cmentarz: " + cemName + " (groby przeniesiono do kategorii Inne)",
@@ -241,6 +252,11 @@ public class BurialService {
             graveRepository.save(g);
         }
         graveRepository.flush();
+
+        // Relocate each affected grave's media into the new cemetery folder
+        for (Grave g : graves) {
+            mediaService.syncGraveMediaPathsOnGraveChange(g);
+        }
 
         activityLogService.logActivity(
                 ActivityActionType.GRAVE_UPDATED,
@@ -278,6 +294,9 @@ public class BurialService {
 
         applyGraveFields(grave, req);
         graveRepository.saveAndFlush(grave);
+
+        // Path may change (cemetery or location data changed) – sync disk folder
+        mediaService.syncGraveMediaPathsOnGraveChange(grave);
 
         String targetLabel = grave.getCemetery() != null ? grave.getCemetery().getName() : "Inne";
         activityLogService.logActivity(
@@ -355,6 +374,9 @@ public class BurialService {
             mergeableBurial.setIsCurrent(req.isCurrent());
             burialRepository.saveAndFlush(mergeableBurial);
 
+            // Merge media folders from oldGrave into targetGrave and delete old folder
+            mediaService.mergeGraveMediaIntoTargetGrave(oldGrave, targetGrave);
+
             graveRepository.delete(oldGrave);
             graveRepository.flush();
         } else {
@@ -365,6 +387,7 @@ public class BurialService {
             newBurial.setBurialEvent(burialEvent);
             newBurial.setIsCurrent(req.isCurrent());
             burialRepository.saveAndFlush(newBurial);
+            mediaService.syncGraveMediaPathsOnGraveChange(targetGrave);
         }
 
         String fullName = ((person.getCachedGivenName() != null ? person.getCachedGivenName() : "") + " "
@@ -407,6 +430,10 @@ public class BurialService {
 
         burial.setGrave(separateGrave);
         burialRepository.saveAndFlush(burial);
+
+        // Sync both graves (old one may lose last person → folder slug changes; new one gets its own folder)
+        mediaService.syncGraveMediaPathsOnGraveChange(separateGrave);
+        mediaService.syncGraveMediaPathsOnGraveChange(currentGrave);
 
         return getGraveDetails(currentGrave.getId(), isAdmin);
     }
@@ -503,6 +530,13 @@ public class BurialService {
     ) {
         CemeteryManagementType mgmt = cem.getManagementType();
         CemeteryDenomination denom = cem.getDenomination();
+
+        Long previewMediaId = graves.stream()
+                .map(GraveGroupDto::getPrimaryMediaId)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+
         return CemeteryGroupDto.builder()
                 .cemeteryId(cem.getId())
                 .groupName(cem.getName())
@@ -515,6 +549,7 @@ public class BurialService {
                 .otherGroup(false)
                 .totalBurialsCount(totalBurialsCount)
                 .graves(graves)
+                .previewMediaId(previewMediaId)
                 .build();
     }
 
@@ -534,6 +569,7 @@ public class BurialService {
                 .description(grave.getDescription())
                 .epitaph(grave.getEpitaph())
                 .burials(burials)
+                .primaryMediaId(grave.getPrimaryMedia() != null ? grave.getPrimaryMedia().getId() : null)
                 .build();
     }
 
@@ -582,6 +618,11 @@ public class BurialService {
                 .causeOfDeath(causeOfDeath)
                 .age(ageResult.age())
                 .ageApproximate(ageResult.approximate())
+                .avatarMediaId(person.getAvatarMedia() != null ? person.getAvatarMedia().getId() : null)
+                .avatarMediaType(person.getAvatarMedia() != null ? person.getAvatarMedia().getMediaType().name() : null)
+                .avatarCropX(person.getAvatarCropX())
+                .avatarCropY(person.getAvatarCropY())
+                .avatarCropZoom(person.getAvatarCropZoom())
                 .build();
     }
 

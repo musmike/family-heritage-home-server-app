@@ -27,4 +27,9 @@ public class PersonListItemDto {
     private String deathPlace;
     private Integer age;
     private boolean ageApproximate;
+    private Long avatarMediaId;
+    private String avatarMediaType;
+    private Integer avatarCropX;
+    private Integer avatarCropY;
+    private Double avatarCropZoom;
 }

@@ -172,6 +172,11 @@ public class PersonBiographyService {
                 .originFamilies(originFamilies)
                 .spouseFamilies(spouseFamilies)
                 .rawGedcomData(rawGedcomView)
+                .avatarMediaId(person.getAvatarMedia() != null ? person.getAvatarMedia().getId() : null)
+                .avatarMediaType(person.getAvatarMedia() != null ? person.getAvatarMedia().getMediaType().name() : null)
+                .avatarCropX(person.getAvatarCropX())
+                .avatarCropY(person.getAvatarCropY())
+                .avatarCropZoom(person.getAvatarCropZoom())
                 .build();
     }
 
@@ -187,11 +192,34 @@ public class PersonBiographyService {
         person.setBiographyContent(normalized);
         personRepository.saveAndFlush(person);
 
-        String fullName = ((person.getCachedSurname() != null ? person.getCachedSurname() : "") + " "
-                + (person.getCachedGivenName() != null ? person.getCachedGivenName() : "")).trim();
+        String fullName = ((person.getCachedGivenName() != null ? person.getCachedGivenName() : "") + " "
+                + (person.getCachedSurname() != null ? person.getCachedSurname() : "")).trim();
         activityLogService.logActivity(
                 ActivityActionType.PERSON_UPDATED,
                 "Zaktualizowano życiorys osoby: " + fullName,
+                "PERSON",
+                person.getId()
+        );
+
+        return getBiography(personId, isAdmin);
+    }
+
+    @Transactional
+    public PersonBiographyDto removePersonAvatar(Long personId, boolean isAdmin) {
+        Person person = personRepository.findById(personId)
+                .orElseThrow(() -> new IllegalArgumentException("Person not found: " + personId));
+
+        person.setAvatarMedia(null);
+        person.setAvatarCropX(50);
+        person.setAvatarCropY(50);
+        person.setAvatarCropZoom(1.0);
+        personRepository.saveAndFlush(person);
+
+        String fullName = ((person.getCachedGivenName() != null ? person.getCachedGivenName() : "") + " "
+                + (person.getCachedSurname() != null ? person.getCachedSurname() : "")).trim();
+        activityLogService.logActivity(
+                ActivityActionType.PERSON_UPDATED,
+                "Usunięto portret profilu osoby: " + fullName,
                 "PERSON",
                 person.getId()
         );
@@ -306,6 +334,11 @@ public class PersonBiographyService {
                 .father(fatherNode)
                 .mother(motherNode)
                 .children(biologicalChildren)
+                .avatarMediaId(person.getAvatarMedia() != null ? person.getAvatarMedia().getId() : null)
+                .avatarMediaType(person.getAvatarMedia() != null ? person.getAvatarMedia().getMediaType().name() : null)
+                .avatarCropX(person.getAvatarCropX())
+                .avatarCropY(person.getAvatarCropY())
+                .avatarCropZoom(person.getAvatarCropZoom())
                 .build();
     }
 
@@ -376,6 +409,11 @@ public class PersonBiographyService {
                 .deathPlace(extractLocationName(person.getDeathEvent()))
                 .age(ageResult.age())
                 .ageApproximate(ageResult.approximate())
+                .avatarMediaId(person.getAvatarMedia() != null ? person.getAvatarMedia().getId() : null)
+                .avatarMediaType(person.getAvatarMedia() != null ? person.getAvatarMedia().getMediaType().name() : null)
+                .avatarCropX(person.getAvatarCropX())
+                .avatarCropY(person.getAvatarCropY())
+                .avatarCropZoom(person.getAvatarCropZoom())
                 .build();
     }
 
@@ -396,6 +434,11 @@ public class PersonBiographyService {
                 .deathYear(deathStart != null ? deathStart.getStartYear() : null)
                 .archived(Boolean.TRUE.equals(person.getIsArchived()))
                 .privateRecord(false)
+                .avatarMediaId(person.getAvatarMedia() != null ? person.getAvatarMedia().getId() : null)
+                .avatarMediaType(person.getAvatarMedia() != null ? person.getAvatarMedia().getMediaType().name() : null)
+                .avatarCropX(person.getAvatarCropX())
+                .avatarCropY(person.getAvatarCropY())
+                .avatarCropZoom(person.getAvatarCropZoom())
                 .build();
     }
 
@@ -439,34 +482,50 @@ public class PersonBiographyService {
         return full.contains(normSearch);
     }
 
+    private String blankToNull(String val) {
+        return (val == null || val.isBlank()) ? null : val.trim();
+    }
+
     private Comparator<PersonListItemDto> buildComparator(String sortBy) {
         String mode = sortBy != null ? sortBy.trim().toUpperCase() : "SURNAME_ASC";
-        Comparator<String> nullSafeStr = Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER);
+        Comparator<String> nullSafeStrAsc = Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER);
+        Comparator<String> nullSafeStrDesc = Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER.reversed());
         Comparator<Integer> nullSafeIntAsc = Comparator.nullsLast(Integer::compareTo);
         Comparator<Integer> nullSafeIntDesc = Comparator.nullsLast(Comparator.reverseOrder());
 
+        // People with neither surname nor givenName always go to the very end
+        Comparator<PersonListItemDto> unnamedLast = Comparator.comparingInt(
+                p -> (blankToNull(p.getSurname()) == null && blankToNull(p.getGivenName()) == null) ? 1 : 0
+        );
+
         return switch (mode) {
-            case "SURNAME_DESC" -> Comparator
-                    .comparing(PersonListItemDto::getSurname, Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER.reversed()))
-                    .thenComparing(PersonListItemDto::getGivenName, nullSafeStr);
-            case "GIVEN_NAME_ASC" -> Comparator
-                    .comparing(PersonListItemDto::getGivenName, nullSafeStr)
-                    .thenComparing(PersonListItemDto::getSurname, nullSafeStr);
+            case "SURNAME_DESC" -> unnamedLast
+                    .thenComparing(p -> blankToNull(p.getSurname()), nullSafeStrDesc)
+                    .thenComparing(p -> blankToNull(p.getGivenName()), nullSafeStrAsc)
+                    .thenComparingLong(PersonListItemDto::getId);
+            case "GIVEN_NAME_ASC" -> unnamedLast
+                    .thenComparing(p -> blankToNull(p.getGivenName()), nullSafeStrAsc)
+                    .thenComparing(p -> blankToNull(p.getSurname()), nullSafeStrAsc)
+                    .thenComparingLong(PersonListItemDto::getId);
             case "BIRTH_DATE_ASC" -> Comparator
                     .comparing(PersonListItemDto::getBirthYear, nullSafeIntAsc)
-                    .thenComparing(PersonListItemDto::getSurname, nullSafeStr);
+                    .thenComparing(p -> blankToNull(p.getSurname()), nullSafeStrAsc)
+                    .thenComparing(p -> blankToNull(p.getGivenName()), nullSafeStrAsc);
             case "BIRTH_DATE_DESC" -> Comparator
                     .comparing(PersonListItemDto::getBirthYear, nullSafeIntDesc)
-                    .thenComparing(PersonListItemDto::getSurname, nullSafeStr);
+                    .thenComparing(p -> blankToNull(p.getSurname()), nullSafeStrAsc)
+                    .thenComparing(p -> blankToNull(p.getGivenName()), nullSafeStrAsc);
             case "DEATH_DATE_ASC" -> Comparator
                     .comparing(PersonListItemDto::getDeathYear, nullSafeIntAsc)
-                    .thenComparing(PersonListItemDto::getSurname, nullSafeStr);
+                    .thenComparing(p -> blankToNull(p.getSurname()), nullSafeStrAsc)
+                    .thenComparing(p -> blankToNull(p.getGivenName()), nullSafeStrAsc);
             case "DEATH_DATE_DESC" -> Comparator
                     .comparing(PersonListItemDto::getDeathYear, nullSafeIntDesc)
-                    .thenComparing(PersonListItemDto::getSurname, nullSafeStr);
-            default -> Comparator
-                    .comparing(PersonListItemDto::getSurname, nullSafeStr)
-                    .thenComparing(PersonListItemDto::getGivenName, nullSafeStr)
+                    .thenComparing(p -> blankToNull(p.getSurname()), nullSafeStrAsc)
+                    .thenComparing(p -> blankToNull(p.getGivenName()), nullSafeStrAsc);
+            default -> unnamedLast
+                    .thenComparing(p -> blankToNull(p.getSurname()), nullSafeStrAsc)
+                    .thenComparing(p -> blankToNull(p.getGivenName()), nullSafeStrAsc)
                     .thenComparingLong(PersonListItemDto::getId);
         };
     }
@@ -604,8 +663,8 @@ public class PersonBiographyService {
         target.setIsDefaultProband(true);
         target = personRepository.saveAndFlush(target);
 
-        String fullName = ((target.getCachedSurname() != null ? target.getCachedSurname() : "") + " "
-                + (target.getCachedGivenName() != null ? target.getCachedGivenName() : "")).trim();
+        String fullName = ((target.getCachedGivenName() != null ? target.getCachedGivenName() : "") + " "
+                + (target.getCachedSurname() != null ? target.getCachedSurname() : "")).trim();
         activityLogService.logActivity(
                 ActivityActionType.DEFAULT_PROBAND_SET,
                 "Ustawiono głównego probanta drzewa: " + fullName,

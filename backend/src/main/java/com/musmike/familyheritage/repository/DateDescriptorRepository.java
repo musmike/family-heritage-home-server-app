@@ -8,7 +8,8 @@ import org.springframework.data.jpa.repository.Query;
 public interface DateDescriptorRepository extends JpaRepository<DateDescriptor, Long> {
     @Modifying
     @Query(value = "DELETE FROM date_descriptors dd " +
-            "WHERE NOT EXISTS (SELECT 1 FROM events e WHERE e.start_date_id = dd.id OR e.end_date_id = dd.id)",
+            "WHERE NOT EXISTS (SELECT 1 FROM events e WHERE e.start_date_id = dd.id OR e.end_date_id = dd.id) " +
+            "AND NOT EXISTS (SELECT 1 FROM media_items m WHERE m.date_descriptor_id = dd.id OR m.metadata_date_descriptor_id = dd.id)",
             nativeQuery = true)
     void deleteOrphanDateDescriptors();
 }

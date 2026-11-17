@@ -160,7 +160,7 @@ export default function FamilyTreePage() {
                 }}
                 className={styles.btnSecondary}
               >
-                🎯 {p.surname} {p.givenName} ({p.birthYear ?? '?'})
+                🎯 {p.givenName} {p.surname} ({p.birthYear ?? '?'})
               </button>
             ))}
           </div>

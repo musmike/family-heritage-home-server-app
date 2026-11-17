@@ -33,6 +33,11 @@ public class PersonBiographyDto {
     private String causeOfDeath;
     private String burialPlace;
     private Long burialGraveId;
+    private Long avatarMediaId;
+    private String avatarMediaType;
+    private Integer avatarCropX;
+    private Integer avatarCropY;
+    private Double avatarCropZoom;
 
     private Integer age;
     private boolean ageApproximate;

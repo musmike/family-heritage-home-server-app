@@ -42,8 +42,17 @@ public class Grave {
     @Column(columnDefinition = "TEXT")
     private String epitaph;
 
+    @Column(name = "folder_slug")
+    private String folderSlug;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "primary_media_id")
+    private MediaItem primaryMedia;
+
     public boolean isCustomizedByAdmin() {
         return cemetery != null
+                || primaryMedia != null
+                || hasText(folderSlug)
                 || hasText(section)
                 || hasText(sector)
                 || hasText(rowNumber)

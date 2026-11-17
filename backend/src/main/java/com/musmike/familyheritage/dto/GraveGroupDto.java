@@ -25,6 +25,7 @@ public class GraveGroupDto {
     private String graveTypeLabel;
     private String description;
     private String epitaph;
+    private Long primaryMediaId;
 
     @Builder.Default
     private List<BurialPersonItemDto> burials = new ArrayList<>();

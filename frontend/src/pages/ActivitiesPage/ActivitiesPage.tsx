@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { activityApi } from '../../api/activityApi';
 import Loader from '../../components/Loader/Loader';
+import { Pagination } from '../../components/Pagination/Pagination';
 import styles from './ActivitiesPage.module.css';
 import type { ActivityLogPageDto } from '../../types/activity';
 
@@ -332,34 +333,13 @@ export default function ActivitiesPage() {
             ))}
           </section>
 
-          <div className={styles.paginationBar}>
-            <span className={styles.pageSubtitle}>
-              Łącznie aktywności: <strong>{pageData.totalElements}</strong> (strona{' '}
-              {pageData.totalPages === 0 ? 0 : pageData.page + 1} z {pageData.totalPages})
-            </span>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button
-                type="button"
-                disabled={page <= 0}
-                onClick={() => {
-                  setPage(prev => Math.max(0, prev - 1));
-                }}
-                className={styles.btnSecondary}
-              >
-                ← Poprzednia
-              </button>
-              <button
-                type="button"
-                disabled={page + 1 >= pageData.totalPages}
-                onClick={() => {
-                  setPage(prev => prev + 1);
-                }}
-                className={styles.btnSecondary}
-              >
-                Następna →
-              </button>
-            </div>
-          </div>
+          <Pagination
+            currentPage={page}
+            totalPages={pageData.totalPages}
+            totalElements={pageData.totalElements}
+            elementsLabel="Łącznie aktywności"
+            onPageChange={setPage}
+          />
         </>
       )}
     </div>

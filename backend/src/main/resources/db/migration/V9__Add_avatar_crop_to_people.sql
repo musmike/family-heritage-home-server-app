@@ -1,0 +1,6 @@
+-- V9__Add_avatar_crop_to_people.sql
+
+ALTER TABLE people
+    ADD COLUMN IF NOT EXISTS avatar_crop_x INT NOT NULL DEFAULT 50,
+    ADD COLUMN IF NOT EXISTS avatar_crop_y INT NOT NULL DEFAULT 50,
+    ADD COLUMN IF NOT EXISTS avatar_crop_zoom DOUBLE PRECISION NOT NULL DEFAULT 1.0;

@@ -70,6 +70,8 @@ dependencies {
 	mockitoAgent("org.mockito:mockito-core:5.18.0") {
 		isTransitive = false
 	}
+
+	implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.2.0")
 }
 
 dependencyManagement {

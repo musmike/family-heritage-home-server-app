@@ -43,8 +43,8 @@ describe('HomePage Component', () => {
           actionType: 'PERSON_CREATED',
           actionLabel: 'Dodanie osoby',
           actorUsername: 'michal',
-          actorDisplayName: 'Muzyka Michał (michal)',
-          description: 'Dodano osobę: Kowalski Jan',
+          actorDisplayName: 'Michał Muzyka (michal)',
+          description: 'Dodano osobę: Jan Kowalski',
           targetType: 'PERSON',
           targetId: 10,
           ipAddress: null,
@@ -149,8 +149,8 @@ describe('HomePage Component', () => {
     expect(screen.getByTestId('stat-graves-count')).toHaveTextContent('12');
 
     // Recent activities & Upcoming anniversaries
-    expect(screen.getByText('Dodano osobę: Kowalski Jan')).toBeInTheDocument();
-    expect(screen.getByText('Kowalski Jan & Kowalska Anna')).toBeInTheDocument();
+    expect(screen.getByText('Dodano osobę: Jan Kowalski')).toBeInTheDocument();
+    expect(screen.getByText('Jan Kowalski & Anna Kowalska')).toBeInTheDocument();
     expect(screen.getByText('52. rocznica ślubu')).toBeInTheDocument();
     expect(screen.getByTestId('show-more-activities-button')).toBeInTheDocument();
     expect(screen.getByTestId('show-more-anniversaries-button')).toBeInTheDocument();

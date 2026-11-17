@@ -1,16 +1,18 @@
+name: family-heritage-local
+
 services:
-  db-dev:
-    image: postgres:15-alpine
-    container_name: family-heritage-db-dev
-    environment:
-      POSTGRES_DB: family_heritage_dev
-      POSTGRES_USER: user_dev
-      POSTGRES_PASSWORD: dev123
-    ports:
-    - "127.0.0.1:5433:5432"
-    volumes:
-      - family_heritage_db_data:/var/lib/postgresql/data
-    restart: unless-stopped
-    
+ db-dev:
+   image: postgres:15-alpine
+   container_name: family-heritage-db-local
+   environment:
+     POSTGRES_DB: family_heritage_local
+     POSTGRES_USER: user_local
+     POSTGRES_PASSWORD: local123
+   ports:
+   - "127.0.0.1:5433:5432"
+   volumes:
+     - family_heritage_db_data:/var/lib/postgresql/data
+   restart: unless-stopped
+  
 volumes:
-  family_heritage_db_data:
+ family_heritage_db_data:

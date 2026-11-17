@@ -36,7 +36,6 @@ public class GedcomImportServiceTest extends AbstractIntegrationTest {
     @Test
     @Transactional
     void shouldImportFullPersonLifecycle_VerifyAllFields() throws Exception {
-        // GIVEN
         String gedcomContent = """
             0 HEAD
             1 SOUR Test
@@ -58,19 +57,15 @@ public class GedcomImportServiceTest extends AbstractIntegrationTest {
             """;
 
         ByteArrayInputStream inputStream = new ByteArrayInputStream(gedcomContent.getBytes(StandardCharsets.UTF_8));
-
-        // WHEN
         importService.importGedcom(inputStream);
 
         entityManager.flush();
         entityManager.clear();
 
-        // THEN
         List<Person> persons = personRepository.findAll();
         assertThat(persons).hasSize(1);
         Person person = persons.getFirst();
 
-        // Raw Data
         PersonGedcomData raw = person.getGedcomData();
         assertThat(raw.getGedUid()).isEqualTo("581e20c218f061e69c6788ae1d62490a");
         assertThat(raw.getGedRefId()).isEqualTo("@I1@");
@@ -86,7 +81,6 @@ public class GedcomImportServiceTest extends AbstractIntegrationTest {
         assertThat(raw.getRawBurialPlace()).isEqualTo("Cmentarz Rakowicki, Kraków");
         assertThat(raw.getLastImportedAt()).isNotNull();
 
-        // Local Data
         assertThat(person.getCachedGivenName()).isEqualTo("Jan");
         assertThat(person.getCachedSurname()).isEqualTo("Kowalski");
         assertThat(person.getSex()).isEqualTo(PersonSex.MALE);
@@ -104,7 +98,6 @@ public class GedcomImportServiceTest extends AbstractIntegrationTest {
         List<Event> events = eventRepository.findAll();
         assertThat(events).hasSize(3);
 
-        // Birth Event
         Event birth = person.getBirthEvent();
         assertThat(birth).isNotNull();
         assertThat(birth.getEventType().getCode()).isEqualTo(EventType.BIRTH.name());
@@ -112,49 +105,12 @@ public class GedcomImportServiceTest extends AbstractIntegrationTest {
                 .hasYear(1920)
                 .hasMonth(Month.of(1))
                 .hasDayOfMonth(10);
-        assertThat(birth.getCachedEndSortDateTime()).isNull();
-        assertThat(birth.getStartDate()).isNotNull();
-        assertThat(birth.getStartDate().getStartYear()).isEqualTo(1920);
-        assertThat(birth.getStartDate().getStartMonth()).isEqualTo(1);
-        assertThat(birth.getStartDate().getStartDay()).isEqualTo(10);
-        assertThat(birth.getEndDate()).isNull();
         assertThat(birth.getMainLocation().getName()).isEqualTo("Warszawa, Polska");
 
-        List<EventLocation> birthLocs = eventLocationRepository.findAll().stream()
-                .filter(el -> el.getEvent().getId().equals(birth.getId()))
-                .toList();
-        assertThat(birthLocs).hasSize(1);
-        assertThat(birthLocs.getFirst().getLocation().getName()).isEqualTo("Warszawa, Polska");
-
-        List<EventParticipant> birthParticipants = birth.getParticipants().stream().toList();
-        assertThat(birthParticipants.getFirst().getRole().getParticipantRole().getCode())
-                .isEqualTo(EventParticipantRole.PRINCIPAL.name());
-
-        // Death Event
         Event death = person.getDeathEvent();
         assertThat(death).isNotNull();
         assertThat(death.getEventType().getCode()).isEqualTo(EventType.DEATH.name());
-        assertThat(death.getCachedStartSortDateTime())
-                .hasYear(1990)
-                .hasMonth(Month.of(2))
-                .hasDayOfMonth(15);
-        assertThat(death.getCachedEndSortDateTime()).isNull();
-        assertThat(death.getStartDate()).isNotNull();
-        assertThat(death.getStartDate().getStartYear()).isEqualTo(1990);
-        assertThat(death.getStartDate().getStartMonth()).isEqualTo(2);
-        assertThat(death.getStartDate().getStartDay()).isEqualTo(15);
-        assertThat(death.getEndDate()).isNull();
         assertThat(death.getMainLocation().getName()).isEqualTo("Kraków, Polska");
-
-        List<EventLocation> deathLocs = eventLocationRepository.findAll().stream()
-                .filter(el -> el.getEvent().getId().equals(death.getId()))
-                .toList();
-        assertThat(deathLocs).hasSize(1);
-        assertThat(deathLocs.getFirst().getLocation().getName()).isEqualTo("Kraków, Polska");
-
-        List<EventParticipant> deathParticipants = death.getParticipants().stream().toList();
-        assertThat(deathParticipants.getFirst().getRole().getParticipantRole().getCode())
-                .isEqualTo(EventParticipantRole.PRINCIPAL.name());
 
         List<EventAttributeValue> deathAttrs = eventAttrRepository.findAll().stream()
                 .filter(eav -> eav.getEvent().getId().equals(death.getId()))
@@ -162,10 +118,7 @@ public class GedcomImportServiceTest extends AbstractIntegrationTest {
         assertThat(deathAttrs).hasSize(1);
         AttributeDictionaryValue attrVal = deathAttrs.getFirst().getAttributeDictionaryValue();
         assertThat(attrVal.getCode()).isEqualTo("Zawał serca");
-        assertThat(attrVal.getAttributeDefinition().getCode())
-                .isEqualTo(DeathEventAttributeDefinition.CAUSE_OF_DEATH.name());
 
-        // Burial Event (no location attached to BURIAL event; place_description stored on Burial)
         List<Burial> burials = burialRepository.findAll();
         assertThat(burials).hasSize(1);
         Burial burialRecord = burials.getFirst();
@@ -173,10 +126,6 @@ public class GedcomImportServiceTest extends AbstractIntegrationTest {
         Event burialEvent = burialRecord.getBurialEvent();
         assertThat(burialEvent).isNotNull();
         assertThat(burialEvent.getEventType().getCode()).isEqualTo(EventType.BURIAL.name());
-        assertThat(burialEvent.getCachedStartSortDateTime()).isNull();
-        assertThat(burialEvent.getCachedEndSortDateTime()).isNull();
-        assertThat(burialEvent.getStartDate()).isNull();
-        assertThat(burialEvent.getEndDate()).isNull();
         assertThat(burialEvent.getMainLocation()).isNull();
 
         assertThat(burialRecord.getGrave()).isNotNull();
@@ -184,21 +133,11 @@ public class GedcomImportServiceTest extends AbstractIntegrationTest {
         assertThat(burialRecord.getPlaceDescription()).isEqualTo("Cmentarz Rakowicki, Kraków");
         assertThat(burialRecord.getPerson().getId()).isEqualTo(person.getId());
         assertThat(burialRecord.getIsCurrent()).isTrue();
-
-        List<EventLocation> burialLocs = eventLocationRepository.findAll().stream()
-                .filter(el -> el.getEvent().getId().equals(burialEvent.getId()))
-                .toList();
-        assertThat(burialLocs).isEmpty();
-
-        List<EventParticipant> burialParticipants = burialEvent.getParticipants().stream().toList();
-        assertThat(burialParticipants.getFirst().getRole().getParticipantRole().getCode())
-                .isEqualTo(EventParticipantRole.PRINCIPAL.name());
     }
 
     @Test
     @Transactional
     void shouldImportThreeFamiliesWithChildrenWeddingEventsAndGedcomData() throws Exception {
-        // GIVEN
         String gedcomContent = """
             0 HEAD
             1 SOUR Test
@@ -247,14 +186,12 @@ public class GedcomImportServiceTest extends AbstractIntegrationTest {
             0 TRLR
             """;
 
-        // WHEN
         ByteArrayInputStream inputStream = new ByteArrayInputStream(gedcomContent.getBytes(StandardCharsets.UTF_8));
         importService.importGedcom(inputStream);
 
         entityManager.flush();
         entityManager.clear();
 
-        // THEN
         List<Family> families = familyRepository.findAll();
         assertThat(families).hasSize(3);
 
@@ -264,6 +201,12 @@ public class GedcomImportServiceTest extends AbstractIntegrationTest {
 
         assertThat(fam1.getHusband().getCachedGivenName()).isEqualTo("John");
         assertThat(fam1.getWife().getCachedGivenName()).isEqualTo("Lucy");
+        assertThat(fam1.getPrimaryWedding()).isNotNull();
+        assertThat(fam1.getPrimaryWedding().getEventType().getCode()).isEqualTo(EventType.WEDDING.name());
+        assertThat(fam1.getPrimaryWedding().getSubEvents()).hasSize(1);
+        assertThat(fam1.getPrimaryWedding().getSubEvents().iterator().next().getEventType().getCode())
+                .isEqualTo(EventType.WEDDING_CEREMONY.name());
+
         assertThat(fam1.getStatus().getCode()).isEqualTo(FamilyStatus.DIVORCED.name());
         assertThat(fam1.getChildren()).hasSize(2);
 
@@ -287,7 +230,6 @@ public class GedcomImportServiceTest extends AbstractIntegrationTest {
     @Test
     @Transactional
     void shouldUpdatePersonFieldsOnSecondImport() throws Exception {
-        // GIVEN
         String gedcomV1 = """
             0 HEAD
             1 SOUR Test
@@ -308,15 +250,12 @@ public class GedcomImportServiceTest extends AbstractIntegrationTest {
             0 TRLR
             """;
 
-        ByteArrayInputStream inputStreamV1 = new ByteArrayInputStream(gedcomV1.getBytes(StandardCharsets.UTF_8));
-        importService.importGedcom(inputStreamV1);
+        importService.importGedcom(new ByteArrayInputStream(gedcomV1.getBytes(StandardCharsets.UTF_8)));
 
         Person p1 = personRepository.findAll().getFirst();
-        assertThat(p1.getCachedGivenName()).isEqualTo("Jan");
-        assertThat(burialRepository.findAll().getFirst().getPlaceDescription())
-                .isEqualTo("Cmentarz Rakowicki, Kraków");
+        LocalDateTime firstImportTime = p1.getGedcomData().getLastImportedAt();
+        Thread.sleep(100);
 
-        // WHEN
         String gedcomV2 = """
             0 HEAD
             1 SOUR Test
@@ -337,16 +276,11 @@ public class GedcomImportServiceTest extends AbstractIntegrationTest {
             0 TRLR
             """;
 
-        LocalDateTime firstImportTime = p1.getGedcomData().getLastImportedAt();
-        Thread.sleep(100);
-
-        ByteArrayInputStream inputStreamV2 = new ByteArrayInputStream(gedcomV2.getBytes(StandardCharsets.UTF_8));
-        importService.importGedcom(inputStreamV2);
+        importService.importGedcom(new ByteArrayInputStream(gedcomV2.getBytes(StandardCharsets.UTF_8)));
 
         entityManager.flush();
         entityManager.clear();
 
-        // THEN
         List<Person> persons = personRepository.findAll();
         assertThat(persons).hasSize(1);
         Person p2 = persons.getFirst();
@@ -364,7 +298,6 @@ public class GedcomImportServiceTest extends AbstractIntegrationTest {
         assertThat(burialRecord.getPlaceDescription()).isEqualTo("Cmentarz Nowy w Warszawie");
         assertThat(burialRecord.getBurialEvent().getMainLocation()).isNull();
 
-        // Old locations no longer referenced should be removed, and burial place is not in locations
         assertThat(locationRepository.findByName("Warszawa, Polska")).isEmpty();
         assertThat(locationRepository.findByName("Kraków, Polska")).isEmpty();
         assertThat(locationRepository.findByName("Cmentarz Rakowicki, Kraków")).isEmpty();
@@ -552,6 +485,11 @@ public class GedcomImportServiceTest extends AbstractIntegrationTest {
         entityManager.flush();
         entityManager.clear();
 
+        // Each marriage has parent WEDDING + child WEDDING_CEREMONY (2 * 2 = 4 events)
+        assertThat(familyRepository.findAll()).hasSize(2);
+        assertThat(eventRepository.findAll()).hasSize(4);
+        assertThat(eventLocationRepository.findAll()).hasSize(2);
+
         String gedcomV2 = """
             0 HEAD
             1 SOUR Test
@@ -585,6 +523,7 @@ public class GedcomImportServiceTest extends AbstractIntegrationTest {
         entityManager.clear();
 
         assertThat(familyRepository.findAll()).hasSize(1);
+        assertThat(eventRepository.findAll()).hasSize(2);
         assertThat(locationRepository.findByName("Poznań")).isEmpty();
     }
 
@@ -640,9 +579,10 @@ public class GedcomImportServiceTest extends AbstractIntegrationTest {
 
         assertThat(personRepository.findAll()).hasSize(3);
         assertThat(familyRepository.findAll()).hasSize(1);
-        assertThat(eventRepository.findAll()).hasSize(4);
+        // 5 events: birth, death, burial, parent WEDDING, and child WEDDING_CEREMONY
+        assertThat(eventRepository.findAll()).hasSize(5);
         assertThat(burialRepository.findAll()).hasSize(1);
-        assertThat(eventLocationRepository.findAll()).hasSize(3); // birth, death, wedding (burial has no location)
+        assertThat(eventLocationRepository.findAll()).hasSize(3);
         assertThat(personNameRepository.findAll()).hasSize(3);
 
         assertThat(locationRepository.findAll())

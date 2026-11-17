@@ -117,7 +117,15 @@ export default function AncestorTree({
         }}
         className={`${styles.nodeCard} ${borderClass} ${probandClass}`}
       >
-        <PersonAvatar sex={node.sex} size="sm" />
+        <PersonAvatar
+          sex={node.sex}
+          size="sm"
+          avatarMediaId={node.avatarMediaId}
+          avatarMediaType={node.avatarMediaType}
+          avatarCropX={node.avatarCropX}
+          avatarCropY={node.avatarCropY}
+          avatarCropZoom={node.avatarCropZoom}
+        />
         <div className={styles.nodeTextGroup}>
           <div className={styles.nodeName}>{fullName}</div>
           {years && <div className={styles.nodeLifespan}>{years}</div>}
@@ -364,7 +372,15 @@ export default function AncestorTree({
           >
             <div className={styles.modalHeader}>
               <div className={styles.modalHeaderLeft}>
-                <PersonAvatar sex={selectedModalNode.sex} size="md" />
+                <PersonAvatar
+                  sex={selectedModalNode.sex}
+                  size="lg"
+                  avatarMediaId={selectedModalNode.avatarMediaId}
+                  avatarMediaType={selectedModalNode.avatarMediaType}
+                  avatarCropX={selectedModalNode.avatarCropX}
+                  avatarCropY={selectedModalNode.avatarCropY}
+                  avatarCropZoom={selectedModalNode.avatarCropZoom}
+                />
                 <div>
                   <div className={styles.modalPersonName}>
                     {selectedModalNode.givenName ?? ''} {selectedModalNode.surname ?? ''}

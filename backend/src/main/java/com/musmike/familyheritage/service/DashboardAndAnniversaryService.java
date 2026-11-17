@@ -28,6 +28,7 @@ public class DashboardAndAnniversaryService {
     private final FamilyRepository familyRepository;
     private final EventRepository eventRepository;
     private final GraveRepository graveRepository;
+    private final MediaItemRepository mediaItemRepository;
 
     @Transactional
     public DashboardStatsDto getDashboardStats() {
@@ -41,12 +42,13 @@ public class DashboardAndAnniversaryService {
         int generationsCount = calculateGenerationsCount(activePersonIds, allFamilies);
 
         long eventsCount = eventRepository.findAll().stream()
-                .filter(e -> !e.getParticipants().isEmpty())
-                .filter(e -> e.getParticipants().stream()
-                        .anyMatch(ep -> !Boolean.TRUE.equals(ep.getPerson().getIsArchived())))
+                .filter(e -> !e.hasAnyParentEvent())
+                .filter(e -> e.getParticipants().isEmpty() || e.getParticipants().stream()
+                        .anyMatch(ep -> ep.getPerson() == null || !Boolean.TRUE.equals(ep.getPerson().getIsArchived())))
                 .count();
 
         long gravesCount = graveRepository.count();
+        long mediaCount = mediaItemRepository.count();
 
         return DashboardStatsDto.builder()
                 .peopleCount(activePeople.size())
@@ -55,7 +57,7 @@ public class DashboardAndAnniversaryService {
                 .eventsCount(eventsCount)
                 .gravesCount(gravesCount)
                 .documentsCount(0L)
-                .mediaCount(0L)
+                .mediaCount(mediaCount)
                 .memoriesCount(0L)
                 .heirloomsCount(0L)
                 .placesCount(0L)
@@ -86,14 +88,12 @@ public class DashboardAndAnniversaryService {
 
         List<AnniversaryItemDto> allItems = new ArrayList<>();
 
-        // 1. BIRTH and DEATH anniversaries from people
         for (Person person : personRepository.findAll()) {
             boolean isArchived = Boolean.TRUE.equals(person.getIsArchived());
             if (!includeArchived && isArchived) {
                 continue;
             }
 
-            // BIRTH: only LIVING or UNKNOWN
             if ((selectedTypes.isEmpty() || selectedTypes.contains("BIRTH"))
                     && person.getLifeState() != LifeState.DECEASED
                     && person.getBirthEvent() != null
@@ -107,7 +107,6 @@ public class DashboardAndAnniversaryService {
                 ));
             }
 
-            // DEATH: any person with an exact death date
             if ((selectedTypes.isEmpty() || selectedTypes.contains("DEATH"))
                     && person.getDeathEvent() != null
                     && isExactDayAndMonth(person.getDeathEvent().getStartDate())) {
@@ -121,7 +120,6 @@ public class DashboardAndAnniversaryService {
             }
         }
 
-        // 2. WEDDING anniversaries: MARRIED status and both spouses alive/unknown
         if (selectedTypes.isEmpty() || selectedTypes.contains("WEDDING")) {
             for (Family fam : familyRepository.findAll()) {
                 if (fam.getStatus() == null

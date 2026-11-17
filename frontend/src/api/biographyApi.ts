@@ -54,6 +54,13 @@ export const biographyApi = {
     return response.data;
   },
 
+  removeAvatar: async (personId: number): Promise<PersonBiographyDto> => {
+    const response = await api.delete<PersonBiographyDto>(
+      `/biographies/${String(personId)}/avatar`
+    );
+    return response.data;
+  },
+
   getAncestorTree: async (
     personId: number,
     generations = 3

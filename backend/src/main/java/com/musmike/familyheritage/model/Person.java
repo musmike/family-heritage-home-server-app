@@ -46,6 +46,19 @@ public class Person {
     @OneToMany(mappedBy = "person", cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<PersonExternalId> externalIds = new HashSet<>();
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "avatar_media_id")
+    private MediaItem avatarMedia;
+
+    @Column(name = "avatar_crop_x", nullable = false)
+    private Integer avatarCropX = 50;
+
+    @Column(name = "avatar_crop_y", nullable = false)
+    private Integer avatarCropY = 50;
+
+    @Column(name = "avatar_crop_zoom", nullable = false)
+    private Double avatarCropZoom = 1.0;
+
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "birth_event_id")
     private Event birthEvent;

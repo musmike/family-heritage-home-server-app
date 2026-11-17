@@ -29,7 +29,11 @@ public enum ActivityActionType {
 
     GRAVE_CREATED("Dodanie grobu", false),
     GRAVE_UPDATED("Aktualizacja grobu", false),
-    GRAVE_DELETED("Usunięcie grobu", false);
+    GRAVE_DELETED("Usunięcie grobu", false),
+
+    MEDIA_UPLOADED("Dodanie zdjęcia lub filmu", false),
+    MEDIA_UPDATED("Aktualizacja zdjęcia lub filmu", false),
+    MEDIA_DELETED("Usunięcie zdjęcia lub filmu", false);
 
     private final String label;
     private final boolean adminOnly;

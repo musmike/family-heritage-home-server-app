@@ -20,6 +20,11 @@ export interface PersonListItemDto {
   deathPlace: string | null;
   age: number | null;
   ageApproximate: boolean;
+  avatarMediaId?: number | null;
+  avatarMediaType?: 'IMAGE' | 'VIDEO' | null;
+  avatarCropX?: number | null;
+  avatarCropY?: number | null;
+  avatarCropZoom?: number | null;
 }
 
 export interface BiographyPageDto {
@@ -40,6 +45,11 @@ export interface RelatedPersonDto {
   deathYear: number | null;
   archived: boolean;
   privateRecord: boolean;
+  avatarMediaId?: number | null;
+  avatarMediaType?: 'IMAGE' | 'VIDEO' | null;
+  avatarCropX?: number | null;
+  avatarCropY?: number | null;
+  avatarCropZoom?: number | null;
 }
 
 export interface OriginFamilyDto {
@@ -120,6 +130,11 @@ export interface PersonBiographyDto {
   originFamilies: OriginFamilyDto[];
   spouseFamilies: SpouseFamilyDto[];
   rawGedcomData: RawGedcomPersonViewDto | null;
+  avatarMediaId?: number | null;
+  avatarMediaType?: 'IMAGE' | 'VIDEO' | null;
+  avatarCropX?: number | null;
+  avatarCropY?: number | null;
+  avatarCropZoom?: number | null;
 }
 
 export interface BiographyListQueryParams {
@@ -154,6 +169,11 @@ export interface AncestorTreeNodeDto {
   age: number | null;
   ageApproximate: boolean;
   hasMoreAncestors?: boolean;
+  avatarMediaId?: number | null;
+  avatarMediaType?: 'IMAGE' | 'VIDEO' | null;
+  avatarCropX?: number | null;
+  avatarCropY?: number | null;
+  avatarCropZoom?: number | null;
   father: AncestorTreeNodeDto | null;
   mother: AncestorTreeNodeDto | null;
   children?: RelatedPersonDto[];

@@ -1,0 +1,275 @@
+0 HEAD
+1 SOUR DEMO
+2 NAME Family Heritage demo dataset
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+1 LANG Polish
+1 NOTE Entirely fictional people created for demonstration purposes.
+0 @I1@ INDI
+1 NAME Józef /Wiśniewski/
+2 GIVN Józef
+2 SURN Wiśniewski
+1 SEX M
+1 _UID DEMO-I001
+1 BIRT
+2 DATE 12 MAR 1890
+2 PLAC Kraków, Małopolskie, Polska
+1 DEAT
+2 DATE 3 NOV 1962
+2 PLAC Kraków, Małopolskie, Polska
+1 BURI
+2 PLAC Cmentarz Rakowicki, Kraków
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME Maria /Zielińska/
+2 GIVN Maria
+2 SURN Zielińska
+1 SEX F
+1 _UID DEMO-I002
+1 BIRT
+2 DATE ABT 1894
+2 PLAC Wieliczka, Małopolskie, Polska
+1 DEAT
+2 DATE 21 JUN 1971
+2 PLAC Kraków, Małopolskie, Polska
+1 BURI
+2 PLAC Cmentarz Rakowicki, Kraków
+1 FAMS @F1@
+0 @I3@ INDI
+1 NAME Stanisław /Kowalski/
+2 GIVN Stanisław
+2 SURN Kowalski
+1 SEX M
+1 _UID DEMO-I003
+1 BIRT
+2 DATE 5 JAN 1888
+2 PLAC Warszawa, Mazowieckie, Polska
+1 DEAT
+2 DATE 14 SEP 1944
+2 PLAC Warszawa, Mazowieckie, Polska
+1 BURI
+2 PLAC Cmentarz Powązkowski, Warszawa
+1 FAMS @F2@
+0 @I4@ INDI
+1 NAME Helena /Nowak/
+2 GIVN Helena
+2 SURN Nowak
+1 SEX F
+1 _UID DEMO-I004
+1 BIRT
+2 DATE 30 AUG 1892
+2 PLAC Warszawa, Mazowieckie, Polska
+1 DEAT
+2 DATE 2 FEB 1969
+2 PLAC Warszawa, Mazowieckie, Polska
+1 BURI
+2 PLAC Cmentarz Powązkowski, Warszawa
+1 FAMS @F2@
+0 @I5@ INDI
+1 NAME Tadeusz /Wiśniewski/
+2 GIVN Tadeusz
+2 SURN Wiśniewski
+1 SEX M
+1 _UID DEMO-I005
+1 BIRT
+2 DATE 17 APR 1919
+2 PLAC Kraków, Małopolskie, Polska
+1 DEAT
+2 DATE 8 DEC 1998
+2 PLAC Gdańsk, Pomorskie, Polska
+1 BURI
+2 PLAC Cmentarz Srebrzysko, Gdańsk
+1 FAMC @F1@
+1 FAMS @F3@
+0 @I6@ INDI
+1 NAME Zofia /Kowalska/
+2 GIVN Zofia
+2 SURN Kowalska
+1 SEX F
+1 _UID DEMO-I006
+1 BIRT
+2 DATE 9 OCT 1921
+2 PLAC Warszawa, Mazowieckie, Polska
+1 DEAT
+2 DATE 19 MAY 2005
+2 PLAC Gdańsk, Pomorskie, Polska
+1 BURI
+2 PLAC Cmentarz Srebrzysko, Gdańsk
+1 FAMC @F2@
+1 FAMS @F3@
+0 @I7@ INDI
+1 NAME Janina /Wiśniewska/
+2 GIVN Janina
+2 SURN Wiśniewska
+1 SEX F
+1 _UID DEMO-I007
+1 BIRT
+2 DATE 23 JUL 1922
+2 PLAC Kraków, Małopolskie, Polska
+1 DEAT
+2 DATE BEF 1990
+2 PLAC Poznań, Wielkopolskie, Polska
+1 FAMC @F1@
+1 FAMS @F4@
+0 @I8@ INDI
+1 NAME Henryk /Mazur/
+2 GIVN Henryk
+2 SURN Mazur
+1 SEX M
+1 _UID DEMO-I008
+1 BIRT
+2 DATE 11 NOV 1918
+2 PLAC Poznań, Wielkopolskie, Polska
+1 DEAT
+2 DATE 27 MAR 1986
+2 PLAC Poznań, Wielkopolskie, Polska
+1 BURI
+2 PLAC Cmentarz Junikowo, Poznań
+1 FAMS @F4@
+0 @I9@ INDI
+1 NAME Andrzej /Wiśniewski/
+2 GIVN Andrzej
+2 SURN Wiśniewski
+1 SEX M
+1 _UID DEMO-I009
+1 BIRT
+2 DATE 14 FEB 1946
+2 PLAC Gdańsk, Pomorskie, Polska
+1 FAMC @F3@
+1 FAMS @F5@
+0 @I10@ INDI
+1 NAME Barbara /Lewandowska/
+2 GIVN Barbara
+2 SURN Lewandowska
+1 SEX F
+1 _UID DEMO-I010
+1 BIRT
+2 DATE 6 JUN 1948
+2 PLAC Gdynia, Pomorskie, Polska
+1 FAMS @F5@
+0 @I11@ INDI
+1 NAME Krystyna /Mazur/
+2 GIVN Krystyna
+2 SURN Mazur
+1 SEX F
+1 _UID DEMO-I011
+1 BIRT
+2 DATE 2 SEP 1949
+2 PLAC Poznań, Wielkopolskie, Polska
+1 FAMC @F4@
+0 @I12@ INDI
+1 NAME Piotr /Wiśniewski/
+2 GIVN Piotr
+2 SURN Wiśniewski
+1 SEX M
+1 _UID DEMO-I012
+1 BIRT
+2 DATE 1 MAY 1974
+2 PLAC Gdańsk, Pomorskie, Polska
+1 FAMC @F5@
+0 @I13@ INDI
+1 NAME Anna /Wiśniewska/
+2 GIVN Anna
+2 SURN Wiśniewska
+1 SEX F
+1 _UID DEMO-I013
+1 BIRT
+2 DATE 19 DEC 1977
+2 PLAC Gdańsk, Pomorskie, Polska
+1 FAMC @F5@
+1 FAMS @F6@
+0 @I14@ INDI
+1 NAME Marek /Zieliński/
+2 GIVN Marek
+2 SURN Zieliński
+1 SEX M
+1 _UID DEMO-I014
+1 BIRT
+2 DATE 25 OCT 1976
+2 PLAC Sopot, Pomorskie, Polska
+1 FAMS @F6@
+0 @I15@ INDI
+1 NAME Michał /Zieliński/
+2 GIVN Michał
+2 SURN Zieliński
+1 SEX M
+1 _UID DEMO-I015
+1 BIRT
+2 DATE 3 APR 2002
+2 PLAC Gdańsk, Pomorskie, Polska
+1 FAMC @F6@
+0 @I16@ INDI
+1 NAME Julia /Zielińska/
+2 GIVN Julia
+2 SURN Zielińska
+1 SEX F
+1 _UID DEMO-I016
+1 BIRT
+2 DATE 15 AUG 2005
+2 PLAC Gdańsk, Pomorskie, Polska
+1 FAMC @F6@
+0 @I17@ INDI
+1 NAME Katarzyna /Wiśniewska/
+2 GIVN Katarzyna
+2 SURN Wiśniewska
+1 SEX F
+1 _UID DEMO-I017
+1 BIRT
+2 DATE 28 JAN 1983
+2 PLAC Gdańsk, Pomorskie, Polska
+1 FAMC @F5@
+0 @F1@ FAM
+1 HUSB @I1@
+1 WIFE @I2@
+1 CHIL @I5@
+1 CHIL @I7@
+1 MARR
+2 DATE 7 SEP 1917
+2 PLAC Kraków, Małopolskie, Polska
+1 _UID DEMO-F001
+0 @F2@ FAM
+1 HUSB @I3@
+1 WIFE @I4@
+1 CHIL @I6@
+1 MARR
+2 DATE 14 JUN 1918
+2 PLAC Warszawa, Mazowieckie, Polska
+1 _UID DEMO-F002
+0 @F3@ FAM
+1 HUSB @I5@
+1 WIFE @I6@
+1 CHIL @I9@
+1 MARR
+2 DATE 26 AUG 1944
+2 PLAC Warszawa, Mazowieckie, Polska
+1 _UID DEMO-F003
+0 @F4@ FAM
+1 HUSB @I8@
+1 WIFE @I7@
+1 CHIL @I11@
+1 MARR
+2 DATE BET 1946 AND 1947
+2 PLAC Poznań, Wielkopolskie, Polska
+1 _UID DEMO-F004
+0 @F5@ FAM
+1 HUSB @I9@
+1 WIFE @I10@
+1 CHIL @I12@
+1 CHIL @I13@
+1 CHIL @I17@
+1 MARR
+2 DATE 20 SEP 1972
+2 PLAC Gdańsk, Pomorskie, Polska
+1 _UID DEMO-F005
+0 @F6@ FAM
+1 HUSB @I14@
+1 WIFE @I13@
+1 CHIL @I15@
+1 CHIL @I16@
+1 MARR
+2 DATE 10 JUN 2000
+2 PLAC Sopot, Pomorskie, Polska
+1 _UID DEMO-F006
+0 TRLR

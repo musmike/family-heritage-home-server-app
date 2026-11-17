@@ -17,6 +17,7 @@ import EventDetailsPage from '../../pages/EventsPage/EventDetailsPage';
 import UsersManagementPage from '../../pages/UsersManagementPage/UsersManagementPage';
 import ActivitiesPage from '../../pages/ActivitiesPage/ActivitiesPage';
 import AnniversariesPage from '../../pages/AnniversariesPage/AnniversariesPage';
+import GalleryPage from '../../pages/GalleryPage/GalleryPage';
 
 export default function MainLayout() {
   const { isSidebarOpen } = useSidebar();
@@ -38,6 +39,7 @@ export default function MainLayout() {
           <Route path="/events" element={<EventsPage />} />
           <Route path="/events/:eventId" element={<EventDetailsPage />} />
           <Route path="/tree" element={<FamilyTreePage />} />
+          <Route path="/gallery" element={<GalleryPage />} />
           <Route path="/burials" element={<BurialsPage />} />
           <Route path="/burials/graves/:graveId" element={<GraveDetailsPage />} />
           <Route path="/gedcom-import" element={<GedcomImportPage />} />

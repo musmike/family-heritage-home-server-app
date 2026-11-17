@@ -5,8 +5,8 @@ spring:
     name: family-heritage-backend
   servlet:
     multipart:
-      max-file-size: 50MB
-      max-request-size: 50MB
+      max-file-size: 30GB
+      max-request-size: 30GB
   jpa:
     hibernate:
       ddl-auto: validate
@@ -14,15 +14,21 @@ spring:
     properties:
       hibernate:
         format_sql: true
-    flyway:
-      enabled: true
-      locations: classpath:db/migration
-      baseline-on-migrate: true
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
 
 server:
   address: 0.0.0.0
+  tomcat:
+    max-part-count: -1
+    max-swallow-size: -1
+    max-http-form-post-size: -1
 
 app:
+  media:
+    root-path: ${APP_MEDIA_ROOT_PATH:./local_media}
   cors:
     allowed-methods:
       - "GET"
@@ -45,3 +51,11 @@ logging:
   level:
     org.springframework.security: DEBUG
     web: DEBUG
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+    csrf:
+      enabled: true

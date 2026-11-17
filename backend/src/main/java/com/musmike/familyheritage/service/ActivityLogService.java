@@ -177,8 +177,8 @@ public class ActivityLogService {
         for (User u : userRepository.findAll()) {
             Person p = u.getPerson();
             if (p != null) {
-                String fullName = ((p.getCachedSurname() != null ? p.getCachedSurname() : "") + " "
-                        + (p.getCachedGivenName() != null ? p.getCachedGivenName() : "")).trim();
+                String fullName = ((p.getCachedGivenName() != null ? p.getCachedGivenName() : "") + " "
+                        + (p.getCachedSurname() != null ? p.getCachedSurname() : "")).trim();
                 if (!fullName.isEmpty()) {
                     map.put(u.getUsername(), fullName + " (" + u.getUsername() + ")");
                     continue;

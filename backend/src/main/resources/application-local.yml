@@ -15,8 +15,6 @@ app:
   seed-users-json: '[{"username":"musmike","password":"student","role":"ADMIN"},{"username":"john","password":"student","role":"GUEST"},{"username":"robert","password":"student","role":"PRIVILEGED_GUEST"}]'
 server:
   address: 127.0.0.1
-  servlet:
-    context-path: /api
 springdoc:
   api-docs:
     enabled: true

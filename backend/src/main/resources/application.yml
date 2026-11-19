@@ -21,6 +21,8 @@ spring:
 
 server:
   address: 0.0.0.0
+  servlet:
+    context-path: /api
   tomcat:
     max-part-count: -1
     max-swallow-size: -1
